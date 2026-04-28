@@ -16,5 +16,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "MallocGFW"
+rootProject.name = "PurpleBear"
 include(":app")

@@ -2,6 +2,8 @@
 
 PurpleBear 是一款 Android 网络代理与线路管理工具，基于系统 VPN 能力接入 Xray 内核，面向需要管理订阅节点、手动节点、分流规则、分应用代理和流媒体独立出口的用户。
 
+本仓库顶层就是 PurpleBear Android 工程。打开仓库即可直接看到 `app/`、`gradle/`、`build.gradle.kts`、`settings.gradle.kts` 和 Gradle Wrapper，不需要再进入额外的工程子目录。
+
 本仓库只包含 PurpleBear Android 应用本身的项目代码、资源、构建配置和必要的运行时依赖，不包含 Xray-core 的完整源码。
 
 ## 主要功能
@@ -135,12 +137,14 @@ PurpleBear 的导入解析器目前支持以下常见分享格式：
 - 应用会在用户主动同步订阅、规则或 Geo 数据时访问对应 URL。
 - VPN 功能需要 Android 系统 VPN 授权。
 - 分应用代理需要读取本机应用列表用于选择代理范围。
-- 隐私政策页面位于 `docs/privacy-policy.html`。
+- 隐私说明以本 README 的“隐私与数据”章节为准。
 
 ## 项目结构
 
-- `android-app/`：Android 应用工程。
-- `docs/`：项目网页与隐私政策。
+- `app/`：Android 应用模块，包含 Kotlin 源码、Compose UI、资源、Manifest、预编译运行依赖和 Geo 数据。
+- `gradle/`：Gradle Wrapper 文件。
+- `build.gradle.kts`、`settings.gradle.kts`、`gradle.properties`：顶层 Gradle 配置。
+- `gradlew`、`gradlew.bat`：命令行构建入口。
 
 不再跟踪的内容包括外部内核源码、第三方示例工程、UI 原型草稿、临时构建目录、签名文件、本地配置和未使用的大体积库文件。
 
@@ -155,20 +159,18 @@ PurpleBear 的导入解析器目前支持以下常见分享格式：
 命令行构建：
 
 ```bash
-cd android-app
 ./gradlew :app:assembleRelease
 ```
 
 生成的 APK 位于：
 
 ```text
-android-app/app/build/outputs/apk/release/app-release.apk
+app/build/outputs/apk/release/app-release.apk
 ```
 
 如果本地没有发布签名配置，Release 构建可能无法签名。开发调试可使用：
 
 ```bash
-cd android-app
 ./gradlew :app:assembleDebug
 ```
 
