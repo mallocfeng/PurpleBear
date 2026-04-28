@@ -139,7 +139,7 @@ PurpleBear 的导入解析器目前支持以下常见分享格式：
 - 应用会在用户主动同步订阅、规则或 Geo 数据时访问对应 URL。
 - VPN 功能需要 Android 系统 VPN 授权。
 - 分应用代理需要读取本机应用列表用于选择代理范围。
-- 隐私说明以本 README 的“隐私与数据”章节为准。
+- 隐私政策页面位于 `privacy-policy.html`，GitHub Pages 开启后可通过项目 Pages 地址访问。
 
 ## 项目结构
 
@@ -147,6 +147,7 @@ PurpleBear 的导入解析器目前支持以下常见分享格式：
 - `gradle/`：Gradle Wrapper 文件。
 - `build.gradle.kts`、`settings.gradle.kts`、`gradle.properties`：顶层 Gradle 配置。
 - `gradlew`、`gradlew.bat`：命令行构建入口。
+- `index.html`、`privacy-policy.html`：GitHub Pages 使用的项目页面与隐私政策。
 
 不再跟踪的内容包括外部内核源码、第三方示例工程、UI 原型草稿、临时构建目录、签名文件、本地配置和未使用的大体积库文件。
 
