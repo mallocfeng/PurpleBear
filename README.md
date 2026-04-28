@@ -1,3 +1,5 @@
+![PurpleBear 界面预览](assets/purplebear-hero.png)
+
 # PurpleBear
 
 PurpleBear 是一款 Android 网络代理与线路管理工具，基于系统 VPN 能力接入 Xray 内核，面向需要管理订阅节点、手动节点、分流规则、分应用代理和流媒体独立出口的用户。
