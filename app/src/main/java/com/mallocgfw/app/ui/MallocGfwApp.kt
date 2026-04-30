@@ -535,6 +535,40 @@ fun MallocGfwApp(
         }
     }
 
+    fun updateGlobalProxyEnabled(enabled: Boolean) {
+        if (blockingReconnectInFlight) return
+        if (appSettings.globalProxyEnabled == enabled) return
+        appSettings = appSettings.copy(globalProxyEnabled = enabled)
+        val shouldReconnect = VpnServiceController.isRunning() ||
+            connectionStatus == ConnectionStatus.Connected ||
+            connectionStatus == ConnectionStatus.Connecting ||
+            connectionStatus == ConnectionStatus.Disconnecting
+        ruleMessage = if (enabled) {
+            if (shouldReconnect) {
+                "全局代理已开启，正在重启 VPN 服务；局域网/私网不走代理。"
+            } else {
+                "全局代理已开启，连接后正常上网流量走代理，局域网/私网不走代理。"
+            }
+        } else {
+            if (shouldReconnect) {
+                "全局代理已关闭，正在重连 VPN 以恢复规则分流。"
+            } else {
+                "全局代理已关闭，连接后会按规则分流。"
+            }
+        }
+        val reconnectServer = resolveServerForSettingsReconnect()
+        if (shouldReconnect && reconnectServer != null) {
+            reconnectVpnForSettingsChange(
+                server = reconnectServer,
+                message = if (enabled) {
+                    "全局代理已开启，正在重启 VPN 服务。完成前请稍候，局域网/私网仍不走代理。"
+                } else {
+                    "全局代理已关闭，正在重连 VPN 以恢复规则分流…"
+                },
+            )
+        }
+    }
+
     fun updateProxyMode(nextMode: ProxyMode) {
         if (proxyMode == nextMode) return
         proxyMode = nextMode
@@ -720,6 +754,7 @@ fun MallocGfwApp(
                 xraySnapshot = xraySnapshot,
                 server = diagnosticServer,
                 ruleSources = ruleSourcesSnapshot,
+                settings = appSettings,
             )
             if (runId == diagnosticRunId) {
                 diagnostics = result
@@ -1960,8 +1995,10 @@ fun MallocGfwApp(
                         selectedRuleSourceId = selectedRuleSourceId,
                         geoDataSnapshot = geoDataSnapshot,
                         geoDataUpdating = geoDataUpdating,
+                        globalProxyEnabled = appSettings.globalProxyEnabled,
                         ruleMessage = ruleMessage,
                         updatingIds = ruleUpdateInFlight.keys,
+                        onGlobalProxyChange = ::updateGlobalProxyEnabled,
                         onRefreshGeoData = ::refreshGeoData,
                         onSelectSource = { sourceId ->
                             selectedRuleSourceId = sourceId

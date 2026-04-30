@@ -1,6 +1,8 @@
 package com.mallocgfw.app.xray
 
 import android.content.Context
+import com.mallocgfw.app.model.AppSettings
+import com.mallocgfw.app.model.AppStateStore
 import com.mallocgfw.app.model.ConnectionStatus
 import com.mallocgfw.app.model.DiagnosticStatus
 import com.mallocgfw.app.model.DiagnosticStep
@@ -38,13 +40,18 @@ object DiagnosticsManager {
         xraySnapshot: XrayCoreSnapshot,
         server: ServerNode?,
         ruleSources: List<RuleSourceItem>,
+        settings: AppSettings = AppStateStore.defaultSettings(),
     ): List<DiagnosticStep> = withContext(Dispatchers.IO) {
-        val routingRules = RuleSourceManager.loadEnabledRoutingRules(context, ruleSources)
+        val routingRules = if (settings.globalProxyEnabled) {
+            emptyList()
+        } else {
+            RuleSourceManager.loadEnabledRoutingRules(context, ruleSources)
+        }
         val geoData = GeoDataManager.load(context)
 
         listOf(
-            buildConfigStep(server, routingRules.size),
-            buildRulesStep(ruleSources, routingRules.size, geoData),
+            buildConfigStep(server, settings.globalProxyEnabled),
+            buildRulesStep(ruleSources, routingRules.size, geoData, settings.globalProxyEnabled),
             buildCoreStep(xraySnapshot),
             buildVpnStep(connectionStatus, vpnSnapshot, server),
             buildDnsStep(server),
@@ -53,19 +60,20 @@ object DiagnosticsManager {
         )
     }
 
-    private fun buildConfigStep(server: ServerNode?, routingRuleCount: Int): DiagnosticStep {
+    private fun buildConfigStep(server: ServerNode?, globalProxyEnabled: Boolean): DiagnosticStep {
         if (server == null) {
             return fail("config", "配置解析", "当前没有可诊断的节点，请先导入并选择一个节点。")
         }
         return runCatching {
-            val config = XrayConfigFactory.buildVpn(server)
+            val config = XrayConfigFactory.buildVpn(server, globalProxyEnabled = globalProxyEnabled)
             JSONObject(config)
         }.fold(
-            onSuccess = {
+            onSuccess = { config ->
+                val ruleCount = config.optJSONObject("routing")?.optJSONArray("rules")?.length() ?: 0
                 success(
                     "config",
                     "配置解析",
-                    "已为 ${server.name} 生成 Xray 配置，当前附带 ${routingRuleCount + 3} 组路由规则。",
+                    "已为 ${server.name} 生成 Xray 配置，当前附带 $ruleCount 组路由规则。",
                 )
             },
             onFailure = {
@@ -82,6 +90,7 @@ object DiagnosticsManager {
         ruleSources: List<RuleSourceItem>,
         routingRuleCount: Int,
         geoData: GeoDataSnapshot,
+        globalProxyEnabled: Boolean,
     ): DiagnosticStep {
         val readySources = ruleSources.filter { it.enabled && it.status == RuleSourceStatus.Ready }
         val failedSources = ruleSources.filter { it.enabled && (it.status == RuleSourceStatus.FetchFailed || it.status == RuleSourceStatus.ParseFailed) }
@@ -92,7 +101,11 @@ object DiagnosticsManager {
         }
         val detail = buildString {
             append(geoLabel)
-            append("，已启用 ${readySources.size} 个规则源，转换后的自定义路由 ${routingRuleCount} 组。")
+            if (globalProxyEnabled) {
+                append("，全局代理已开启，规则源和 CN 直连规则暂不参与路由；局域网/私网仍直连。")
+            } else {
+                append("，已启用 ${readySources.size} 个规则源，转换后的自定义路由 ${routingRuleCount} 组。")
+            }
             if (failedSources.isNotEmpty()) {
                 append(" 另有 ${failedSources.size} 个规则源未就绪。")
             }

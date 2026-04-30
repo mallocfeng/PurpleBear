@@ -298,6 +298,7 @@ data class AppSettings(
     val logLevel: AppLogLevel,
     val lastConnectedServerId: String,
     val resumeConnectionOnLaunch: Boolean,
+    val globalProxyEnabled: Boolean,
     val streamingRoutingEnabled: Boolean,
     val streamingSelections: List<StreamingRouteSelection>,
     val heartbeatIntervalMinutes: Int,

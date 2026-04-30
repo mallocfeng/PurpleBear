@@ -67,8 +67,10 @@ internal fun RulesScreen(
     selectedRuleSourceId: String,
     geoDataSnapshot: GeoDataSnapshot,
     geoDataUpdating: Boolean,
+    globalProxyEnabled: Boolean,
     ruleMessage: String?,
     updatingIds: Set<String>,
+    onGlobalProxyChange: (Boolean) -> Unit,
     onRefreshGeoData: () -> Unit,
     onSelectSource: (String) -> Unit,
     onAddSource: () -> Unit,
@@ -98,6 +100,27 @@ internal fun RulesScreen(
                     title = "规则管理",
                     subtitle = "管理规则源与 Geo 数据。",
                 )
+            }
+            item {
+                SurfaceCard {
+                    SettingToggleRow(
+                        title = "全局代理",
+                        subtitle = if (globalProxyEnabled) {
+                            "已开启：正常上网流量走代理，局域网/私网不走代理。"
+                        } else {
+                            "已关闭：按规则源、Geo CN 和流媒体分流处理。"
+                        },
+                        checked = globalProxyEnabled,
+                        onToggle = { onGlobalProxyChange(!globalProxyEnabled) },
+                    )
+                    Text(
+                        text = "开启后会忽略规则源、流媒体分流和 CN 直连规则；局域网、私有地址仍直连，其余 TCP 与 UDP 流量走当前节点。",
+                        color = TextSecondary,
+                        fontSize = TypeScale.Meta,
+                        lineHeight = TypeScale.MetaLine,
+                        modifier = Modifier.padding(top = 10.dp),
+                    )
+                }
             }
             if (!ruleMessage.isNullOrBlank()) {
                 item { NoteBox(text = ruleMessage) }

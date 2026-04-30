@@ -23,9 +23,11 @@ import com.mallocgfw.app.model.AppStateStore
 import com.mallocgfw.app.model.ConnectionStatus
 import com.mallocgfw.app.model.ManualNodeFactory
 import com.mallocgfw.app.model.ProxyMode
+import com.mallocgfw.app.model.RuleRoutingSetup
 import com.mallocgfw.app.model.RuleSourceManager
 import com.mallocgfw.app.model.ServerNode
 import com.mallocgfw.app.model.StreamingMediaManager
+import com.mallocgfw.app.model.StreamingRoutingSetup
 import com.mallocgfw.app.model.normalizedAppVpnMtu
 import com.mallocgfw.app.quicksettings.VpnQuickSettingsTileHelper
 import kotlinx.coroutines.CancellationException
@@ -261,17 +263,26 @@ class XrayVpnService : VpnService() {
         val server = state.servers.firstOrNull { it.id == serverId }
             ?: error("未找到要连接的节点。")
         val vpnMtu = normalizedAppVpnMtu(state.settings.vpnMtu)
-        val ruleRouting = RuleSourceManager.buildRoutingSetup(
-            context = applicationContext,
-            sources = state.ruleSources,
-            servers = state.servers,
-        )
-        val streamingRouting = StreamingMediaManager.buildRoutingSetup(
-            context = applicationContext,
-            settings = state.settings,
-            selectedServerId = server.id,
-            servers = state.servers,
-        )
+        val globalProxyEnabled = state.settings.globalProxyEnabled
+        val ruleRouting = if (globalProxyEnabled) {
+            RuleRoutingSetup()
+        } else {
+            RuleSourceManager.buildRoutingSetup(
+                context = applicationContext,
+                sources = state.ruleSources,
+                servers = state.servers,
+            )
+        }
+        val streamingRouting = if (globalProxyEnabled) {
+            StreamingRoutingSetup()
+        } else {
+            StreamingMediaManager.buildRoutingSetup(
+                context = applicationContext,
+                settings = state.settings,
+                selectedServerId = server.id,
+                servers = state.servers,
+            )
+        }
         val builder = Builder()
             .setSession("PurpleBear")
             .setMtu(vpnMtu)
@@ -282,7 +293,7 @@ class XrayVpnService : VpnService() {
             .applyLocalNetworkExclusions()
         dnsServer?.let(builder::addDnsServer)
 
-        if (state.proxyMode == ProxyMode.PerApp) {
+        if (state.proxyMode == ProxyMode.PerApp && !globalProxyEnabled) {
             val allowedPackages = buildSet {
                 add(packageName)
                 state.protectedApps.filter { it.enabled }.forEach { add(it.id) }
@@ -295,7 +306,7 @@ class XrayVpnService : VpnService() {
                 }
             }
         } else {
-            // Smart / Global modes: keep the app's own outbound traffic
+            // Smart mode and the global-proxy rule mode keep the app's own outbound traffic
             // (subscription refresh, geo updates, speedtest, log uploads, …)
             // off the tunnel. Xray protects its own dialed sockets via the
             // DialerController, but plain Java HttpURLConnection traffic does
@@ -338,17 +349,26 @@ class XrayVpnService : VpnService() {
         val tunFd = vpnInterface?.fd ?: error("系统 VPN 还没有建立，无法热切换线路。")
         val vpnMtu = normalizedAppVpnMtu(state.settings.vpnMtu)
         val dnsEndpoint = resolveDnsEndpoint(applicationContext, state.settings)
-        val ruleRouting = RuleSourceManager.buildRoutingSetup(
-            context = applicationContext,
-            sources = state.ruleSources,
-            servers = state.servers,
-        )
-        val streamingRouting = StreamingMediaManager.buildRoutingSetup(
-            context = applicationContext,
-            settings = state.settings,
-            selectedServerId = server.id,
-            servers = state.servers,
-        )
+        val globalProxyEnabled = state.settings.globalProxyEnabled
+        val ruleRouting = if (globalProxyEnabled) {
+            RuleRoutingSetup()
+        } else {
+            RuleSourceManager.buildRoutingSetup(
+                context = applicationContext,
+                sources = state.ruleSources,
+                servers = state.servers,
+            )
+        }
+        val streamingRouting = if (globalProxyEnabled) {
+            StreamingRoutingSetup()
+        } else {
+            StreamingMediaManager.buildRoutingSetup(
+                context = applicationContext,
+                settings = state.settings,
+                selectedServerId = server.id,
+                servers = state.servers,
+            )
+        }
         dnsEndpoint?.let { LibXray.initDns(dialerController, it) }
         XrayCoreManager.startVpn(
             context = applicationContext,

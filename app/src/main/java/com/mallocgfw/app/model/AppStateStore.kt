@@ -22,6 +22,7 @@ object AppStateStore {
             logLevel = AppLogLevel.Warning,
             lastConnectedServerId = "",
             resumeConnectionOnLaunch = false,
+            globalProxyEnabled = false,
             streamingRoutingEnabled = false,
             streamingSelections = emptyList(),
             heartbeatIntervalMinutes = 5,
@@ -356,6 +357,7 @@ object AppStateStore {
                 put("logLevel", state.settings.logLevel.name)
                 put("lastConnectedServerId", state.settings.lastConnectedServerId)
                 put("resumeConnectionOnLaunch", state.settings.resumeConnectionOnLaunch)
+                put("globalProxyEnabled", state.settings.globalProxyEnabled)
                 put("streamingRoutingEnabled", state.settings.streamingRoutingEnabled)
                 put("heartbeatIntervalMinutes", state.settings.heartbeatIntervalMinutes)
                 put("vpnMtu", normalizedAppVpnMtu(state.settings.vpnMtu))
@@ -386,6 +388,7 @@ object AppStateStore {
             logLevel = optString("logLevel").toEnumOrDefault(defaults.logLevel),
             lastConnectedServerId = optString("lastConnectedServerId", defaults.lastConnectedServerId),
             resumeConnectionOnLaunch = optBoolean("resumeConnectionOnLaunch", defaults.resumeConnectionOnLaunch),
+            globalProxyEnabled = optBoolean("globalProxyEnabled", defaults.globalProxyEnabled),
             streamingRoutingEnabled = optBoolean("streamingRoutingEnabled", defaults.streamingRoutingEnabled),
             streamingSelections = optJSONArray("streamingSelections").toStreamingSelections(),
             heartbeatIntervalMinutes = optInt("heartbeatIntervalMinutes", defaults.heartbeatIntervalMinutes)

@@ -28,6 +28,7 @@ object XrayConfigFactory {
         logLevel: String = "warning",
         errorLogPath: String? = null,
         accessLogPath: String? = null,
+        globalProxyEnabled: Boolean = false,
     ): String {
         return JSONObject().apply {
             put(
@@ -69,7 +70,7 @@ object XrayConfigFactory {
                     // IP-literal targets. Keeps routing predictable without
                     // requiring an in-config DNS section to drive IPIfNonMatch.
                     put("domainStrategy", "AsIs")
-                    put("rules", buildRoutingRules(routingRules))
+                    put("rules", buildRoutingRules(routingRules, globalProxyEnabled = globalProxyEnabled))
                 },
             )
         }.toString(2)
@@ -84,6 +85,7 @@ object XrayConfigFactory {
         errorLogPath: String? = null,
         accessLogPath: String? = null,
         vpnMtu: Int = DEFAULT_VPN_MTU,
+        globalProxyEnabled: Boolean = false,
     ): String {
         val normalizedMtu = normalizedAppVpnMtu(vpnMtu)
         return JSONObject().apply {
@@ -136,7 +138,14 @@ object XrayConfigFactory {
                     // IP-literal targets. Keeps routing predictable without
                     // requiring an in-config DNS section to drive IPIfNonMatch.
                     put("domainStrategy", "AsIs")
-                    put("rules", buildRoutingRules(routingRules, forceSpeedTestToProxy = true))
+                    put(
+                        "rules",
+                        buildRoutingRules(
+                            routingRules,
+                            forceSpeedTestToProxy = true,
+                            globalProxyEnabled = globalProxyEnabled,
+                        ),
+                    )
                 },
             )
         }.toString(2)
@@ -145,6 +154,7 @@ object XrayConfigFactory {
     private fun buildRoutingRules(
         routingRules: List<XrayRoutingRule>,
         forceSpeedTestToProxy: Boolean = false,
+        globalProxyEnabled: Boolean = false,
     ): JSONArray {
         val rules = JSONArray()
 
@@ -160,7 +170,9 @@ object XrayConfigFactory {
             )
         }
 
-        routingRules
+        val effectiveRoutingRules = if (globalProxyEnabled) emptyList() else routingRules
+
+        effectiveRoutingRules
             .withIndex()
             .sortedWith(
                 compareByDescending<IndexedValue<XrayRoutingRule>> { it.value.priority }
@@ -215,24 +227,26 @@ object XrayConfigFactory {
             },
         )
 
-        rules.put(
-            JSONObject().apply {
-                put("type", "field")
-                put("domain", JSONArray().apply {
-                    put("geosite:cn")
-                })
-                put("outboundTag", "direct")
-            },
-        )
-        rules.put(
-            JSONObject().apply {
-                put("type", "field")
-                put("ip", JSONArray().apply {
-                    put("geoip:cn")
-                })
-                put("outboundTag", "direct")
-            },
-        )
+        if (!globalProxyEnabled) {
+            rules.put(
+                JSONObject().apply {
+                    put("type", "field")
+                    put("domain", JSONArray().apply {
+                        put("geosite:cn")
+                    })
+                    put("outboundTag", "direct")
+                },
+            )
+            rules.put(
+                JSONObject().apply {
+                    put("type", "field")
+                    put("ip", JSONArray().apply {
+                        put("geoip:cn")
+                    })
+                    put("outboundTag", "direct")
+                },
+            )
+        }
 
         // Explicit fallback so the default outbound never depends on the order
         // of the outbounds array (streaming/pre-proxy chains can re-order it).
