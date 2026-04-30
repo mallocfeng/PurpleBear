@@ -177,7 +177,7 @@ app/build/outputs/apk/release/app-release.apk
 ./gradlew :app:assembleDebug
 ```
 
-## 版本 2.6.5 更新
+## 版本 0.6.5 更新
 
 1. 新增自定义文本规则，可手动编写 Shadowrocket / Surge 规则。
 
