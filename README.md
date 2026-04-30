@@ -4,8 +4,6 @@
 
 PurpleBear 是一款 Android 网络代理与线路管理工具，基于系统 VPN 能力接入 Xray 内核，面向需要管理订阅节点、手动节点、分流规则、分应用代理和流媒体独立出口的用户。
 
-本仓库顶层就是 PurpleBear Android 工程。打开仓库即可直接看到 `app/`、`gradle/`、`build.gradle.kts`、`settings.gradle.kts` 和 Gradle Wrapper，不需要再进入额外的工程子目录。
-
 本仓库只包含 PurpleBear Android 应用本身的项目代码、资源、构建配置和必要的运行时依赖，不包含 Xray-core 的完整源码。
 
 ## 主要功能
