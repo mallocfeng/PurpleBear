@@ -81,12 +81,12 @@ internal fun MeScreen(
                     ) {
                         Eyebrow("当前环境")
                         Text(
-                            when (connectionStatus) {
+                            uiText(when (connectionStatus) {
                                 ConnectionStatus.Connected -> "已受保护"
                                 ConnectionStatus.Connecting -> "正在建立连接"
                                 ConnectionStatus.Disconnecting -> "正在断开连接"
                                 ConnectionStatus.Disconnected -> "尚未建立连接"
-                            },
+                            }),
                             fontSize = TypeScale.CardTitle,
                             lineHeight = TypeScale.CardTitleLine,
                             fontWeight = FontWeight.Bold,
@@ -94,7 +94,7 @@ internal fun MeScreen(
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            "${server?.name ?: "暂无节点"} · ${proxyModeText(proxyMode)}",
+                            "${server?.name ?: uiText("暂无节点")} · ${uiText(proxyModeText(proxyMode))}",
                             color = TextSecondary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -138,11 +138,10 @@ internal fun MeScreen(
                     fontWeight = FontWeight.Bold,
                 )
                 Spacer(modifier = Modifier.height(14.dp))
-                DetailRow(label = "VPN 授权状态", value = "已授权", trailing = "查看", trailingClickable = onOpenPermission)
+                DetailRow(label = "VPN 授权状态", value = uiText("已授权"), trailing = uiText("查看"), trailingClickable = onOpenPermission)
                 Spacer(modifier = Modifier.height(12.dp))
-                DetailRow(label = "兼容平台", value = "Android · arm64-v8a / amd64", trailing = "已匹配")
+                DetailRow(label = "兼容平台", value = "Android · arm64-v8a / amd64", trailing = uiText("已匹配"))
             }
         }
     }
 }
-

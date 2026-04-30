@@ -118,7 +118,7 @@ internal fun GroupSectionCard(
                 }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = section.group.name,
+                        text = uiText(section.group.name),
                         color = if (containsSelectedServer) headerAccent else TextPrimary,
                         fontSize = TypeScale.Body,
                         lineHeight = TypeScale.BodyLine,
@@ -128,11 +128,11 @@ internal fun GroupSectionCard(
                     )
                     Text(
                         text = buildString {
-                            append(if (section.group.type == ServerGroupType.Subscription) "订阅组" else "Local")
-                            append(" · ${section.servers.size} 个")
-                            append(" · ${section.group.updatedAt}")
+                            append(if (section.group.type == ServerGroupType.Subscription) uiText("订阅组") else "Local")
+                            append(" · ${uiText("${section.servers.size} 个节点", "${section.servers.size} nodes")}")
+                            append(" · ${uiText(section.group.updatedAt)}")
                             if (section.hiddenUnsupportedNodeCount > 0) {
-                                append(" · 已隐藏 ${section.hiddenUnsupportedNodeCount} 个")
+                                append(" · ${uiText("已隐藏 ${section.hiddenUnsupportedNodeCount} 个", "${section.hiddenUnsupportedNodeCount} hidden")}")
                             }
                         },
                         color = TextSecondary,
@@ -185,7 +185,7 @@ internal fun GroupSectionCard(
                 )
                 if (section.hiddenUnsupportedNodeCount > 0) {
                     Text(
-                        text = "已隐藏 ${section.hiddenUnsupportedNodeCount} 个暂不支持节点。",
+                        text = uiText("已隐藏 ${section.hiddenUnsupportedNodeCount} 个暂不支持节点。"),
                         color = TextSecondary,
                         fontSize = TypeScale.Meta,
                         lineHeight = TypeScale.MetaLine,
@@ -194,7 +194,7 @@ internal fun GroupSectionCard(
                 }
                 if (section.servers.isEmpty()) {
                     Text(
-                        text = if (section.group.type == ServerGroupType.Local) {
+                        text = uiText(if (section.group.type == ServerGroupType.Local) {
                             if (section.hiddenUnsupportedNodeCount > 0) {
                                 "Local group 目前没有可显示节点。"
                             } else {
@@ -206,7 +206,7 @@ internal fun GroupSectionCard(
                             } else {
                                 "这个订阅组当前没有匹配到节点。"
                             }
-                        },
+                        }),
                         color = TextSecondary,
                         fontSize = TypeScale.Meta,
                         lineHeight = TypeScale.MetaLine,

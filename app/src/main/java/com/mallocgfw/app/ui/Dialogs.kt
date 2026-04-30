@@ -41,19 +41,19 @@ internal fun ConfirmDeleteDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(title, fontWeight = FontWeight.ExtraBold)
+            Text(uiText(title), fontWeight = FontWeight.ExtraBold)
         },
         text = {
-            Text(message, color = TextSecondary)
+            Text(uiText(message), color = TextSecondary)
         },
         confirmButton = {
             TextButton(onClick = onConfirm) {
-                Text(confirmText, color = Error, fontWeight = FontWeight.Bold)
+                Text(uiText(confirmText), color = Error, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text(uiText("取消"))
             }
         },
         containerColor = SurfaceHigh,
@@ -75,7 +75,7 @@ internal fun DnsSettingsDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text("自定义 DNS", fontWeight = FontWeight.ExtraBold)
+            Text(uiText("自定义 DNS"), fontWeight = FontWeight.ExtraBold)
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -117,12 +117,12 @@ internal fun DnsSettingsDialog(
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(dnsMode, customDns) }) {
-                Text("保存", color = Primary, fontWeight = FontWeight.Bold)
+                Text(uiText("保存"), color = Primary, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text(uiText("取消"))
             }
         },
         containerColor = SurfaceHigh,
@@ -142,7 +142,7 @@ internal fun LogLevelDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text("日志级别", fontWeight = FontWeight.ExtraBold)
+            Text(uiText("日志级别"), fontWeight = FontWeight.ExtraBold)
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -158,12 +158,12 @@ internal fun LogLevelDialog(
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(pendingLevel) }) {
-                Text("保存", color = Primary, fontWeight = FontWeight.Bold)
+                Text(uiText("保存"), color = Primary, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text(uiText("取消"))
             }
         },
         containerColor = SurfaceHigh,
@@ -187,19 +187,22 @@ internal fun HeartbeatIntervalDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text("备用节点心跳", fontWeight = FontWeight.ExtraBold)
+            Text(uiText("备用节点心跳"), fontWeight = FontWeight.ExtraBold)
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    text = "连接后按间隔检测当前节点；连续 3 次失败时自动切换到备用节点。",
+                    text = uiText(
+                        "连接后按间隔检测当前节点；连续 3 次失败时自动切换到备用节点。",
+                        "Checks the active node after connection. Switches to the fallback after 3 failures.",
+                    ),
                     color = TextSecondary,
                     fontSize = TypeScale.Body,
                     lineHeight = TypeScale.BodyLine,
                 )
                 HeartbeatIntervalOptionsMinutes.forEach { minutes ->
                     ModeChip(
-                        text = "$minutes 分钟",
+                        text = uiText("$minutes 分钟", "$minutes min"),
                         selected = pendingMinutes == minutes,
                     ) {
                         pendingMinutes = minutes
@@ -209,12 +212,12 @@ internal fun HeartbeatIntervalDialog(
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(pendingMinutes) }) {
-                Text("保存", color = Primary, fontWeight = FontWeight.Bold)
+                Text(uiText("保存"), color = Primary, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text(uiText("取消"))
             }
         },
         containerColor = SurfaceHigh,
@@ -241,7 +244,10 @@ internal fun VpnMtuDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    text = "不清楚就保留 1400。较低 MTU 可减少移动网、PPPoE 和 QUIC 节点出现加载到一半卡住的问题；修改后需要重连 VPN 生效。",
+                    text = uiText(
+                        "不清楚就保留 1400。较低 MTU 可减少移动网、PPPoE 和 QUIC 节点出现加载到一半卡住的问题；修改后需要重连 VPN 生效。",
+                        "Keep 1400 if unsure. Lower MTU can reduce half-loaded pages on mobile, PPPoE, and QUIC links. Reconnect VPN to apply.",
+                    ),
                     color = TextSecondary,
                     fontSize = TypeScale.Body,
                     lineHeight = TypeScale.BodyLine,
@@ -249,13 +255,13 @@ internal fun VpnMtuDialog(
                 AppVpnMtuOptions.forEach { mtu ->
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         ModeChip(
-                            text = if (mtu == 1400) "$mtu 推荐" else mtu.toString(),
+                            text = if (mtu == 1400) uiText("$mtu 推荐", "$mtu Recommended") else mtu.toString(),
                             selected = pendingMtu == mtu,
                         ) {
                             pendingMtu = mtu
                         }
                         Text(
-                            text = vpnMtuOptionHint(mtu),
+                            text = uiText(vpnMtuOptionHint(mtu)),
                             color = TextSecondary,
                             fontSize = TypeScale.Meta,
                             lineHeight = TypeScale.MetaLine,
@@ -266,12 +272,12 @@ internal fun VpnMtuDialog(
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(pendingMtu) }) {
-                Text("保存", color = Primary, fontWeight = FontWeight.Bold)
+                Text(uiText("保存"), color = Primary, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text(uiText("取消"))
             }
         },
         containerColor = SurfaceHigh,

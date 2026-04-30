@@ -114,7 +114,7 @@ internal fun RulesScreen(
                         onToggle = { onGlobalProxyChange(!globalProxyEnabled) },
                     )
                     Text(
-                        text = "开启后会忽略规则源、流媒体分流和 CN 直连规则；局域网、私有地址仍直连，其余 TCP 与 UDP 流量走当前节点。",
+                        text = uiText("开启后会忽略规则源、流媒体分流和 CN 直连规则；局域网、私有地址仍直连，其余 TCP 与 UDP 流量走当前节点。"),
                         color = TextSecondary,
                         fontSize = TypeScale.Meta,
                         lineHeight = TypeScale.MetaLine,
@@ -216,14 +216,14 @@ internal fun RulesScreen(
                 onDismissRequest = { showAddRuleMenu = false },
             ) {
                 DropdownMenuItem(
-                    text = { Text("手动文本规则") },
+                    text = { Text(uiText("手动文本规则")) },
                     onClick = {
                         showAddRuleMenu = false
                         onAddTextSource()
                     },
                 )
                 DropdownMenuItem(
-                    text = { Text("添加规则 URL") },
+                    text = { Text(uiText("添加规则 URL")) },
                     onClick = {
                         showAddRuleMenu = false
                         onAddSource()
@@ -274,17 +274,17 @@ internal fun RuleSourceDetailScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Eyebrow("规则类型")
                         Text(
-                            summary?.metadata?.type?.displayName() ?: "--",
+                            uiText(summary?.metadata?.type?.displayName() ?: "--"),
                             fontSize = TypeScale.CardTitle,
                             lineHeight = TypeScale.CardTitleLine,
                             fontWeight = FontWeight.ExtraBold,
                         )
                         Text(
-                            if (summary?.metadata?.sourceKind == RuleSourceKind.LocalText) {
+                            uiText(if (summary?.metadata?.sourceKind == RuleSourceKind.LocalText) {
                                 "本地文本规则"
                             } else {
                                 summary?.metadata?.url ?: "暂无 URL"
-                            },
+                            }),
                             color = TextSecondary,
                             modifier = Modifier.padding(top = 8.dp),
                             maxLines = 2,
@@ -319,22 +319,22 @@ internal fun RuleSourceDetailScreen(
                 DetailRow(
                     label = if (summary?.metadata?.sourceKind == RuleSourceKind.LocalText) "规则内容" else "完整 URL",
                     value = if (summary?.metadata?.sourceKind == RuleSourceKind.LocalText) {
-                        summary.metadata.content.lineSequence().firstOrNull { it.isNotBlank() } ?: "暂无"
+                        summary.metadata.content.lineSequence().firstOrNull { it.isNotBlank() } ?: uiText("暂无")
                     } else {
-                        summary?.fullUrl ?: "暂无"
+                        summary?.fullUrl ?: uiText("暂无")
                     },
                     trailing = summary?.metadata?.type?.displayName() ?: "--",
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 DetailRow(
                     label = "域名规则",
-                    value = "${summary?.domainRuleCount ?: 0} 条",
+                    value = uiText("${summary?.domainRuleCount ?: 0} 条", "${summary?.domainRuleCount ?: 0} rules"),
                     trailing = "IP ${summary?.ipRuleCount ?: 0}",
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 DetailRow(
                     label = "最近错误",
-                    value = summary?.metadata?.lastError ?: "最近一次更新没有错误。",
+                    value = summary?.metadata?.lastError ?: uiText("最近一次更新没有错误。"),
                     trailing = if (summary?.metadata?.systemDefault == true) "系统内置" else "用户添加",
                 )
             }
@@ -443,19 +443,19 @@ internal fun AddRuleSourceScreen(
             item {
                 SurfaceCard {
                     Text(
-                        text = "编写规则",
+                        text = uiText("编写规则"),
                         fontSize = TypeScale.Body,
                         lineHeight = TypeScale.BodyLine,
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = "每行一条规则：规则类型,匹配内容,策略。支持 DOMAIN-SUFFIX、DOMAIN、DOMAIN-KEYWORD、URL-REGEX、IP-CIDR、IP-CIDR6、GEOIP。策略支持 DIRECT、PROXY、REJECT，也可以用下方节点菜单插入 NODE 策略。IP 规则可追加 no-resolve。",
+                        text = uiText("每行一条规则：规则类型,匹配内容,策略。支持 DOMAIN-SUFFIX、DOMAIN、DOMAIN-KEYWORD、URL-REGEX、IP-CIDR、IP-CIDR6、GEOIP。策略支持 DIRECT、PROXY、REJECT，也可以用下方节点菜单插入 NODE 策略。IP 规则可追加 no-resolve。"),
                         color = TextSecondary,
                         modifier = Modifier.padding(top = 8.dp),
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = "示例：\nDOMAIN-SUFFIX,openai.com,PROXY\nDOMAIN-SUFFIX,apple.com,DIRECT\nGEOIP,CN,DIRECT,no-resolve\nURL-REGEX,^(.+\\.)?example\\.com$,REJECT",
+                        text = uiText("示例：\nDOMAIN-SUFFIX,openai.com,PROXY\nDOMAIN-SUFFIX,apple.com,DIRECT\nGEOIP,CN,DIRECT,no-resolve\nURL-REGEX,^(.+\\.)?example\\.com$,REJECT"),
                         color = TextSecondary,
                     )
                 }
@@ -539,7 +539,7 @@ internal fun AddRuleSourceScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Text(
-                        text = "选择节点会把可识别的 NODE 策略插入到光标位置。订阅刷新后会优先按稳定节点信息重新绑定；找不到节点时默认走 PROXY。",
+                        text = uiText("选择节点会把可识别的 NODE 策略插入到光标位置。订阅刷新后会优先按稳定节点信息重新绑定；找不到节点时默认走 PROXY。"),
                         color = TextSecondary,
                         fontSize = TypeScale.Meta,
                         lineHeight = TypeScale.MetaLine,
@@ -547,7 +547,10 @@ internal fun AddRuleSourceScreen(
                     )
                     if (missingNodeLabels.isNotEmpty()) {
                         Text(
-                            text = "以下节点不存在，命中后将默认走代理，建议重新绑定：${missingNodeLabels.joinToString("、")}",
+                            text = uiText(
+                                "以下节点不存在，命中后将默认走代理，建议重新绑定：${missingNodeLabels.joinToString("、")}",
+                                "Missing nodes will use PROXY by default. Rebind them: ${missingNodeLabels.joinToString(", ")}",
+                            ),
                             color = Error,
                             modifier = Modifier.padding(top = 10.dp),
                         )
@@ -683,7 +686,7 @@ private fun NodePolicyPickerDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text("选择策略节点", fontWeight = FontWeight.ExtraBold)
+            Text(uiText("选择策略节点"), fontWeight = FontWeight.ExtraBold)
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -709,14 +712,14 @@ private fun NodePolicyPickerDialog(
                     ),
                 )
                 Text(
-                    text = "点击节点后会插入可长期识别的 NODE 策略。",
+                    text = uiText("点击节点后会插入可长期识别的 NODE 策略。"),
                     color = TextSecondary,
                     fontSize = TypeScale.Meta,
                     lineHeight = TypeScale.MetaLine,
                 )
                 if (filteredServers.isEmpty()) {
                     Text(
-                        text = "没有匹配的节点。",
+                        text = uiText("没有匹配的节点。"),
                         color = TextSecondary,
                         modifier = Modifier.padding(vertical = 16.dp),
                     )
@@ -739,7 +742,7 @@ private fun NodePolicyPickerDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("关闭", color = Primary, fontWeight = FontWeight.Bold)
+                Text(uiText("关闭"), color = Primary, fontWeight = FontWeight.Bold)
             }
         },
         containerColor = SurfaceHigh,
@@ -771,7 +774,7 @@ private fun NodePolicyPickerRow(
             overflow = TextOverflow.Ellipsis,
         )
         Text(
-            text = server.policyNodeSubtitle(),
+            text = uiText(server.policyNodeSubtitle()),
             color = TextSecondary,
             fontSize = TypeScale.Meta,
             lineHeight = TypeScale.MetaLine,
@@ -812,7 +815,7 @@ private fun RuleTextAutocompleteBar(
     if (suggestions.isEmpty()) return
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-            text = "自动补全",
+            text = uiText("自动补全"),
             color = TextSecondary,
             fontSize = TypeScale.Meta,
             lineHeight = TypeScale.MetaLine,

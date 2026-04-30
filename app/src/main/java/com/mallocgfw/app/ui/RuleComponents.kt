@@ -49,14 +49,14 @@ internal fun RuleSourceSectionHeader(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
-            text = title,
+            text = uiText(title),
             fontSize = TypeScale.CardTitle,
             lineHeight = TypeScale.CardTitleLine,
             fontWeight = FontWeight.Bold,
             color = TextPrimary,
         )
         Text(
-            text = subtitle,
+            text = uiText(subtitle),
             color = TextSecondary,
             fontSize = TypeScale.Meta,
             lineHeight = TypeScale.MetaLine,
@@ -106,7 +106,7 @@ internal fun RuleSourceCard(
                 }
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = source.name,
+                    text = uiText(source.name),
                     fontSize = TypeScale.Body,
                     lineHeight = TypeScale.BodyLine,
                     fontWeight = FontWeight.Bold,
@@ -114,11 +114,11 @@ internal fun RuleSourceCard(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = if (source.sourceKind == RuleSourceKind.LocalText) {
+                    text = uiText(if (source.sourceKind == RuleSourceKind.LocalText) {
                         "手动输入 Shadowrocket / Surge 文本规则"
                     } else {
                         source.url
-                    },
+                    }),
                     color = TextSecondary,
                     modifier = Modifier.padding(top = 3.dp),
                     fontSize = TypeScale.Meta,
@@ -128,7 +128,7 @@ internal fun RuleSourceCard(
                 )
                 if (source.sourceKind != RuleSourceKind.LocalText) {
                     Text(
-                        text = "最近更新时间：${source.updatedAt}",
+                        text = uiText("最近更新时间：${source.updatedAt}"),
                         color = TextSecondary,
                         modifier = Modifier.padding(top = 2.dp),
                         fontSize = TypeScale.Tiny,
@@ -155,7 +155,10 @@ internal fun RuleSourceCard(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
-                text = "共 ${source.totalRules} 条 · 已转换 ${source.convertedRules} 条 · 跳过 ${source.skippedRules} 条",
+                text = uiText(
+                    "共 ${source.totalRules} 条 · 已转换 ${source.convertedRules} 条 · 跳过 ${source.skippedRules} 条",
+                    "${source.totalRules} rules · ${source.convertedRules} converted · ${source.skippedRules} skipped",
+                ),
                 color = TextSecondary,
                 fontSize = TypeScale.Tiny,
                 lineHeight = TypeScale.TinyLine,
@@ -169,7 +172,7 @@ internal fun RuleSourceCard(
                 )
                 {
                     Text(
-                        text = if (updating) "处理中…" else "立即更新",
+                        text = uiText(if (updating) "处理中…" else "立即更新"),
                         color = Primary,
                         fontWeight = FontWeight.Bold,
                         fontSize = TypeScale.Meta,
@@ -202,7 +205,7 @@ internal fun GeoDataCard(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     StatusPill(
-                        text = "基础资源",
+                        text = uiText("基础资源"),
                         color = Primary,
                         background = Primary.copy(alpha = 0.14f),
                     )
@@ -210,20 +213,20 @@ internal fun GeoDataCard(
                 }
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "Geo 数据更新",
+                    text = uiText("Geo 数据更新"),
                     fontSize = TypeScale.CardTitle,
                     lineHeight = TypeScale.CardTitleLine,
                     fontWeight = FontWeight.ExtraBold,
                 )
                 Text(
-                    text = "当前来源：${snapshot.sourceLabel}",
+                    text = uiText("当前来源：${snapshot.sourceLabel}", "Source: ${snapshot.sourceLabel}"),
                     color = TextSecondary,
                     fontSize = TypeScale.Body,
                     lineHeight = TypeScale.BodyLine,
                     modifier = Modifier.padding(top = 8.dp),
                 )
                 Text(
-                    text = "最近更新时间：${snapshot.updatedAt}",
+                    text = uiText("最近更新时间：${snapshot.updatedAt}", "Updated: ${snapshot.updatedAt}"),
                     color = TextSecondary,
                     fontSize = TypeScale.Body,
                     lineHeight = TypeScale.BodyLine,
@@ -232,10 +235,10 @@ internal fun GeoDataCard(
             }
             StatusPill(
                 text = when {
-                    updating -> "更新中"
-                    snapshot.status == GeoDataStatus.Ready -> "已就绪"
-                    snapshot.status == GeoDataStatus.Failed -> "失败"
-                    else -> "内置"
+                    updating -> uiText("更新中")
+                    snapshot.status == GeoDataStatus.Ready -> uiText("已就绪")
+                    snapshot.status == GeoDataStatus.Failed -> uiText("失败")
+                    else -> uiText("内置")
                 },
                 color = when {
                     updating -> Primary
@@ -273,7 +276,7 @@ internal fun GeoDataCard(
             horizontalArrangement = Arrangement.End,
         ) {
             Text(
-                text = if (updating) "处理中…" else "更新资源",
+                text = if (updating) uiText("处理中…") else uiText("更新资源"),
                 color = Primary,
                 fontWeight = FontWeight.Bold,
                 fontSize = TypeScale.Body,
@@ -288,14 +291,14 @@ internal fun GeoDataCard(
 internal fun EmptyRulesCard() {
     SurfaceCard(compact = true) {
         Text(
-            text = "还没有自定义规则源",
+            text = uiText("还没有自定义规则源"),
             fontSize = TypeScale.Body,
             lineHeight = TypeScale.BodyLine,
             fontWeight = FontWeight.Bold,
             color = TextPrimary,
         )
         Text(
-            text = "可继续使用系统默认规则。",
+            text = uiText("可继续使用系统默认规则。"),
             color = TextSecondary,
             fontSize = TypeScale.Meta,
             lineHeight = TypeScale.MetaLine,
@@ -327,7 +330,7 @@ internal fun AddRuleFab(
                 modifier = Modifier.size(19.dp),
             )
             Text(
-                "添加规则",
+                uiText("添加规则"),
                 color = AccentContentColor,
                 fontWeight = FontWeight.Bold,
                 fontSize = TypeScale.Body,

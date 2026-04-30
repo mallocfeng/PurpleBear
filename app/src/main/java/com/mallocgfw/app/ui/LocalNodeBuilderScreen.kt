@@ -610,7 +610,7 @@ internal fun compactInputTextStyle(): TextStyle = TextStyle(
 @Composable
 internal fun CompactInputLabel(text: String) {
     Text(
-        text = text,
+        text = uiText(text),
         fontSize = TypeScale.Tiny,
         lineHeight = TypeScale.TinyLine,
         maxLines = 1,
@@ -621,7 +621,7 @@ internal fun CompactInputLabel(text: String) {
 @Composable
 internal fun CompactInputPlaceholder(text: String) {
     Text(
-        text = text,
+        text = uiText(text),
         fontSize = TypeScale.Meta,
         lineHeight = TypeScale.MetaLine,
         maxLines = 1,
@@ -810,7 +810,7 @@ internal fun PrefillLinkDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("从分享链接预填", fontWeight = FontWeight.ExtraBold) },
+        title = { Text(uiText("从分享链接预填"), fontWeight = FontWeight.ExtraBold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
@@ -840,12 +840,12 @@ internal fun PrefillLinkDialog(
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(value) }) {
-                Text("预填", color = Primary, fontWeight = FontWeight.Bold)
+                Text(uiText("预填"), color = Primary, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text(uiText("取消"))
             }
         },
         containerColor = SurfaceHigh,
@@ -853,4 +853,3 @@ internal fun PrefillLinkDialog(
         textContentColor = TextSecondary,
     )
 }
-

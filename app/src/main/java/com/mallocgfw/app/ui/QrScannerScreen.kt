@@ -135,11 +135,10 @@ internal fun QrScannerScreen(
                 )
                 Spacer(modifier = Modifier.height(14.dp))
                 Text(
-                    text = "本地识别。",
+                    text = uiText("本地识别。"),
                     color = TextSecondary,
                 )
             }
         }
     }
 }
-

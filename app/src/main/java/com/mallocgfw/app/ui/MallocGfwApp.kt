@@ -34,6 +34,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -63,6 +64,7 @@ import com.mallocgfw.app.model.AppStateStore
 import com.mallocgfw.app.model.ConnectionStatus
 import com.mallocgfw.app.model.ImportParser
 import com.mallocgfw.app.model.ImportPreview
+import com.mallocgfw.app.model.AppLanguage
 import com.mallocgfw.app.model.LocalNodeDraft
 import com.mallocgfw.app.model.MainTab
 import com.mallocgfw.app.model.ManualNodeFactory
@@ -523,6 +525,15 @@ fun MallocGfwApp(
 
     fun toggleThemeMode() {
         appSettings = appSettings.copy(lightThemeEnabled = !appSettings.lightThemeEnabled)
+    }
+
+    fun updateLanguage(language: AppLanguage) {
+        if (appSettings.language == language) return
+        appSettings = appSettings.copy(language = language)
+        settingsMessage = when (language.resolveAppLanguage()) {
+            ResolvedLanguage.Chinese -> "界面语言已更新。"
+            ResolvedLanguage.English -> "Language updated."
+        }
     }
 
     fun updateStreamingRoutingEnabled(enabled: Boolean) {
@@ -1802,13 +1813,18 @@ fun MallocGfwApp(
     if (startupHiddenUnsupportedNodeCount > 0 && screen != AppScreen.Launch) {
         AlertDialog(
             onDismissRequest = { startupHiddenUnsupportedNodeCount = 0 },
-            title = { Text("已隐藏不支持节点") },
+            title = { Text(uiText("已隐藏不支持节点")) },
             text = {
-                Text("启动时已自动隐藏 $startupHiddenUnsupportedNodeCount 个 REALITY + gRPC 节点，这类线路当前版本暂不支持。")
+                Text(
+                    uiText(
+                        "启动时已自动隐藏 $startupHiddenUnsupportedNodeCount 个 REALITY + gRPC 节点，这类线路当前版本暂不支持。",
+                        "$startupHiddenUnsupportedNodeCount unsupported REALITY + gRPC nodes were hidden at launch.",
+                    ),
+                )
             },
             confirmButton = {
                 TextButton(onClick = { startupHiddenUnsupportedNodeCount = 0 }) {
-                    Text("知道了")
+                    Text(uiText("知道了"))
                 }
             },
         )
@@ -1893,6 +1909,9 @@ fun MallocGfwApp(
 
     BackHandler(enabled = blockingReconnectInFlight) {}
 
+    val resolvedLanguage = appSettings.language.resolveAppLanguage()
+
+    CompositionLocalProvider(LocalAppLanguage provides resolvedLanguage) {
     MallocGfwTheme(lightTheme = appSettings.lightThemeEnabled) {
         Surface(color = Background, modifier = Modifier.fillMaxSize()) {
             Box(modifier = Modifier.fillMaxSize()) {
@@ -2180,29 +2199,42 @@ fun MallocGfwApp(
                         syncInFlight = syncInFlight,
                         message = settingsMessage,
                         onBack = ::onBack,
+                        onLanguageChange = ::updateLanguage,
                         onAutoConnectChange = { enabled ->
                             appSettings = appSettings.copy(autoConnectOnLaunch = enabled)
-                            settingsMessage = if (enabled) "已开启启动后自动连接。" else "已关闭启动后自动连接。"
+                            settingsMessage = if (enabled) {
+                                appText("已开启启动后自动连接。", "Auto connect enabled.", resolvedLanguage)
+                            } else {
+                                appText("已关闭启动后自动连接。", "Auto connect disabled.", resolvedLanguage)
+                            }
                         },
                         onAutoReconnectChange = { enabled ->
                             appSettings = appSettings.copy(autoReconnect = enabled)
-                            settingsMessage = if (enabled) "已开启断线自动重连。" else "已关闭断线自动重连。"
+                            settingsMessage = if (enabled) {
+                                appText("已开启断线自动重连。", "Auto reconnect enabled.", resolvedLanguage)
+                            } else {
+                                appText("已关闭断线自动重连。", "Auto reconnect disabled.", resolvedLanguage)
+                            }
                         },
                         onHeartbeatIntervalChange = { minutes ->
                             appSettings = appSettings.copy(heartbeatIntervalMinutes = minutes)
-                            settingsMessage = "心跳检测间隔已设置为 $minutes 分钟。"
+                            settingsMessage = appText("心跳检测间隔已设置为 $minutes 分钟。", "Fallback check interval set to $minutes minutes.", resolvedLanguage)
                         },
                         onVpnMtuChange = ::updateVpnMtu,
                         onDailyAutoUpdateChange = { enabled ->
                             appSettings = appSettings.copy(dailyAutoUpdate = enabled)
-                            settingsMessage = if (enabled) "已开启每日自动更新。仅在非计费网络下执行。" else "已关闭每日自动更新。"
+                            settingsMessage = if (enabled) {
+                                appText("已开启每日自动更新。仅在非计费网络下执行。", "Daily updates enabled on unmetered networks.", resolvedLanguage)
+                            } else {
+                                appText("已关闭每日自动更新。", "Daily updates disabled.", resolvedLanguage)
+                            }
                         },
                         onUpdateNotificationsChange = ::setUpdateNotificationsEnabled,
                         onSyncNow = ::syncAllResources,
                         onDnsChange = ::updateDnsSettings,
                         onLogLevelChange = { level ->
                             appSettings = appSettings.copy(logLevel = level)
-                            settingsMessage = "日志级别已切换为 ${level.displayName}。"
+                            settingsMessage = appText("日志级别已切换为 ${level.displayName}。", "Log level changed to ${level.displayName}.", resolvedLanguage)
                         },
                         onAddQuickSettingsTile = ::requestQuickSettingsTile,
                         onViewLogs = ::openLogViewer,
@@ -2390,14 +2422,18 @@ fun MallocGfwApp(
                                 strokeWidth = 3.dp,
                             )
                             Text(
-                                text = "正在重新连接",
+                                text = uiText("正在重新连接"),
                                 color = TextPrimary,
                                 fontSize = TypeScale.SectionTitle,
                                 lineHeight = TypeScale.SectionTitleLine,
                                 fontWeight = FontWeight.Bold,
                             )
                             Text(
-                                text = blockingReconnectMessage ?: "正在重新连接 VPN 并应用新的流媒体分流设置，请稍候…",
+                                text = blockingReconnectMessage
+                                    ?: uiText(
+                                        "正在重新连接 VPN 并应用新的流媒体分流设置，请稍候…",
+                                        "Reconnecting VPN to apply changes. Please wait...",
+                                    ),
                                 color = TextSecondary,
                                 fontSize = TypeScale.Body,
                                 lineHeight = TypeScale.BodyLine,
@@ -2422,5 +2458,6 @@ fun MallocGfwApp(
                 }
             }
         }
+    }
     }
 }

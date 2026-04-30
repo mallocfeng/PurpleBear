@@ -96,7 +96,7 @@ internal fun ModeChip(
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 10.dp),
     ) {
-        Text(text, color = TextPrimary, fontWeight = FontWeight.Bold)
+        Text(uiText(text), color = TextPrimary, fontWeight = FontWeight.Bold, maxLines = 1)
     }
 }
 

@@ -80,7 +80,7 @@ internal fun LaunchScreen(onSkip: () -> Unit) {
             .padding(horizontal = 24.dp, vertical = 16.dp),
     ) {
         Text(
-            text = "跳过",
+            text = uiText("跳过"),
             color = TextSecondary,
             modifier = Modifier
                 .align(Alignment.TopEnd)
@@ -118,7 +118,7 @@ internal fun LaunchScreen(onSkip: () -> Unit) {
                 )
             }
             Text(
-                text = "安全、稳定、私密的 Xray 代理",
+                text = uiText("安全、稳定、私密的 Xray 代理"),
                 color = TextSecondary,
                 modifier = Modifier.padding(top = 12.dp),
             )
@@ -143,7 +143,7 @@ internal fun LaunchScreen(onSkip: () -> Unit) {
                 )
             }
             Text(
-                text = "初始化安全隧道、订阅源与诊断模块…",
+                text = uiText("初始化安全隧道、订阅源与诊断模块…"),
                 color = Secondary,
                 modifier = Modifier.padding(top = 16.dp),
             )
@@ -173,7 +173,7 @@ internal fun OnboardingScreen(
             .padding(horizontal = 24.dp, vertical = 16.dp),
     ) {
         Text(
-            text = "跳过",
+            text = uiText("跳过"),
             color = TextSecondary,
             modifier = Modifier
                 .align(Alignment.TopEnd)
@@ -207,14 +207,14 @@ internal fun OnboardingScreen(
                             .border(1.dp, ControlSurfaceTrackColor, RoundedCornerShape(24.dp)),
                     )
                     FloatingTag(
-                        text = "隐私至上",
+                        text = uiText("隐私至上"),
                         icon = Icons.Rounded.Security,
                         modifier = Modifier
                             .align(Alignment.TopStart)
                             .padding(start = 18.dp, top = 34.dp),
                     )
                     FloatingTag(
-                        text = "简单易用",
+                        text = uiText("简单易用"),
                         icon = Icons.Rounded.Bolt,
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
@@ -224,7 +224,7 @@ internal fun OnboardingScreen(
             }
             Spacer(modifier = Modifier.height(32.dp))
             Text(
-                text = "守护你的数字足迹",
+                text = uiText("守护你的数字足迹"),
                 fontSize = TypeScale.PageTitle,
                 lineHeight = TypeScale.PageTitleLine,
                 fontWeight = FontWeight.ExtraBold,
@@ -232,7 +232,7 @@ internal fun OnboardingScreen(
                 textAlign = TextAlign.Center,
             )
             Text(
-                text = "一键开启加密隧道。",
+                text = uiText("一键开启加密隧道。"),
                 color = TextSecondary,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 14.dp),
@@ -307,4 +307,3 @@ internal fun PermissionScreen(
         }
     }
 }
-

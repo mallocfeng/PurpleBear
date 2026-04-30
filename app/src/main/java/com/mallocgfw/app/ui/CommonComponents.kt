@@ -96,18 +96,18 @@ internal fun DiagnosticCard(step: DiagnosticStep) {
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = step.title,
+                    text = uiText(step.title),
                     fontSize = TypeScale.CardTitle,
                     lineHeight = TypeScale.CardTitleLine,
                     fontWeight = FontWeight.ExtraBold,
                 )
-                Text(step.detail, color = TextSecondary, modifier = Modifier.padding(top = 8.dp))
+                Text(uiText(step.detail), color = TextSecondary, modifier = Modifier.padding(top = 8.dp))
             }
             StatusPill(
                 text = when (step.status) {
-                    DiagnosticStatus.Success -> "通过"
-                    DiagnosticStatus.Pending -> "检测中"
-                    DiagnosticStatus.Failed -> "失败"
+                    DiagnosticStatus.Success -> uiText("通过")
+                    DiagnosticStatus.Pending -> uiText("检测中")
+                    DiagnosticStatus.Failed -> uiText("失败")
                 },
                 color = accent,
                 background = accent.copy(alpha = 0.14f),
@@ -157,7 +157,7 @@ internal fun FeatureListRow(action: FeatureAction) {
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 Text(
-                    text = action.title,
+                    text = uiText(action.title),
                     color = TextPrimary,
                     fontSize = TypeScale.ListTitle,
                     lineHeight = TypeScale.ListTitleLine,
@@ -166,7 +166,7 @@ internal fun FeatureListRow(action: FeatureAction) {
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = action.subtitle,
+                    text = uiText(action.subtitle),
                     color = TextSecondary,
                     fontSize = TypeScale.Meta,
                     lineHeight = TypeScale.MetaLine,
@@ -196,14 +196,14 @@ internal fun PromoCard(
             listOf(PromoGradientStartColor, PromoGradientEndColor),
         ),
     ) {
-        Eyebrow("解锁超低延迟")
+        Eyebrow(uiText("解锁超低延迟"))
         Text(
-            text = title,
+            text = uiText(title),
             fontSize = TypeScale.CardTitle,
             lineHeight = TypeScale.CardTitleLine,
             fontWeight = FontWeight.ExtraBold,
         )
-        Text(subtitle, color = TextSecondary, modifier = Modifier.padding(top = 8.dp))
+        Text(uiText(subtitle), color = TextSecondary, modifier = Modifier.padding(top = 8.dp))
         if (buttonText != null) {
             Spacer(modifier = Modifier.height(16.dp))
             PrimaryActionButton(text = buttonText, onClick = onClick)
@@ -218,7 +218,7 @@ internal fun SettingsGroup(
 ) {
     SurfaceCard {
         Text(
-            text = title,
+            text = uiText(title),
             color = TextSecondary,
             fontSize = TypeScale.Meta,
             lineHeight = TypeScale.MetaLine,
@@ -242,12 +242,12 @@ internal fun SettingRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = title,
+                text = uiText(title),
                 fontSize = TypeScale.ListTitle,
                 lineHeight = TypeScale.ListTitleLine,
                 fontWeight = FontWeight.Bold,
             )
-            Text(subtitle, color = TextSecondary)
+            Text(uiText(subtitle), color = TextSecondary)
         }
         TogglePill(checked = checked)
     }
@@ -267,12 +267,12 @@ internal fun SettingToggleRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = title,
+                text = uiText(title),
                 fontSize = TypeScale.ListTitle,
                 lineHeight = TypeScale.ListTitleLine,
                 fontWeight = FontWeight.Bold,
             )
-            Text(subtitle, color = TextSecondary)
+            Text(uiText(subtitle), color = TextSecondary)
         }
         TogglePill(checked = checked, onClick = onToggle)
     }
@@ -293,15 +293,15 @@ internal fun SettingActionRow(
     ) {
         Column(modifier = Modifier.weight(1f).padding(end = 18.dp)) {
             Text(
-                text = title,
+                text = uiText(title),
                 fontSize = TypeScale.ListTitle,
                 lineHeight = TypeScale.ListTitleLine,
                 fontWeight = FontWeight.Bold,
             )
-            Text(subtitle, color = TextSecondary)
+            Text(uiText(subtitle), color = TextSecondary)
         }
         Text(
-            text = actionText,
+            text = uiText(actionText),
             color = if (actionEnabled) Primary else TextSecondary,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.clickable(enabled = actionEnabled, onClick = onAction),
@@ -325,22 +325,22 @@ internal fun SettingDualActionRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = title,
+                text = uiText(title),
                 fontSize = TypeScale.ListTitle,
                 lineHeight = TypeScale.ListTitleLine,
                 fontWeight = FontWeight.Bold,
             )
-            Text(subtitle, color = TextSecondary)
+            Text(uiText(subtitle), color = TextSecondary)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(
-                text = primaryActionText,
+                text = uiText(primaryActionText),
                 color = Primary,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.clickable(onClick = onPrimaryAction),
             )
             Text(
-                text = secondaryActionText,
+                text = uiText(secondaryActionText),
                 color = Primary,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.clickable(onClick = onSecondaryAction),
@@ -356,12 +356,12 @@ internal fun SettingInfoRow(
     ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
-            text = title,
+            text = uiText(title),
             fontSize = TypeScale.ListTitle,
             lineHeight = TypeScale.ListTitleLine,
             fontWeight = FontWeight.Bold,
         )
-        Text(subtitle, color = TextSecondary)
+        Text(uiText(subtitle), color = TextSecondary)
     }
 }
 
@@ -390,10 +390,10 @@ internal fun MediaRoutingServiceRow(
                 lineHeight = TypeScale.ListTitleLine,
                 fontWeight = FontWeight.Bold,
             )
-            Text("${service.subtitle} · ${service.suggestedRegion}", color = TextSecondary)
+            Text("${uiText(service.subtitle)} · ${uiText(service.suggestedRegion)}", color = TextSecondary)
         }
         Text(
-            text = selectedNodeLabel,
+            text = uiText(selectedNodeLabel),
             color = if (enabled) TextPrimary else TextSecondary,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
@@ -425,31 +425,31 @@ internal fun MediaRoutingNodeRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = title,
+                text = uiText(title),
                 fontSize = TypeScale.ListTitle,
                 lineHeight = TypeScale.ListTitleLine,
                 fontWeight = FontWeight.Bold,
                 color = if (enabled) TextPrimary else TextSecondary,
             )
             Text(
-                text = subtitle,
+                text = uiText(subtitle),
                 color = TextSecondary,
             )
         }
         if (selected) {
             StatusPill(
-                text = "已选",
+                text = uiText("已选"),
                 color = Primary,
                 background = Primary.copy(alpha = 0.16f),
             )
         } else if (!enabled) {
             StatusPill(
-                text = disabledLabel,
+                text = uiText(disabledLabel),
                 color = TextSecondary,
                 background = ControlSurfaceTrackColor,
             )
         } else {
-            OutlinedActionChip("选择")
+            OutlinedActionChip(uiText("选择"))
         }
     }
 }
@@ -498,7 +498,7 @@ internal fun SearchField(
                 ) {
                     if (search.isEmpty()) {
                         Text(
-                            text = placeholder,
+                            text = uiText(placeholder),
                             color = TextSecondary,
                             fontSize = TypeScale.Meta,
                             lineHeight = TypeScale.MetaLine,
@@ -523,10 +523,10 @@ internal fun FilterRow(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         listOf(
-            "all" to "所有位置",
-            "asia" to "亚洲",
-            "latency" to "低延迟",
-            "favorites" to "收藏",
+            "all" to uiText("所有位置"),
+            "asia" to uiText("亚洲"),
+            "latency" to uiText("低延迟"),
+            "favorites" to uiText("收藏"),
         ).forEach { (value, label) ->
             FilterChip(
                 selected = filter == value,
@@ -596,7 +596,7 @@ internal fun HomeMetricsCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Eyebrow("连接时长")
+                    Eyebrow(uiText("连接时长"))
                     CompactIconAction(
                         icon = Icons.Rounded.Sync,
                         tint = if (latencyTesting) Primary else TextSecondary,
@@ -619,13 +619,13 @@ internal fun HomeMetricsCard(
                 verticalAlignment = Alignment.Top,
             ) {
                 CompactMetricRow(
-                    label = "节点下载",
+                    label = uiText("节点下载"),
                     value = downloadRate,
                     subtitle = downloadSubtitle,
                     modifier = Modifier.weight(1f),
                 )
                 CompactMetricRow(
-                    label = "节点上传",
+                    label = uiText("节点上传"),
                     value = uploadRate,
                     subtitle = uploadSubtitle,
                     modifier = Modifier.weight(1f),
@@ -646,7 +646,7 @@ internal fun CompactMetricRow(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Eyebrow(label)
+        Eyebrow(uiText(label))
         Text(
             text = value,
             fontSize = TypeScale.Body,
@@ -657,7 +657,7 @@ internal fun CompactMetricRow(
             overflow = TextOverflow.Ellipsis,
         )
         Text(
-            text = subtitle,
+            text = uiText(subtitle),
             color = TextSecondary,
             fontSize = TypeScale.Tiny,
             lineHeight = TypeScale.TinyLine,
@@ -678,12 +678,12 @@ internal fun InfoRow(
             GlassBadge(icon = icon, modifier = Modifier.size(48.dp), innerPadding = 12.dp)
             Column {
                 Text(
-                    text = title,
+                    text = uiText(title),
                     fontSize = TypeScale.CardTitle,
                     lineHeight = TypeScale.CardTitleLine,
                     fontWeight = FontWeight.ExtraBold,
                 )
-                Text(subtitle, color = TextSecondary)
+                Text(uiText(subtitle), color = TextSecondary)
             }
         }
     }
@@ -702,7 +702,7 @@ internal fun DetailRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Eyebrow(label)
+            Eyebrow(uiText(label))
             Text(
                 text = value,
                 fontSize = TypeScale.ListTitle,
@@ -741,14 +741,14 @@ internal fun DetailMenuRow(
     ) {
         Column(modifier = Modifier.weight(1f).padding(end = 18.dp)) {
             Text(
-                text = label,
+                text = uiText(label),
                 color = TextSecondary,
                 fontSize = TypeScale.Meta,
                 lineHeight = TypeScale.MetaLine,
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                text = value,
+                text = uiText(value),
                 fontSize = TypeScale.ListTitle,
                 lineHeight = TypeScale.ListTitleLine,
                 fontWeight = FontWeight.Bold,
@@ -760,7 +760,10 @@ internal fun DetailMenuRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                text = selection,
+                text = when (selection) {
+                    "未设置", "不支持" -> uiText(selection)
+                    else -> selection
+                },
                 color = if (enabled) Primary else TextSecondary,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
@@ -860,7 +863,7 @@ internal fun NoteBox(text: String) {
             .background(ControlSurfaceColor)
             .padding(16.dp),
     ) {
-        Text(text, color = TextSecondary)
+        Text(uiText(text), color = TextSecondary)
     }
 }
 
@@ -886,7 +889,7 @@ internal fun PendingSwitchBanner(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
-                text = "已选中待切换节点",
+                text = uiText("已选中待切换节点"),
                 color = TextPrimary,
                 fontWeight = FontWeight.ExtraBold,
             )
@@ -898,7 +901,7 @@ internal fun PendingSwitchBanner(
             )
         }
         Text(
-            text = "去首页切换",
+            text = uiText("去首页切换"),
             color = Primary,
             fontWeight = FontWeight.ExtraBold,
         )
@@ -1000,7 +1003,7 @@ internal fun CompactPrimaryActionButton(
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                text = text,
+                text = uiText(text),
                 fontSize = TypeScale.Body,
                 lineHeight = TypeScale.BodyLine,
                 fontWeight = FontWeight.Bold,
@@ -1026,7 +1029,7 @@ internal fun CompactOutlinedActionButton(
         contentPadding = PaddingValues(horizontal = 12.dp),
     ) {
         Text(
-            text = text,
+            text = uiText(text),
             fontSize = TypeScale.Body,
             lineHeight = TypeScale.BodyLine,
             fontWeight = FontWeight.Bold,
@@ -1060,7 +1063,7 @@ internal fun PrimaryActionButton(
                 .background(Brush.linearGradient(listOf(Primary, PrimaryStrong))),
             contentAlignment = Alignment.Center,
         ) {
-            Text(text, fontWeight = FontWeight.ExtraBold)
+            Text(uiText(text), fontWeight = FontWeight.ExtraBold)
         }
     }
 }
@@ -1081,7 +1084,7 @@ internal fun OutlinedActionButton(
         colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
         border = BorderStroke(1.dp, Primary.copy(alpha = 0.16f)),
     ) {
-        Text(text, fontWeight = FontWeight.Bold)
+        Text(uiText(text), fontWeight = FontWeight.Bold)
     }
 }
 
@@ -1102,7 +1105,7 @@ internal fun StatusPill(
             ),
     ) {
         Text(
-            text = text,
+            text = uiText(text),
             color = color,
             fontSize = if (compact) TypeScale.Tiny else TypeScale.Meta,
             lineHeight = if (compact) TypeScale.TinyLine else TypeScale.MetaLine,
@@ -1128,7 +1131,7 @@ internal fun OutlinedActionChip(
             ),
     ) {
         Text(
-            text = text,
+            text = uiText(text),
             color = TextPrimary,
             fontWeight = FontWeight.SemiBold,
             fontSize = if (compact) TypeScale.Tiny else TypeScale.Meta,
@@ -1153,7 +1156,7 @@ internal fun DetectActionChip(
             .padding(horizontal = 14.dp, vertical = 9.dp),
     ) {
         Text(
-            text = text,
+            text = uiText(text),
             color = accent,
             fontWeight = FontWeight.Bold,
             fontSize = TypeScale.Meta,
@@ -1304,7 +1307,7 @@ internal fun SmallPill(
     ) {
         Icon(icon, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(16.dp))
         Text(
-            text = text,
+            text = uiText(text),
             color = TextSecondary,
             fontSize = TypeScale.Meta,
             lineHeight = TypeScale.MetaLine,
@@ -1321,7 +1324,7 @@ internal fun ScreenHeader(
 ) {
     Column {
         Text(
-            text = title,
+            text = uiText(title),
             fontSize = TypeScale.PageTitle,
             lineHeight = TypeScale.PageTitleLine,
             fontWeight = FontWeight.ExtraBold,
@@ -1330,7 +1333,7 @@ internal fun ScreenHeader(
             modifier = Modifier.fillMaxWidth(),
         )
         Text(
-            text = subtitle,
+            text = uiText(subtitle),
             color = TextSecondary,
             fontSize = TypeScale.Body,
             lineHeight = TypeScale.BodyLine,
@@ -1345,7 +1348,7 @@ internal fun ScreenHeader(
 @Composable
 internal fun Eyebrow(text: String) {
     Text(
-        text = text,
+        text = uiText(text),
         color = TextSecondary,
         fontSize = TypeScale.Tiny,
         lineHeight = TypeScale.TinyLine,

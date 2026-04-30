@@ -42,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.mallocgfw.app.model.AppDnsMode
+import com.mallocgfw.app.model.AppLanguage
 import com.mallocgfw.app.model.AppLogLevel
 import com.mallocgfw.app.model.AppSettings
 import com.mallocgfw.app.model.ConnectionStatus
@@ -275,6 +276,7 @@ internal fun SettingsScreen(
     onBack: () -> Unit,
     onAutoConnectChange: (Boolean) -> Unit,
     onAutoReconnectChange: (Boolean) -> Unit,
+    onLanguageChange: (AppLanguage) -> Unit,
     onHeartbeatIntervalChange: (Int) -> Unit,
     onVpnMtuChange: (Int) -> Unit,
     onDailyAutoUpdateChange: (Boolean) -> Unit,
@@ -299,17 +301,44 @@ internal fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
-            AppTopBar(title = "设置", subtitle = "偏好与高级", onBack = onBack)
+            AppTopBar(title = uiText("设置"), subtitle = uiText("偏好与高级"), onBack = onBack)
         }
         item {
             ScreenHeader(
-                title = "设置",
-                subtitle = "连接、更新、DNS 与日志。",
+                title = uiText("设置"),
+                subtitle = uiText("连接、更新、DNS 与日志。"),
             )
         }
         if (!message.isNullOrBlank()) {
             item {
                 NoteBox(text = message)
+            }
+        }
+        item {
+            SettingsGroup(title = uiText("语言")) {
+                SettingInfoRow(
+                    title = uiText("界面语言"),
+                    subtitle = when (settings.language) {
+                        AppLanguage.System -> uiText("使用 Android 系统语言。")
+                        AppLanguage.Chinese -> uiText("中文")
+                        AppLanguage.English -> uiText("英文")
+                    },
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ModeChip(
+                        text = uiText("跟随系统"),
+                        selected = settings.language == AppLanguage.System,
+                    ) { onLanguageChange(AppLanguage.System) }
+                    ModeChip(
+                        text = uiText("中文"),
+                        selected = settings.language == AppLanguage.Chinese,
+                    ) { onLanguageChange(AppLanguage.Chinese) }
+                    ModeChip(
+                        text = uiText("English", "English"),
+                        selected = settings.language == AppLanguage.English,
+                    ) { onLanguageChange(AppLanguage.English) }
+                }
             }
         }
         item {
@@ -330,14 +359,20 @@ internal fun SettingsScreen(
                 Spacer(modifier = Modifier.height(12.dp))
                 SettingActionRow(
                     title = "备用节点心跳",
-                    subtitle = settings.heartbeatSummary(),
+                    subtitle = uiText(
+                        settings.heartbeatSummary(),
+                        "Check every ${settings.heartbeatIntervalMinutes.takeIf { it in HeartbeatIntervalOptionsMinutes } ?: 5} min. Switch after 3 failures.",
+                    ),
                     actionText = "设置",
                     onAction = { showHeartbeatDialog = true },
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 SettingActionRow(
                     title = "VPN MTU",
-                    subtitle = settings.vpnMtuSummary(),
+                    subtitle = uiText(
+                        settings.vpnMtuSummary(),
+                        "Current ${com.mallocgfw.app.model.normalizedAppVpnMtu(settings.vpnMtu)}. Lower values can help mobile, PPPoE, and QUIC links.",
+                    ),
                     actionText = "设置",
                     onAction = { showMtuDialog = true },
                 )
@@ -383,14 +418,14 @@ internal fun SettingsScreen(
             SettingsGroup(title = "高级设置") {
                 SettingActionRow(
                     title = "自定义 DNS",
-                    subtitle = "当前 ${settings.dnsSummary()}。",
+                    subtitle = uiText("当前 ${settings.dnsSummary()}。", "Current ${uiText(settings.dnsSummary())}."),
                     actionText = "编辑",
                     onAction = { showDnsDialog = true },
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 SettingDualActionRow(
                     title = "日志级别",
-                    subtitle = "当前 ${settings.logLevel.displayName}。",
+                    subtitle = uiText("当前 ${settings.logLevel.displayName}。", "Current ${settings.logLevel.displayName}."),
                     primaryActionText = "调整",
                     onPrimaryAction = { showLogLevelDialog = true },
                     secondaryActionText = "查看",
@@ -400,12 +435,12 @@ internal fun SettingsScreen(
                 SettingInfoRow(
                     title = "核心资产",
                     subtitle = buildString {
-                        append("官方编译产物 · ")
+                        append(uiText("官方编译产物 · "))
                         append((coreVersion ?: "Xray").trim())
                         append(" · ")
-                        append(coreAbi ?: "未初始化")
+                        append(coreAbi ?: uiText("未初始化"))
                         append(" · ")
-                        append(coreStatus.label())
+                        append(uiText(coreStatus.label()))
                         append('\n')
                         append(systemVersion)
                         append(" · ")
@@ -626,7 +661,7 @@ internal fun MediaRoutingNodePickerScreen(
         item {
             SettingsGroup(title = "可选节点") {
                 if (sections.isEmpty()) {
-                    Text("当前还没有 Local 或订阅节点可选。", color = TextSecondary)
+                    Text(uiText("当前还没有 Local 或订阅节点可选。"), color = TextSecondary)
                 } else {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         sections.forEach { section ->

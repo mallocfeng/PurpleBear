@@ -160,12 +160,12 @@ internal fun BottomNavItem(
     ) {
         Icon(
             icon,
-            contentDescription = label,
+            contentDescription = uiText(label),
             tint = if (selected) SelectedTabForegroundColor else TextSecondary,
             modifier = Modifier.size(26.dp),
         )
         Text(
-            text = label,
+            text = uiText(label),
             color = if (selected) SelectedTabForegroundColor else TextSecondary,
             fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.Bold,
             fontSize = TypeScale.Meta,
@@ -333,14 +333,14 @@ internal fun AppTopBar(
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 if (subtitle != null) {
                     Text(
-                        text = subtitle,
+                        text = uiText(subtitle),
                         color = TextSecondary,
                         fontSize = TypeScale.Tiny,
                         lineHeight = TypeScale.TinyLine,
                     )
                 }
                 Text(
-                    text = title,
+                    text = uiText(title),
                     color = TextPrimary,
                     fontSize = TypeScale.ListTitle,
                     lineHeight = TypeScale.ListTitleLine,
@@ -387,15 +387,15 @@ internal fun HeroOverviewCard(
             verticalAlignment = Alignment.Top,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Eyebrow("状态总览")
+                Eyebrow(uiText("状态总览"))
                 Text(
-                    text = connectionStatus.statusHeadline(),
+                    text = uiText(connectionStatus.statusHeadline()),
                     fontSize = TypeScale.SectionTitle,
                     lineHeight = TypeScale.SectionTitleLine,
                     fontWeight = FontWeight.ExtraBold,
                 )
                 Text(
-                    text = connectionStatus.statusDescription(),
+                    text = uiText(connectionStatus.statusDescription()),
                     color = TextSecondary,
                     fontSize = TypeScale.Body,
                     lineHeight = TypeScale.BodyLine,
@@ -418,20 +418,20 @@ internal fun HeroOverviewCard(
         Spacer(modifier = Modifier.height(18.dp))
         Column(verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxWidth()) {
             InfoMini(
-                label = "当前节点",
+                label = uiText("当前节点"),
                 value = currentRouteLabel,
                 modifier = Modifier.fillMaxWidth(),
                 maxLines = 2,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.fillMaxWidth()) {
                 InfoMini(
-                    label = "模式",
-                    value = proxyModeText(proxyMode),
+                    label = uiText("模式"),
+                    value = uiText(proxyModeText(proxyMode)),
                     modifier = Modifier.weight(1f),
                 )
                 InfoMini(
-                    label = "核心版本",
-                    value = coreVersion ?: "初始化中",
+                    label = uiText("核心版本"),
+                    value = coreVersion ?: uiText("初始化中"),
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -456,15 +456,15 @@ internal fun ServerCard(
     val highlightedFallback = fallbackConfigured && !fallbackUnsupported
     val subtitle = buildString {
         val primaryMeta = server.region.ifBlank { server.description }.ifBlank { server.subscription }
-        append(primaryMeta)
+        append(uiText(primaryMeta))
         if (highlightedPreProxy) {
-            append(" · 前置")
+            append(uiText(" · 前置"))
         }
         if (highlightedFallback) {
-            append(" · 备用")
+            append(uiText(" · 备用"))
         }
         if (fallbackUnsupported) {
-            append(" · 备用不可用")
+            append(uiText(" · 备用不可用"))
         }
     }
     val rowBackground = when {

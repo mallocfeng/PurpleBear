@@ -68,12 +68,12 @@ internal fun ImportScreen(
                 SurfaceCard {
                     Eyebrow("导入源")
                 Text(
-                    text = "粘贴订阅或单节点链接",
+                    text = uiText("粘贴订阅或单节点链接"),
                     fontSize = TypeScale.CardTitle,
                     lineHeight = TypeScale.CardTitleLine,
                     fontWeight = FontWeight.ExtraBold,
                 )
-                Text("订阅进入 group，单节点进入 Local。", color = TextSecondary, modifier = Modifier.padding(top = 8.dp))
+                Text(uiText("订阅进入 group，单节点进入 Local。"), color = TextSecondary, modifier = Modifier.padding(top = 8.dp))
                 Spacer(modifier = Modifier.height(16.dp))
                 OutlinedTextField(
                     value = input,
@@ -122,7 +122,7 @@ internal fun ImportScreen(
                     Column {
                         Eyebrow("最近导入")
                         Text(
-                            text = "继续上次操作",
+                            text = uiText("继续上次操作"),
                             fontSize = TypeScale.CardTitle,
                             lineHeight = TypeScale.CardTitleLine,
                             fontWeight = FontWeight.ExtraBold,
@@ -132,7 +132,7 @@ internal fun ImportScreen(
                 }
                 Spacer(modifier = Modifier.height(14.dp))
                 recentImports.forEach { item ->
-                    ActionListRow(text = item, icon = Icons.Rounded.Inventory2)
+                    ActionListRow(text = uiText(item), icon = Icons.Rounded.Inventory2)
                     Spacer(modifier = Modifier.height(10.dp))
                 }
             }
@@ -181,7 +181,7 @@ internal fun ConfirmImportScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Eyebrow(if (preview?.group?.type == ServerGroupType.Local) "目标分组" else "订阅名称")
                         Text(
-                            text = preview?.group?.name ?: "暂无可导入数据",
+                            text = preview?.group?.name?.let { uiText(it) } ?: uiText("暂无可导入数据"),
                             fontSize = TypeScale.CardTitle,
                             lineHeight = TypeScale.CardTitleLine,
                             fontWeight = FontWeight.ExtraBold,
@@ -198,13 +198,13 @@ internal fun ConfirmImportScreen(
                 Spacer(modifier = Modifier.height(16.dp))
                 TwoColumnInfoGrid(
                     items = buildList {
-                        add("节点数量" to "${preview?.nodes?.size ?: 0} 个")
+                        add("节点数量" to uiText("${preview?.nodes?.size ?: 0} 个节点", "${preview?.nodes?.size ?: 0} nodes"))
                         if ((preview?.hiddenUnsupportedNodeCount ?: 0) > 0) {
-                            add("已隐藏节点" to "${preview?.hiddenUnsupportedNodeCount ?: 0} 个")
+                            add("已隐藏节点" to uiText("已隐藏 ${preview?.hiddenUnsupportedNodeCount ?: 0} 个", "${preview?.hiddenUnsupportedNodeCount ?: 0} hidden"))
                         }
-                        add("更新时间" to (preview?.group?.updatedAt ?: "--"))
-                        add("导入类型" to if (preview?.group?.type == ServerGroupType.Local) "单节点 / Local" else "订阅")
-                        add("自动更新" to if (preview?.subscription != null) "可开启" else "不适用")
+                        add("更新时间" to (preview?.group?.updatedAt?.let { uiText(it) } ?: "--"))
+                        add("导入类型" to if (preview?.group?.type == ServerGroupType.Local) uiText("单节点 / Local") else uiText("订阅"))
+                        add("自动更新" to if (preview?.subscription != null) uiText("可开启") else uiText("不适用"))
                     },
                 )
             }
@@ -276,12 +276,15 @@ internal fun SubscriptionsScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Eyebrow(subscription.type)
                         Text(
-                            text = subscription.name,
+                            text = uiText(subscription.name),
                             fontSize = TypeScale.CardTitle,
                             lineHeight = TypeScale.CardTitleLine,
                             fontWeight = FontWeight.ExtraBold,
                         )
-                        Text("${subscription.nodes} 个节点", color = TextSecondary)
+                        Text(
+                            uiText("${subscription.nodes} 个节点", "${subscription.nodes} nodes"),
+                            color = TextSecondary,
+                        )
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         StatusPill(
@@ -298,7 +301,7 @@ internal fun SubscriptionsScreen(
                             },
                         )
                         Text(
-                            text = "删除",
+                            text = uiText("删除"),
                             color = Error,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier
@@ -315,15 +318,15 @@ internal fun SubscriptionsScreen(
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
-                            text = "最近同步：${formatRelativeSyncTime(subscription.updatedAtMs, subscription.updatedAt, nowMs)}",
+                            text = uiText("最近同步：${formatRelativeSyncTime(subscription.updatedAtMs, subscription.updatedAt, nowMs)}"),
                             color = TextSecondary,
                         )
                         Text(
-                            text = when {
+                            text = uiText(when {
                                 subscription.sourceUrl == null -> "来源：文件导入"
                                 subscription.autoUpdate -> "来源：订阅链接"
                                 else -> "来源：订阅快照（不刷新）"
-                            },
+                            }),
                             color = TextSecondary,
                             fontSize = TypeScale.Meta,
                             lineHeight = TypeScale.MetaLine,
@@ -331,7 +334,7 @@ internal fun SubscriptionsScreen(
                     }
                     if (refreshable) {
                         Text(
-                            text = if (refreshing) "刷新中…" else "手动刷新",
+                            text = uiText(if (refreshing) "刷新中…" else "手动刷新"),
                             color = Primary,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.clickable(enabled = !refreshing) { onRefresh(subscription.id) },
@@ -356,4 +359,3 @@ internal fun SubscriptionsScreen(
         }
     }
 }
-

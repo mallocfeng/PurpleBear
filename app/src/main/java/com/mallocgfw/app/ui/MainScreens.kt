@@ -72,7 +72,7 @@ internal fun HomeScreen(
     onOpenPerApp: () -> Unit,
     onOpenMediaRouting: () -> Unit,
 ) {
-    val currentRouteLabel = currentServer?.name ?: "未选择"
+    val currentRouteLabel = currentServer?.name ?: uiText("未选择")
     val liveDurationMs by produceState(
         initialValue = 0L,
         key1 = connectionStatus,
@@ -119,22 +119,22 @@ internal fun HomeScreen(
     val downloadSubtitle = when (connectionStatus) {
         ConnectionStatus.Connected,
         ConnectionStatus.Disconnecting -> when {
-            vpnSnapshot.speedTestInFlight -> "正在刷新"
-            vpnSnapshot.speedTestTimedOut -> "请稍后重试"
-            else -> "下行样本 ${formatByteCount(vpnSnapshot.rxBytes)}"
+            vpnSnapshot.speedTestInFlight -> uiText("正在刷新")
+            vpnSnapshot.speedTestTimedOut -> uiText("请稍后重试")
+            else -> uiText("下行样本 ${formatByteCount(vpnSnapshot.rxBytes)}", "Down ${formatByteCount(vpnSnapshot.rxBytes)}")
         }
         ConnectionStatus.Connecting,
-        ConnectionStatus.Disconnected -> "等待连接"
+        ConnectionStatus.Disconnected -> uiText("等待连接")
     }
     val uploadSubtitle = when (connectionStatus) {
         ConnectionStatus.Connected,
         ConnectionStatus.Disconnecting -> when {
-            vpnSnapshot.speedTestInFlight -> "正在刷新"
-            vpnSnapshot.speedTestTimedOut -> "请稍后重试"
-            else -> "上行样本 ${formatByteCount(vpnSnapshot.txBytes)}"
+            vpnSnapshot.speedTestInFlight -> uiText("正在刷新")
+            vpnSnapshot.speedTestTimedOut -> uiText("请稍后重试")
+            else -> uiText("上行样本 ${formatByteCount(vpnSnapshot.txBytes)}", "Up ${formatByteCount(vpnSnapshot.txBytes)}")
         }
-        ConnectionStatus.Connecting -> "等待连接"
-        ConnectionStatus.Disconnected -> "等待连接"
+        ConnectionStatus.Connecting -> uiText("等待连接")
+        ConnectionStatus.Disconnected -> uiText("等待连接")
     }
 
     LaunchedEffect(focusPendingSwitchNonce, pendingServer?.id) {
@@ -191,7 +191,7 @@ internal fun HomeScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Eyebrow("当前节点")
                         Text(
-                            currentServer?.name ?: "暂无节点",
+                            currentServer?.name ?: uiText("暂无节点"),
                             fontSize = TypeScale.ListTitle,
                             lineHeight = TypeScale.ListTitleLine,
                             fontWeight = FontWeight.Bold,
@@ -200,9 +200,9 @@ internal fun HomeScreen(
                         )
                         Text(
                             text = if (currentServer == null) {
-                                "请先导入线路。"
+                                uiText("请先导入线路。")
                             } else {
-                                "${currentServer.subscription} · ${currentServer.description}"
+                                "${uiText(currentServer.subscription)} · ${uiText(currentServer.description)}"
                             },
                             color = TextSecondary,
                             fontSize = TypeScale.Meta,
@@ -223,8 +223,8 @@ internal fun HomeScreen(
                 }
                 pendingServer?.let { server ->
                     Spacer(modifier = Modifier.height(8.dp))
-                    NoteBox(
-                        text = "待切换线路：${server.name}",
+                        NoteBox(
+                        text = uiText("待切换线路：${server.name}", "Pending switch: ${server.name}"),
                     )
                 }
                 Spacer(modifier = Modifier.height(10.dp))
@@ -329,7 +329,10 @@ internal fun ServersScreen(
     pendingDeleteServer?.let { server ->
         ConfirmDeleteDialog(
             title = "删除节点",
-            message = "确认删除本地节点“${server.name}”？删除后需要重新导入才能恢复。",
+            message = uiText(
+                "确认删除本地节点“${server.name}”？删除后需要重新导入才能恢复。",
+                "Delete local node \"${server.name}\"? You will need to import it again to restore it.",
+            ),
             confirmText = "删除",
             onConfirm = {
                 onDeleteServer(server.id)
@@ -342,7 +345,10 @@ internal fun ServersScreen(
     pendingDeleteGroup?.let { group ->
         ConfirmDeleteDialog(
             title = "删除订阅组",
-            message = "确认删除订阅组“${group.name}”？组内所有节点都会一起删除。",
+            message = uiText(
+                "确认删除订阅组“${group.name}”？组内所有节点都会一起删除。",
+                "Delete subscription group \"${group.name}\" and all nodes in it?",
+            ),
             confirmText = "删除",
             onConfirm = {
                 onDeleteSubscriptionGroup(group.id)
@@ -384,6 +390,14 @@ internal fun NodeDetailScreen(
     val fallbackUnsupportedMessage = server
         ?.takeIf { canSelectFallback && !NodeLatencyTester.supportsHeartbeatFallback(it) }
         ?.let(NodeLatencyTester::heartbeatFallbackUnsupportedMessage)
+    val fallbackUnsupportedUiMessage = server
+        ?.takeIf { canSelectFallback && !NodeLatencyTester.supportsHeartbeatFallback(it) }
+        ?.let {
+            uiText(
+                NodeLatencyTester.heartbeatFallbackUnsupportedMessage(it),
+                "${it.protocol}/${it.transport} cannot be checked reliably while connected, so automatic fallback is unavailable.",
+            )
+        }
     val fallbackSelectionEnabled = canSelectFallback && fallbackUnsupportedMessage == null
 
     LazyColumn(
@@ -440,7 +454,11 @@ internal fun NodeDetailScreen(
                     Spacer(modifier = Modifier.height(12.dp))
                     NoteBox(
                         text = fallbackUnsupportedMessage
-                            ?: "前置代理重新连接后生效；备用节点会在当前连接节点检测失败后自动阻断操作并切换。",
+                            ?.let { fallbackUnsupportedUiMessage }
+                            ?: uiText(
+                                "前置代理重新连接后生效；备用节点会在当前连接节点检测失败后自动阻断操作并切换。",
+                                "Pre-proxy applies after reconnect. Fallback blocks input and switches when the active node fails checks.",
+                            ),
                     )
                 }
             }
@@ -455,10 +473,10 @@ internal fun NodeDetailScreen(
                         Eyebrow("当前状态")
                         Text(
                             when {
-                                server == null -> "等待导入"
-                                connectionStatus == ConnectionStatus.Connected && isActiveServer -> "当前已连接线路"
-                                connectionStatus == ConnectionStatus.Connected -> "可热切换到这条线路"
-                                else -> "可用节点"
+                                server == null -> uiText("等待导入")
+                                connectionStatus == ConnectionStatus.Connected && isActiveServer -> uiText("当前已连接线路")
+                                connectionStatus == ConnectionStatus.Connected -> uiText("可热切换到这条线路")
+                                else -> uiText("可用节点")
                             },
                             fontSize = TypeScale.ListTitle,
                             lineHeight = TypeScale.ListTitleLine,
@@ -493,7 +511,7 @@ internal fun NodeDetailScreen(
                 Spacer(modifier = Modifier.height(12.dp))
                 DetailRow(
                     label = "订阅来源",
-                    value = server?.subscription ?: "未导入",
+                    value = server?.subscription?.let { uiText(it) } ?: uiText("未导入"),
                     trailing = group?.let { if (it.type == ServerGroupType.Local) "Local" else "订阅组" } ?: "官方核心兼容",
                 )
                 NoteBox(text = "完整节点参数在这里查看。")
@@ -554,9 +572,12 @@ internal fun NodeDetailScreen(
     }
 
     if (showDeleteNodeDialog && server != null) {
-        ConfirmDeleteDialog(
+                ConfirmDeleteDialog(
             title = "删除节点",
-            message = "确认删除本地节点“${server.name}”？删除后需要重新导入才能恢复。",
+            message = uiText(
+                "确认删除本地节点“${server.name}”？删除后需要重新导入才能恢复。",
+                "Delete local node \"${server.name}\"? You will need to import it again to restore it.",
+            ),
             confirmText = "删除",
             onConfirm = {
                 showDeleteNodeDialog = false
@@ -569,7 +590,10 @@ internal fun NodeDetailScreen(
     if (showDeleteGroupDialog && group != null) {
         ConfirmDeleteDialog(
             title = "删除订阅组",
-            message = "确认删除订阅组“${group.name}”？组内所有节点都会一起删除。",
+            message = uiText(
+                "确认删除订阅组“${group.name}”？组内所有节点都会一起删除。",
+                "Delete subscription group \"${group.name}\" and all nodes in it?",
+            ),
             confirmText = "删除",
             onConfirm = {
                 showDeleteGroupDialog = false
@@ -596,8 +620,14 @@ internal fun PreProxyNodePickerScreen(
         NodeLinkPickerMode.Fallback -> "备用节点"
     }
     val headerTitle = when (mode) {
-        NodeLinkPickerMode.PreProxy -> "为 ${server?.name ?: "当前节点"} 选择前置代理"
-        NodeLinkPickerMode.Fallback -> "为 ${server?.name ?: "当前节点"} 选择备用节点"
+        NodeLinkPickerMode.PreProxy -> uiText(
+            "为 ${server?.name ?: "当前节点"} 选择前置代理",
+            "Choose pre-proxy for ${server?.name ?: uiText("当前节点")}",
+        )
+        NodeLinkPickerMode.Fallback -> uiText(
+            "为 ${server?.name ?: "当前节点"} 选择备用节点",
+            "Choose fallback for ${server?.name ?: uiText("当前节点")}",
+        )
     }
     val headerSubtitle = when (mode) {
         NodeLinkPickerMode.PreProxy -> "选择任意可用节点作为跳板。"
@@ -618,6 +648,14 @@ internal fun PreProxyNodePickerScreen(
     val fallbackUnsupportedMessage = server
         ?.takeIf { mode == NodeLinkPickerMode.Fallback && !NodeLatencyTester.supportsHeartbeatFallback(it) }
         ?.let(NodeLatencyTester::heartbeatFallbackUnsupportedMessage)
+    val fallbackUnsupportedUiMessage = server
+        ?.takeIf { mode == NodeLinkPickerMode.Fallback && !NodeLatencyTester.supportsHeartbeatFallback(it) }
+        ?.let {
+            uiText(
+                NodeLatencyTester.heartbeatFallbackUnsupportedMessage(it),
+                "${it.protocol}/${it.transport} cannot be checked reliably while connected, so automatic fallback is unavailable.",
+            )
+        }
 
     LazyColumn(
         modifier = Modifier
@@ -637,7 +675,7 @@ internal fun PreProxyNodePickerScreen(
         item {
             ScreenHeader(
                 title = headerTitle,
-                subtitle = fallbackUnsupportedMessage ?: headerSubtitle,
+                subtitle = fallbackUnsupportedUiMessage ?: headerSubtitle,
             )
         }
         item {
@@ -654,7 +692,7 @@ internal fun PreProxyNodePickerScreen(
         item {
             SettingsGroup(title = "可用节点") {
                 if (candidates.isEmpty()) {
-                    Text(emptyListText, color = TextSecondary)
+                    Text(uiText(emptyListText), color = TextSecondary)
                 } else {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         candidates.forEach { node ->

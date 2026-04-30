@@ -62,6 +62,12 @@ enum class AppLogLevel(
     Debug("debug", "debug"),
 }
 
+enum class AppLanguage {
+    System,
+    Chinese,
+    English,
+}
+
 enum class ServerGroupType {
     Subscription,
     Local,
@@ -298,6 +304,7 @@ data class AppSettings(
     val logLevel: AppLogLevel,
     val lastConnectedServerId: String,
     val resumeConnectionOnLaunch: Boolean,
+    val language: AppLanguage,
     val globalProxyEnabled: Boolean,
     val streamingRoutingEnabled: Boolean,
     val streamingSelections: List<StreamingRouteSelection>,
