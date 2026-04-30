@@ -174,7 +174,7 @@ app/build/outputs/apk/release/app-release.apk
 ./gradlew :app:assembleDebug
 ```
 
-## 版本 2.6.4 更新
+## 版本 0.6.4 更新
 
 1. 优化线路页面视觉层级，节点组和节点列表更清爽，减少多层圆角卡片嵌套感。
 
