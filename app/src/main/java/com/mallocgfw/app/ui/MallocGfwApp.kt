@@ -76,6 +76,7 @@ import com.mallocgfw.app.model.RuleSourceType
 import com.mallocgfw.app.model.ServerNode
 import com.mallocgfw.app.model.ServerGroupType
 import com.mallocgfw.app.model.mergedSubscriptionGroupNodes
+import com.mallocgfw.app.model.normalizedAppVpnMtu
 import com.mallocgfw.app.model.StreamingMediaManager
 import com.mallocgfw.app.model.StreamingRouteSelection
 import com.mallocgfw.app.model.subscriptionMergeKey
@@ -885,6 +886,11 @@ fun MallocGfwApp(
 
     fun openFallbackNodePicker(nodeId: String) {
         val server = servers.firstOrNull { it.id == nodeId } ?: return
+        if (!NodeLatencyTester.supportsHeartbeatFallback(server)) {
+            selectServerForUi(server.id)
+            runtimeMessage = NodeLatencyTester.heartbeatFallbackUnsupportedMessage(server)
+            return
+        }
         preProxyPickerOwnerNodeId = server.id
         nodeLinkPickerMode = NodeLinkPickerMode.Fallback
         selectServerForUi(server.id)
@@ -901,6 +907,11 @@ fun MallocGfwApp(
                         ManualNodeFactory.supportsPreProxy(candidate)
                 }
         } == true
+    }
+
+    fun isValidFallbackNodeCandidate(owner: ServerNode, candidateId: String): Boolean {
+        return NodeLatencyTester.supportsHeartbeatFallback(owner) &&
+            isValidLinkedNodeCandidate(owner, candidateId)
     }
 
     fun updateNodePreProxy(nodeId: String, preProxyNodeId: String) {
@@ -925,8 +936,16 @@ fun MallocGfwApp(
         val nodeIndex = servers.indexOfFirst { it.id == nodeId }
         if (nodeIndex < 0) return
         val node = servers[nodeIndex]
+        if (!NodeLatencyTester.supportsHeartbeatFallback(node)) {
+            if (node.fallbackNodeId.isNotBlank()) {
+                servers[nodeIndex] = node.copy(fallbackNodeId = "")
+                warmServerSections()
+            }
+            runtimeMessage = NodeLatencyTester.heartbeatFallbackUnsupportedMessage(node)
+            return
+        }
         val normalizedTargetId = fallbackNodeId.trim().takeIf { candidateId ->
-            isValidLinkedNodeCandidate(node, candidateId)
+            isValidFallbackNodeCandidate(node, candidateId)
         }.orEmpty()
         if (normalizedTargetId == node.fallbackNodeId) return
         servers[nodeIndex] = node.copy(fallbackNodeId = normalizedTargetId)
@@ -942,6 +961,7 @@ fun MallocGfwApp(
     fun fallbackNodeFor(server: ServerNode?): ServerNode? {
         val source = server ?: return null
         val fallbackId = source.fallbackNodeId.trim().takeIf { it.isNotBlank() } ?: return null
+        if (!NodeLatencyTester.supportsHeartbeatFallback(source)) return null
         if (source.id == lastFallbackTargetServerId) return null
         return servers.firstOrNull { candidate ->
             candidate.id == fallbackId &&
@@ -1172,6 +1192,25 @@ fun MallocGfwApp(
             AppDnsMode.System -> "DNS 已切换为系统解析。"
             AppDnsMode.Remote -> "DNS 已切换为远端 1.1.1.1。"
             AppDnsMode.Custom -> "DNS 已更新为 $normalizedCustomValue。"
+        }
+    }
+
+    fun updateVpnMtu(mtu: Int) {
+        val normalizedMtu = normalizedAppVpnMtu(mtu)
+        if (normalizedMtu == appSettings.vpnMtu) {
+            settingsMessage = "VPN MTU 已经是 $normalizedMtu。"
+            return
+        }
+        appSettings = appSettings.copy(vpnMtu = normalizedMtu)
+        val activeServer = resolveServerForSettingsReconnect()
+        if (connectionStatus == ConnectionStatus.Connected && activeServer != null) {
+            settingsMessage = "VPN MTU 已设置为 $normalizedMtu，正在重连以生效。"
+            reconnectVpnForSettingsChange(
+                server = activeServer,
+                message = "VPN MTU 已设置为 $normalizedMtu，正在重连 VPN…",
+            )
+        } else {
+            settingsMessage = "VPN MTU 已设置为 $normalizedMtu，下次连接生效。"
         }
     }
 
@@ -2078,6 +2117,7 @@ fun MallocGfwApp(
                             appSettings = appSettings.copy(heartbeatIntervalMinutes = minutes)
                             settingsMessage = "心跳检测间隔已设置为 $minutes 分钟。"
                         },
+                        onVpnMtuChange = ::updateVpnMtu,
                         onDailyAutoUpdateChange = { enabled ->
                             appSettings = appSettings.copy(dailyAutoUpdate = enabled)
                             settingsMessage = if (enabled) "已开启每日自动更新。仅在非计费网络下执行。" else "已关闭每日自动更新。"
@@ -2183,9 +2223,16 @@ fun MallocGfwApp(
                         candidates = servers.filter { candidate ->
                             val ownerNodeId = preProxyPickerOwnerNodeId ?: selectedServerId
                             val ownerNode = servers.firstOrNull { it.id == ownerNodeId } ?: selectedServer
+                            val ownerSupportsCurrentMode = when (nodeLinkPickerMode) {
+                                NodeLinkPickerMode.PreProxy -> ownerNode?.let(ManualNodeFactory::supportsPreProxy) == true
+                                NodeLinkPickerMode.Fallback -> ownerNode?.let { owner ->
+                                    ManualNodeFactory.supportsPreProxy(owner) &&
+                                        NodeLatencyTester.supportsHeartbeatFallback(owner)
+                                } == true
+                            }
                             candidate.id != ownerNodeId &&
                                 !candidate.hiddenUnsupported &&
-                                ownerNode?.let(ManualNodeFactory::supportsPreProxy) == true &&
+                                ownerSupportsCurrentMode &&
                                 ManualNodeFactory.supportsPreProxy(candidate)
                         },
                         selectedServerId = (

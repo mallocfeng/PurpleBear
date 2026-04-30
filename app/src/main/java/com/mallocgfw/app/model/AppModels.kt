@@ -271,6 +271,13 @@ data class StreamingRouteSelection(
     val serverId: String,
 )
 
+const val DEFAULT_APP_VPN_MTU = 1400
+val AppVpnMtuOptions = listOf(1400, 1420, 1460, 1500)
+
+fun normalizedAppVpnMtu(value: Int): Int {
+    return value.takeIf { it in AppVpnMtuOptions } ?: DEFAULT_APP_VPN_MTU
+}
+
 data class AppSettings(
     val autoConnectOnLaunch: Boolean,
     val autoReconnect: Boolean,
@@ -286,4 +293,5 @@ data class AppSettings(
     val streamingRoutingEnabled: Boolean,
     val streamingSelections: List<StreamingRouteSelection>,
     val heartbeatIntervalMinutes: Int,
+    val vpnMtu: Int,
 )

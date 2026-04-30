@@ -79,6 +79,7 @@ import com.mallocgfw.app.ui.theme.Surface as SurfaceTone
 import com.mallocgfw.app.ui.theme.SurfaceLow
 import com.mallocgfw.app.ui.theme.TextPrimary
 import com.mallocgfw.app.ui.theme.TextSecondary
+import com.mallocgfw.app.xray.NodeLatencyTester
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -450,7 +451,9 @@ internal fun ServerCard(
     onDelete: (() -> Unit)? = null,
 ) {
     val highlightedPreProxy = server.hasPreProxyConfigured()
-    val highlightedFallback = server.hasFallbackConfigured()
+    val fallbackConfigured = server.hasFallbackConfigured()
+    val fallbackUnsupported = fallbackConfigured && !NodeLatencyTester.supportsHeartbeatFallback(server)
+    val highlightedFallback = fallbackConfigured && !fallbackUnsupported
     val subtitle = buildString {
         val primaryMeta = server.region.ifBlank { server.description }.ifBlank { server.subscription }
         append(primaryMeta)
@@ -459,6 +462,9 @@ internal fun ServerCard(
         }
         if (highlightedFallback) {
             append(" · 备用")
+        }
+        if (fallbackUnsupported) {
+            append(" · 备用不可用")
         }
     }
     val rowBackground = when {
@@ -495,7 +501,7 @@ internal fun ServerCard(
         ) {
             Text(
                 text = server.name,
-                color = TextPrimary,
+                color = if (fallbackUnsupported) TextSecondary else TextPrimary,
                 fontSize = 10.sp,
                 lineHeight = 13.sp,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,

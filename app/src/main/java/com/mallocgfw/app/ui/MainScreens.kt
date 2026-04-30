@@ -46,6 +46,7 @@ import com.mallocgfw.app.ui.theme.Secondary
 import com.mallocgfw.app.ui.theme.SurfaceHigh
 import com.mallocgfw.app.ui.theme.SurfaceLow
 import com.mallocgfw.app.ui.theme.TextSecondary
+import com.mallocgfw.app.xray.NodeLatencyTester
 import com.mallocgfw.app.xray.VpnRuntimeSnapshot
 import kotlinx.coroutines.delay
 
@@ -380,6 +381,10 @@ internal fun NodeDetailScreen(
     val parameterRows = remember(server?.id, server?.outboundJson, server?.rawUri) {
         server?.let(::buildNodeParameterRows).orEmpty()
     }
+    val fallbackUnsupportedMessage = server
+        ?.takeIf { canSelectFallback && !NodeLatencyTester.supportsHeartbeatFallback(it) }
+        ?.let(NodeLatencyTester::heartbeatFallbackUnsupportedMessage)
+    val fallbackSelectionEnabled = canSelectFallback && fallbackUnsupportedMessage == null
 
     LazyColumn(
         modifier = Modifier
@@ -418,13 +423,25 @@ internal fun NodeDetailScreen(
                     if (canSelectFallback) {
                         DetailMenuRow(
                             label = "备用节点",
-                            value = "当前线路检测失败时自动切换",
-                            selection = fallbackNode?.name ?: "未设置",
+                            value = if (fallbackUnsupportedMessage == null) {
+                                "当前线路检测失败时自动切换"
+                            } else {
+                                "此协议不能可靠触发自动切换"
+                            },
+                            selection = if (fallbackUnsupportedMessage == null) {
+                                fallbackNode?.name ?: "未设置"
+                            } else {
+                                "不支持"
+                            },
                             onClick = onOpenFallbackPicker,
+                            enabled = fallbackSelectionEnabled,
                         )
                     }
                     Spacer(modifier = Modifier.height(12.dp))
-                    NoteBox(text = "前置代理重新连接后生效；备用节点会在当前连接节点检测失败后自动阻断操作并切换。")
+                    NoteBox(
+                        text = fallbackUnsupportedMessage
+                            ?: "前置代理重新连接后生效；备用节点会在当前连接节点检测失败后自动阻断操作并切换。",
+                    )
                 }
             }
         }
@@ -598,6 +615,9 @@ internal fun PreProxyNodePickerScreen(
         NodeLinkPickerMode.PreProxy -> "当前没有其它可用节点可做前置代理。"
         NodeLinkPickerMode.Fallback -> "当前没有其它可用节点可做备用节点。"
     }
+    val fallbackUnsupportedMessage = server
+        ?.takeIf { mode == NodeLinkPickerMode.Fallback && !NodeLatencyTester.supportsHeartbeatFallback(it) }
+        ?.let(NodeLatencyTester::heartbeatFallbackUnsupportedMessage)
 
     LazyColumn(
         modifier = Modifier
@@ -617,7 +637,7 @@ internal fun PreProxyNodePickerScreen(
         item {
             ScreenHeader(
                 title = headerTitle,
-                subtitle = headerSubtitle,
+                subtitle = fallbackUnsupportedMessage ?: headerSubtitle,
             )
         }
         item {
@@ -627,6 +647,7 @@ internal fun PreProxyNodePickerScreen(
                     subtitle = emptySubtitle,
                     selected = selectedServerId.isBlank(),
                     onClick = { onSelect("") },
+                    enabled = fallbackUnsupportedMessage == null,
                 )
             }
         }
@@ -642,6 +663,7 @@ internal fun PreProxyNodePickerScreen(
                                 subtitle = "${node.subscription} · ${node.protocol} · ${node.transport}",
                                 selected = selectedServerId == node.id,
                                 onClick = { onSelect(node.id) },
+                                enabled = fallbackUnsupportedMessage == null,
                             )
                         }
                     }
@@ -650,4 +672,3 @@ internal fun PreProxyNodePickerScreen(
         }
     }
 }
-

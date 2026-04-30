@@ -100,6 +100,7 @@ object XrayCoreManager {
         tunFd: Int,
         routingRules: List<XrayRoutingRule> = emptyList(),
         additionalOutbounds: List<XrayNamedOutbound> = emptyList(),
+        vpnMtu: Int = XrayConfigFactory.DEFAULT_VPN_MTU,
     ): Result<XrayCoreSnapshot> {
         return startWithConfig(
             context = context,
@@ -117,6 +118,7 @@ object XrayCoreManager {
                 logLevel = settings.logLevel.wireValue,
                 errorLogPath = AppLogManager.xrayErrorLogFile(context).absolutePath,
                 accessLogPath = AppLogManager.xrayAccessLogFile(context).absolutePath,
+                vpnMtu = vpnMtu,
             )
         }
     }

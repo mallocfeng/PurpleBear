@@ -276,6 +276,7 @@ internal fun SettingsScreen(
     onAutoConnectChange: (Boolean) -> Unit,
     onAutoReconnectChange: (Boolean) -> Unit,
     onHeartbeatIntervalChange: (Int) -> Unit,
+    onVpnMtuChange: (Int) -> Unit,
     onDailyAutoUpdateChange: (Boolean) -> Unit,
     onUpdateNotificationsChange: (Boolean) -> Unit,
     onSyncNow: () -> Unit,
@@ -287,6 +288,7 @@ internal fun SettingsScreen(
     var showDnsDialog by remember { mutableStateOf(false) }
     var showLogLevelDialog by remember { mutableStateOf(false) }
     var showHeartbeatDialog by remember { mutableStateOf(false) }
+    var showMtuDialog by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier
@@ -331,6 +333,13 @@ internal fun SettingsScreen(
                     subtitle = settings.heartbeatSummary(),
                     actionText = "设置",
                     onAction = { showHeartbeatDialog = true },
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                SettingActionRow(
+                    title = "VPN MTU",
+                    subtitle = settings.vpnMtuSummary(),
+                    actionText = "设置",
+                    onAction = { showMtuDialog = true },
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 SettingActionRow(
@@ -439,6 +448,17 @@ internal fun SettingsScreen(
             onConfirm = { minutes ->
                 onHeartbeatIntervalChange(minutes)
                 showHeartbeatDialog = false
+            },
+        )
+    }
+
+    if (showMtuDialog) {
+        VpnMtuDialog(
+            selectedMtu = settings.vpnMtu,
+            onDismiss = { showMtuDialog = false },
+            onConfirm = { mtu ->
+                onVpnMtuChange(mtu)
+                showMtuDialog = false
             },
         )
     }
@@ -749,4 +769,3 @@ internal fun LogViewerScreen(
         }
     }
 }
-

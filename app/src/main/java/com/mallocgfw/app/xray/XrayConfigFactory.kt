@@ -4,6 +4,8 @@ import com.mallocgfw.app.model.ManualNodeFactory
 import com.mallocgfw.app.model.ServerNode
 import com.mallocgfw.app.model.XrayNamedOutbound
 import com.mallocgfw.app.model.XrayRoutingRule
+import com.mallocgfw.app.model.DEFAULT_APP_VPN_MTU
+import com.mallocgfw.app.model.normalizedAppVpnMtu
 import java.net.URI
 import java.net.URLDecoder
 import java.util.Base64
@@ -14,7 +16,8 @@ import org.json.JSONObject
 object XrayConfigFactory {
     const val SOCKS_PORT = 10808
     const val HTTP_PORT = 10809
-    const val VPN_MTU = 1500
+    const val DEFAULT_VPN_MTU = DEFAULT_APP_VPN_MTU
+    private const val SPEED_TEST_INBOUND_TAG = "speedtest-http-in"
 
     fun build(
         node: ServerNode,
@@ -79,7 +82,9 @@ object XrayConfigFactory {
         logLevel: String = "warning",
         errorLogPath: String? = null,
         accessLogPath: String? = null,
+        vpnMtu: Int = DEFAULT_VPN_MTU,
     ): String {
+        val normalizedMtu = normalizedAppVpnMtu(vpnMtu)
         return JSONObject().apply {
             put(
                 "log",
@@ -98,11 +103,12 @@ object XrayConfigFactory {
                             put("protocol", "tun")
                             put("settings", JSONObject().apply {
                                 put("name", "xray0")
-                                put("MTU", VPN_MTU)
+                                put("MTU", normalizedMtu)
                             })
                             put("sniffing", sniffing())
                         },
                     )
+                    put(httpInbound(SPEED_TEST_INBOUND_TAG))
                 },
             )
             put(
@@ -129,14 +135,29 @@ object XrayConfigFactory {
                     // IP-literal targets. Keeps routing predictable without
                     // requiring an in-config DNS section to drive IPIfNonMatch.
                     put("domainStrategy", "AsIs")
-                    put("rules", buildRoutingRules(routingRules))
+                    put("rules", buildRoutingRules(routingRules, forceSpeedTestToProxy = true))
                 },
             )
         }.toString(2)
     }
 
-    private fun buildRoutingRules(routingRules: List<XrayRoutingRule>): JSONArray {
+    private fun buildRoutingRules(
+        routingRules: List<XrayRoutingRule>,
+        forceSpeedTestToProxy: Boolean = false,
+    ): JSONArray {
         val rules = JSONArray()
+
+        if (forceSpeedTestToProxy) {
+            rules.put(
+                JSONObject().apply {
+                    put("type", "field")
+                    put("inboundTag", JSONArray().apply {
+                        put(SPEED_TEST_INBOUND_TAG)
+                    })
+                    put("outboundTag", "proxy")
+                },
+            )
+        }
 
         // Keep private-network traffic direct, but let streaming and user rules
         // match before broad CN direct fallbacks.
@@ -240,9 +261,9 @@ object XrayConfigFactory {
         }
     }
 
-    private fun httpInbound(): JSONObject {
+    private fun httpInbound(tag: String = "http-in"): JSONObject {
         return JSONObject().apply {
-            put("tag", "http-in")
+            put("tag", tag)
             put("listen", "127.0.0.1")
             put("port", HTTP_PORT)
             put("protocol", "http")

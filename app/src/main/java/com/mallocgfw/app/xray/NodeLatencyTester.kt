@@ -38,7 +38,7 @@ object NodeLatencyTester {
         withTimeout(TOTAL_TIMEOUT_MS) {
             if (requiresCoreProbe(node) && VpnServiceController.isActuallyRunning(context)) {
                 if (requiresUdpLikeProbe(node)) {
-                    throw UnsupportedOperationException("当前 ${node.protocol}/${node.transport} 节点不支持连接中后台心跳。")
+                    throw UnsupportedOperationException(heartbeatFallbackUnsupportedMessage(node))
                 }
                 return@withTimeout measureViaDirectPort(context, node)
             }
@@ -53,6 +53,12 @@ object NodeLatencyTester {
         if (transport in setOf("GRPC", "KCP", "MKCP")) return true
         if ("HYSTERIA" in transport || "QUIC" in transport) return true
         return false
+    }
+
+    fun supportsHeartbeatFallback(node: ServerNode): Boolean = !requiresUdpLikeProbe(node)
+
+    fun heartbeatFallbackUnsupportedMessage(node: ServerNode): String {
+        return "当前 ${node.protocol}/${node.transport} 节点无法在连接中后台做可靠心跳，因此不支持自动切备用节点。"
     }
 
     private fun requiresUdpLikeProbe(node: ServerNode): Boolean {

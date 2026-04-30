@@ -21,6 +21,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.mallocgfw.app.model.AppDnsMode
 import com.mallocgfw.app.model.AppLogLevel
+import com.mallocgfw.app.model.AppVpnMtuOptions
+import com.mallocgfw.app.model.normalizedAppVpnMtu
 import com.mallocgfw.app.ui.theme.Error
 import com.mallocgfw.app.ui.theme.Primary
 import com.mallocgfw.app.ui.theme.SurfaceHigh
@@ -221,3 +223,69 @@ internal fun HeartbeatIntervalDialog(
     )
 }
 
+@Composable
+internal fun VpnMtuDialog(
+    selectedMtu: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (Int) -> Unit,
+) {
+    var pendingMtu by remember(selectedMtu) {
+        mutableIntStateOf(normalizedAppVpnMtu(selectedMtu))
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("VPN MTU", fontWeight = FontWeight.ExtraBold)
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "不清楚就保留 1400。较低 MTU 可减少移动网、PPPoE 和 QUIC 节点出现加载到一半卡住的问题；修改后需要重连 VPN 生效。",
+                    color = TextSecondary,
+                    fontSize = TypeScale.Body,
+                    lineHeight = TypeScale.BodyLine,
+                )
+                AppVpnMtuOptions.forEach { mtu ->
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        ModeChip(
+                            text = if (mtu == 1400) "$mtu 推荐" else mtu.toString(),
+                            selected = pendingMtu == mtu,
+                        ) {
+                            pendingMtu = mtu
+                        }
+                        Text(
+                            text = vpnMtuOptionHint(mtu),
+                            color = TextSecondary,
+                            fontSize = TypeScale.Meta,
+                            lineHeight = TypeScale.MetaLine,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(pendingMtu) }) {
+                Text("保存", color = Primary, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        },
+        containerColor = SurfaceHigh,
+        titleContentColor = TextPrimary,
+        textContentColor = TextSecondary,
+    )
+}
+
+private fun vpnMtuOptionHint(mtu: Int): String {
+    return when (mtu) {
+        1400 -> "默认推荐：移动网络、PPPoE 宽带、QUIC / Hysteria2 节点，或不确定当前网络时使用。"
+        1420 -> "偏稳妥：普通宽带但偶尔出现网页半加载、下载停住时使用。"
+        1460 -> "偏性能：确认网络路径较稳定，且没有明显卡顿或下载 stall 时使用。"
+        1500 -> "最大值：仅建议在直连宽带、局域网或确认链路支持 1500 MTU 时使用。"
+        else -> "不确定时使用 1400。"
+    }
+}

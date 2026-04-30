@@ -41,6 +41,7 @@ import com.mallocgfw.app.model.ProxyMode
 import com.mallocgfw.app.model.ServerGroup
 import com.mallocgfw.app.model.ServerNode
 import com.mallocgfw.app.model.StreamingRouteSelection
+import com.mallocgfw.app.model.normalizedAppVpnMtu
 import com.mallocgfw.app.ui.theme.Primary
 import com.mallocgfw.app.ui.theme.SurfaceLow
 import com.mallocgfw.app.ui.theme.TextPrimary
@@ -142,6 +143,10 @@ internal fun AppSettings.dnsSummary(): String {
 internal fun AppSettings.heartbeatSummary(): String {
     val minutes = heartbeatIntervalMinutes.takeIf { it in HeartbeatIntervalOptionsMinutes } ?: 5
     return "每 $minutes 分钟检测一次，连续 3 次失败切换备用节点。"
+}
+
+internal fun AppSettings.vpnMtuSummary(): String {
+    return "当前 ${normalizedAppVpnMtu(vpnMtu)}，更低值可改善移动网、PPPoE 和 QUIC 节点稳定性。"
 }
 
 @ExperimentalGetImage

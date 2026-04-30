@@ -25,6 +25,7 @@ object AppStateStore {
             streamingRoutingEnabled = false,
             streamingSelections = emptyList(),
             heartbeatIntervalMinutes = 5,
+            vpnMtu = DEFAULT_APP_VPN_MTU,
         )
     }
 
@@ -355,6 +356,7 @@ object AppStateStore {
                 put("resumeConnectionOnLaunch", state.settings.resumeConnectionOnLaunch)
                 put("streamingRoutingEnabled", state.settings.streamingRoutingEnabled)
                 put("heartbeatIntervalMinutes", state.settings.heartbeatIntervalMinutes)
+                put("vpnMtu", normalizedAppVpnMtu(state.settings.vpnMtu))
                 put("streamingSelections", JSONArray().apply {
                     state.settings.streamingSelections.forEach { selection ->
                         put(JSONObject().apply {
@@ -386,6 +388,7 @@ object AppStateStore {
             streamingSelections = optJSONArray("streamingSelections").toStreamingSelections(),
             heartbeatIntervalMinutes = optInt("heartbeatIntervalMinutes", defaults.heartbeatIntervalMinutes)
                 .takeIf { it in setOf(2, 5, 10) } ?: defaults.heartbeatIntervalMinutes,
+            vpnMtu = normalizedAppVpnMtu(optInt("vpnMtu", defaults.vpnMtu)),
         )
     }
 

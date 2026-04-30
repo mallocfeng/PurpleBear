@@ -26,6 +26,7 @@ import com.mallocgfw.app.model.ProxyMode
 import com.mallocgfw.app.model.RuleSourceManager
 import com.mallocgfw.app.model.ServerNode
 import com.mallocgfw.app.model.StreamingMediaManager
+import com.mallocgfw.app.model.normalizedAppVpnMtu
 import com.mallocgfw.app.quicksettings.VpnQuickSettingsTileHelper
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -45,6 +46,8 @@ import java.io.ByteArrayOutputStream
 import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.Inet6Address
+import java.net.InetSocketAddress
+import java.net.Proxy
 import java.net.URL
 import java.net.Socket
 import javax.net.ssl.HttpsURLConnection
@@ -57,6 +60,7 @@ class XrayVpnService : VpnService() {
     private var logMaintenanceJob: Job? = null
     private var heartbeatJob: Job? = null
     private var lastFallbackTargetServerId: String? = null
+    private var lastUnsupportedFallbackNoticeKey: String? = null
     private var failbackPrimaryServerId: String? = null
     private var failbackPrimarySuccessCount = 0
     private var publishDisconnectedOnDestroy = false
@@ -256,6 +260,7 @@ class XrayVpnService : VpnService() {
         val dnsEndpoint = resolveDnsEndpoint(applicationContext, state.settings)
         val server = state.servers.firstOrNull { it.id == serverId }
             ?: error("未找到要连接的节点。")
+        val vpnMtu = normalizedAppVpnMtu(state.settings.vpnMtu)
         val routingRules = RuleSourceManager.loadEnabledRoutingRules(
             context = applicationContext,
             sources = state.ruleSources,
@@ -268,7 +273,7 @@ class XrayVpnService : VpnService() {
         )
         val builder = Builder()
             .setSession("PurpleBear")
-            .setMtu(XrayConfigFactory.VPN_MTU)
+            .setMtu(vpnMtu)
             .addAddress("172.19.0.1", 30)
             .addAddress("fd00:1:fd00:1::1", 126)
             .addRoute("0.0.0.0", 0)
@@ -320,6 +325,7 @@ class XrayVpnService : VpnService() {
             tunFd = tunFd,
             routingRules = streamingRouting.routingRules + routingRules,
             additionalOutbounds = streamingRouting.outbounds,
+            vpnMtu = vpnMtu,
         )
             .getOrElse { throw it }
     }
@@ -329,6 +335,7 @@ class XrayVpnService : VpnService() {
         val server = state.servers.firstOrNull { it.id == serverId }
             ?: error("未找到要切换的节点。")
         val tunFd = vpnInterface?.fd ?: error("系统 VPN 还没有建立，无法热切换线路。")
+        val vpnMtu = normalizedAppVpnMtu(state.settings.vpnMtu)
         val dnsEndpoint = resolveDnsEndpoint(applicationContext, state.settings)
         val routingRules = RuleSourceManager.loadEnabledRoutingRules(
             context = applicationContext,
@@ -347,6 +354,7 @@ class XrayVpnService : VpnService() {
             tunFd = tunFd,
             routingRules = streamingRouting.routingRules + routingRules,
             additionalOutbounds = streamingRouting.outbounds,
+            vpnMtu = vpnMtu,
         ).getOrElse { throw it }
     }
 
@@ -502,6 +510,18 @@ class XrayVpnService : VpnService() {
         servers: List<ServerNode>,
     ): ServerNode? {
         val fallbackId = source.fallbackNodeId.trim().takeIf { it.isNotBlank() } ?: return null
+        if (!NodeLatencyTester.supportsHeartbeatFallback(source)) {
+            val noticeKey = "${source.id}:$fallbackId"
+            if (lastUnsupportedFallbackNoticeKey != noticeKey) {
+                lastUnsupportedFallbackNoticeKey = noticeKey
+                AppLogManager.append(
+                    applicationContext,
+                    "FALLBACK",
+                    "忽略 ${source.name} 的备用节点配置：${NodeLatencyTester.heartbeatFallbackUnsupportedMessage(source)}",
+                )
+            }
+            return null
+        }
         if (source.id == lastFallbackTargetServerId) return null
         return servers.firstOrNull { candidate ->
             candidate.id == fallbackId &&
@@ -662,6 +682,7 @@ class XrayVpnService : VpnService() {
 
     private fun resetFailoverState() {
         lastFallbackTargetServerId = null
+        lastUnsupportedFallbackNoticeKey = null
         failbackPrimaryServerId = null
         failbackPrimarySuccessCount = 0
     }
@@ -713,7 +734,7 @@ class XrayVpnService : VpnService() {
     }
 
     private fun runDownloadSpeedTest(): Pair<Long, Long> {
-        val connection = (URL(DOWNLOAD_TEST_URL).openConnection() as HttpsURLConnection).apply {
+        val connection = (URL(DOWNLOAD_TEST_URL).openConnection(speedTestProxy()) as HttpsURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = SPEED_TEST_CONNECT_TIMEOUT_MS
             readTimeout = SPEED_TEST_READ_TIMEOUT_MS
@@ -739,7 +760,7 @@ class XrayVpnService : VpnService() {
 
     private fun runUploadSpeedTest(): Pair<Long, Long> {
         val payload = ByteArray(UPLOAD_TEST_BYTES) { (it % 251).toByte() }
-        val connection = (URL(UPLOAD_TEST_URL).openConnection() as HttpsURLConnection).apply {
+        val connection = (URL(UPLOAD_TEST_URL).openConnection(speedTestProxy()) as HttpsURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = SPEED_TEST_CONNECT_TIMEOUT_MS
             readTimeout = SPEED_TEST_READ_TIMEOUT_MS
@@ -757,6 +778,13 @@ class XrayVpnService : VpnService() {
             val elapsedMs = (System.currentTimeMillis() - startedAt).coerceAtLeast(1L)
             payload.size.toLong() to ((payload.size.toLong() * 1000L) / elapsedMs)
         }
+    }
+
+    private fun speedTestProxy(): Proxy {
+        return Proxy(
+            Proxy.Type.HTTP,
+            InetSocketAddress("127.0.0.1", XrayConfigFactory.HTTP_PORT),
+        )
     }
 
     private inline fun <T> HttpsURLConnection.useAndDisconnect(block: HttpsURLConnection.() -> T): T {

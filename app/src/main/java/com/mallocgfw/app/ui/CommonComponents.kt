@@ -410,13 +410,15 @@ internal fun MediaRoutingNodeRow(
     subtitle: String,
     selected: Boolean,
     onClick: () -> Unit,
+    enabled: Boolean = true,
+    disabledLabel: String = "不可用",
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
-            .background(Color.White.copy(alpha = 0.035f))
-            .clickable(onClick = onClick)
+            .background(Color.White.copy(alpha = if (enabled) 0.035f else 0.018f))
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -427,14 +429,24 @@ internal fun MediaRoutingNodeRow(
                 fontSize = TypeScale.ListTitle,
                 lineHeight = TypeScale.ListTitleLine,
                 fontWeight = FontWeight.Bold,
+                color = if (enabled) TextPrimary else TextSecondary,
             )
-            Text(subtitle, color = TextSecondary)
+            Text(
+                text = subtitle,
+                color = TextSecondary,
+            )
         }
         if (selected) {
             StatusPill(
                 text = "已选",
                 color = Primary,
                 background = Primary.copy(alpha = 0.16f),
+            )
+        } else if (!enabled) {
+            StatusPill(
+                text = disabledLabel,
+                color = TextSecondary,
+                background = ControlSurfaceTrackColor,
             )
         } else {
             OutlinedActionChip("选择")
@@ -607,13 +619,13 @@ internal fun HomeMetricsCard(
                 verticalAlignment = Alignment.Top,
             ) {
                 CompactMetricRow(
-                    label = "下载速度",
+                    label = "节点下载",
                     value = downloadRate,
                     subtitle = downloadSubtitle,
                     modifier = Modifier.weight(1f),
                 )
                 CompactMetricRow(
-                    label = "上传速度",
+                    label = "节点上传",
                     value = uploadRate,
                     subtitle = uploadSubtitle,
                     modifier = Modifier.weight(1f),
@@ -717,11 +729,12 @@ internal fun DetailMenuRow(
     value: String,
     selection: String,
     onClick: () -> Unit,
+    enabled: Boolean = true,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(start = 8.dp, top = 12.dp, end = 4.dp, bottom = 10.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
@@ -739,6 +752,7 @@ internal fun DetailMenuRow(
                 fontSize = TypeScale.ListTitle,
                 lineHeight = TypeScale.ListTitleLine,
                 fontWeight = FontWeight.Bold,
+                color = if (enabled) TextPrimary else TextSecondary,
             )
         }
         Row(
@@ -747,7 +761,7 @@ internal fun DetailMenuRow(
         ) {
             Text(
                 text = selection,
-                color = Primary,
+                color = if (enabled) Primary else TextSecondary,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -756,7 +770,7 @@ internal fun DetailMenuRow(
             Icon(
                 imageVector = Icons.AutoMirrored.Rounded.ArrowForwardIos,
                 contentDescription = null,
-                tint = Primary,
+                tint = if (enabled) Primary else TextSecondary,
                 modifier = Modifier.size(16.dp),
             )
         }
@@ -1388,4 +1402,3 @@ internal fun TwoColumnInfoGrid(
         }
     }
 }
-
