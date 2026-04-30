@@ -73,6 +73,11 @@ enum class RuleSourceType {
     Surge,
 }
 
+enum class RuleSourceKind {
+    RemoteUrl,
+    LocalText,
+}
+
 enum class RuleSourceStatus {
     Idle,
     Updating,
@@ -85,6 +90,7 @@ enum class RuleSourceStatus {
 enum class RuleTargetPolicy {
     Direct,
     Proxy,
+    Block,
 }
 
 data class ServerGroup(
@@ -210,6 +216,8 @@ data class RuleSourceItem(
     val convertedRules: Int,
     val skippedRules: Int,
     val lastError: String? = null,
+    val sourceKind: RuleSourceKind = RuleSourceKind.RemoteUrl,
+    val content: String = "",
 )
 
 data class RuleSourceDetailSummary(

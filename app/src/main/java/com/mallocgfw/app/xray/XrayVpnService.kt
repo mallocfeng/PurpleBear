@@ -261,9 +261,10 @@ class XrayVpnService : VpnService() {
         val server = state.servers.firstOrNull { it.id == serverId }
             ?: error("未找到要连接的节点。")
         val vpnMtu = normalizedAppVpnMtu(state.settings.vpnMtu)
-        val routingRules = RuleSourceManager.loadEnabledRoutingRules(
+        val ruleRouting = RuleSourceManager.buildRoutingSetup(
             context = applicationContext,
             sources = state.ruleSources,
+            servers = state.servers,
         )
         val streamingRouting = StreamingMediaManager.buildRoutingSetup(
             context = applicationContext,
@@ -323,8 +324,8 @@ class XrayVpnService : VpnService() {
             context = applicationContext,
             server = server,
             tunFd = tunFd,
-            routingRules = streamingRouting.routingRules + routingRules,
-            additionalOutbounds = streamingRouting.outbounds,
+            routingRules = streamingRouting.routingRules + ruleRouting.routingRules,
+            additionalOutbounds = streamingRouting.outbounds + ruleRouting.outbounds,
             vpnMtu = vpnMtu,
         )
             .getOrElse { throw it }
@@ -337,9 +338,10 @@ class XrayVpnService : VpnService() {
         val tunFd = vpnInterface?.fd ?: error("系统 VPN 还没有建立，无法热切换线路。")
         val vpnMtu = normalizedAppVpnMtu(state.settings.vpnMtu)
         val dnsEndpoint = resolveDnsEndpoint(applicationContext, state.settings)
-        val routingRules = RuleSourceManager.loadEnabledRoutingRules(
+        val ruleRouting = RuleSourceManager.buildRoutingSetup(
             context = applicationContext,
             sources = state.ruleSources,
+            servers = state.servers,
         )
         val streamingRouting = StreamingMediaManager.buildRoutingSetup(
             context = applicationContext,
@@ -352,8 +354,8 @@ class XrayVpnService : VpnService() {
             context = applicationContext,
             server = server,
             tunFd = tunFd,
-            routingRules = streamingRouting.routingRules + routingRules,
-            additionalOutbounds = streamingRouting.outbounds,
+            routingRules = streamingRouting.routingRules + ruleRouting.routingRules,
+            additionalOutbounds = streamingRouting.outbounds + ruleRouting.outbounds,
             vpnMtu = vpnMtu,
         ).getOrElse { throw it }
     }

@@ -324,6 +324,8 @@ object AppStateStore {
                         put("convertedRules", source.convertedRules)
                         put("skippedRules", source.skippedRules)
                         putOpt("lastError", source.lastError)
+                        put("sourceKind", source.sourceKind.name)
+                        put("content", source.content)
                     })
                 }
             })
@@ -486,6 +488,8 @@ object AppStateStore {
                 convertedRules = item.optInt("convertedRules", 0),
                 skippedRules = item.optInt("skippedRules", 0),
                 lastError = item.optNullableString("lastError"),
+                sourceKind = item.optString("sourceKind").toEnumOrDefault(RuleSourceKind.RemoteUrl),
+                content = item.optString("content", ""),
             )
         }
     }

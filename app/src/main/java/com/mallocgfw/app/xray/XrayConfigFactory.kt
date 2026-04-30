@@ -1,6 +1,7 @@
 package com.mallocgfw.app.xray
 
 import com.mallocgfw.app.model.ManualNodeFactory
+import com.mallocgfw.app.model.RuleTargetPolicy
 import com.mallocgfw.app.model.ServerNode
 import com.mallocgfw.app.model.XrayNamedOutbound
 import com.mallocgfw.app.model.XrayRoutingRule
@@ -159,8 +160,51 @@ object XrayConfigFactory {
             )
         }
 
-        // Keep private-network traffic direct, but let streaming and user rules
-        // match before broad CN direct fallbacks.
+        routingRules
+            .withIndex()
+            .sortedWith(
+                compareByDescending<IndexedValue<XrayRoutingRule>> { it.value.priority }
+                    .thenBy { it.index },
+            )
+            .forEach { indexedRule ->
+                val rule = indexedRule.value
+                val outboundTag = rule.outboundTag ?: when (rule.target) {
+                    RuleTargetPolicy.Direct -> "direct"
+                    RuleTargetPolicy.Proxy -> "proxy"
+                    RuleTargetPolicy.Block -> "block"
+                }
+                val domains = JSONArray().apply {
+                    rule.domainSuffixes.forEach { put("domain:$it") }
+                    rule.fullDomains.forEach { put("full:$it") }
+                    rule.domainKeywords.forEach { put("keyword:$it") }
+                    rule.domainRegexes.forEach { put("regexp:$it") }
+                }
+                if (domains.length() > 0) {
+                    rules.put(
+                        JSONObject().apply {
+                            put("type", "field")
+                            put("domain", domains)
+                            put("outboundTag", outboundTag)
+                        },
+                    )
+                }
+                val ips = JSONArray().apply {
+                    rule.ipCidrs.forEach(::put)
+                    rule.ipCidrs6.forEach(::put)
+                }
+                if (ips.length() > 0) {
+                    rules.put(
+                        JSONObject().apply {
+                            put("type", "field")
+                            put("ip", ips)
+                            put("outboundTag", outboundTag)
+                        },
+                    )
+                }
+            }
+
+        // Keep private-network traffic direct after explicit user and service
+        // rules have had a chance to match.
         rules.put(
             JSONObject().apply {
                 put("type", "field")
@@ -170,47 +214,6 @@ object XrayConfigFactory {
                 put("outboundTag", "direct")
             },
         )
-
-        routingRules
-            .withIndex()
-            .sortedWith(
-                compareByDescending<IndexedValue<XrayRoutingRule>> { it.value.priority }
-                    .thenBy { it.index },
-            )
-            .forEach { indexedRule ->
-            val rule = indexedRule.value
-            val outboundTag = rule.outboundTag ?: when (rule.target.name) {
-                "Direct" -> "direct"
-                else -> "proxy"
-            }
-            val domains = JSONArray().apply {
-                rule.domainSuffixes.forEach { put("domain:$it") }
-                rule.fullDomains.forEach { put("full:$it") }
-                rule.domainKeywords.forEach { put("keyword:$it") }
-            }
-            if (domains.length() > 0) {
-                rules.put(
-                    JSONObject().apply {
-                        put("type", "field")
-                        put("domain", domains)
-                        put("outboundTag", outboundTag)
-                    },
-                )
-            }
-            val ips = JSONArray().apply {
-                rule.ipCidrs.forEach(::put)
-                rule.ipCidrs6.forEach(::put)
-            }
-            if (ips.length() > 0) {
-                rules.put(
-                    JSONObject().apply {
-                        put("type", "field")
-                        put("ip", ips)
-                        put("outboundTag", outboundTag)
-                    },
-                )
-            }
-        }
 
         rules.put(
             JSONObject().apply {

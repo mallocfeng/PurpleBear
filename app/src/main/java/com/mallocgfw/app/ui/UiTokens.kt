@@ -7,8 +7,8 @@ import com.mallocgfw.app.ui.theme.Primary
 import com.mallocgfw.app.ui.theme.Secondary
 
 internal const val APP_BRAND_NAME = "PurpleBear"
-internal const val APP_DISPLAY_VERSION = "2.6.4"
-internal const val APP_VERSION_BADGE = "2.6.4"
+internal const val APP_DISPLAY_VERSION = "2.6.5"
+internal const val APP_VERSION_BADGE = "2.6.5"
 internal val HeartbeatIntervalOptionsMinutes = listOf(2, 5, 10)
 internal val BrandWordmark = Primary
 internal val BrandTitleColor: Color get() = if (IsLightTheme) Color(0xFF6849CB) else BrandWordmark

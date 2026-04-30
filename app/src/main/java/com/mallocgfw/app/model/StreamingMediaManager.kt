@@ -203,9 +203,24 @@ object StreamingMediaManager {
             put("domainSuffixes", JSONArray().apply { compiled.domainSuffixes.forEach(::put) })
             put("fullDomains", JSONArray().apply { compiled.fullDomains.forEach(::put) })
             put("domainKeywords", JSONArray().apply { compiled.domainKeywords.forEach(::put) })
+            put("domainRegexes", JSONArray().apply { compiled.domainRegexes.forEach(::put) })
             put("ipCidrs", JSONArray().apply { compiled.ipCidrs.forEach(::put) })
             put("ipCidrs6", JSONArray().apply { compiled.ipCidrs6.forEach(::put) })
             put("processNames", JSONArray().apply { compiled.processNames.forEach(::put) })
+            put("routingRules", JSONArray().apply {
+                compiled.routingRules.forEach { rule ->
+                    put(JSONObject().apply {
+                        put("target", rule.target.name)
+                        put("domainSuffixes", JSONArray().apply { rule.domainSuffixes.forEach(::put) })
+                        put("fullDomains", JSONArray().apply { rule.fullDomains.forEach(::put) })
+                        put("domainKeywords", JSONArray().apply { rule.domainKeywords.forEach(::put) })
+                        put("domainRegexes", JSONArray().apply { rule.domainRegexes.forEach(::put) })
+                        put("ipCidrs", JSONArray().apply { rule.ipCidrs.forEach(::put) })
+                        put("ipCidrs6", JSONArray().apply { rule.ipCidrs6.forEach(::put) })
+                    })
+                }
+            })
+            put("noResolveRules", JSONArray().apply { compiled.noResolveRules.forEach(::put) })
         }
         compiledRuleFile(context, serviceId).apply {
             parentFile?.mkdirs()
@@ -231,9 +246,12 @@ object StreamingMediaManager {
                 domainSuffixes = json.optJSONArray("domainSuffixes").toStringList(),
                 fullDomains = json.optJSONArray("fullDomains").toStringList(),
                 domainKeywords = json.optJSONArray("domainKeywords").toStringList(),
+                domainRegexes = json.optJSONArray("domainRegexes").toStringList(),
                 ipCidrs = json.optJSONArray("ipCidrs").toStringList(),
                 ipCidrs6 = json.optJSONArray("ipCidrs6").toStringList(),
                 processNames = json.optJSONArray("processNames").toStringList(),
+                routingRules = json.optJSONArray("routingRules").toCompiledRoutingRules(),
+                noResolveRules = json.optJSONArray("noResolveRules").toStringList(),
             )
         }.getOrNull()
     }
@@ -245,5 +263,23 @@ object StreamingMediaManager {
     private fun JSONArray?.toStringList(): List<String> {
         if (this == null) return emptyList()
         return List(length()) { index -> optString(index) }.filter { it.isNotBlank() }
+    }
+
+    private fun JSONArray?.toCompiledRoutingRules(): List<CompiledRoutingRule> {
+        if (this == null) return emptyList()
+        return List(length()) { index ->
+            val item = optJSONObject(index) ?: return@List null
+            CompiledRoutingRule(
+                target = runCatching {
+                    RuleTargetPolicy.valueOf(item.optString("target", RuleTargetPolicy.Proxy.name))
+                }.getOrDefault(RuleTargetPolicy.Proxy),
+                domainSuffixes = item.optJSONArray("domainSuffixes").toStringList(),
+                fullDomains = item.optJSONArray("fullDomains").toStringList(),
+                domainKeywords = item.optJSONArray("domainKeywords").toStringList(),
+                domainRegexes = item.optJSONArray("domainRegexes").toStringList(),
+                ipCidrs = item.optJSONArray("ipCidrs").toStringList(),
+                ipCidrs6 = item.optJSONArray("ipCidrs6").toStringList(),
+            )
+        }.filterNotNull().filter { it.hasEntries() }
     }
 }

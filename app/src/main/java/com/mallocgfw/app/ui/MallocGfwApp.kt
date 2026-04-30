@@ -70,6 +70,7 @@ import com.mallocgfw.app.model.PersistedAppState
 import com.mallocgfw.app.model.ProxyMode
 import com.mallocgfw.app.model.RuleRefreshResult
 import com.mallocgfw.app.model.RuleSourceItem
+import com.mallocgfw.app.model.RuleSourceKind
 import com.mallocgfw.app.model.RuleSourceManager
 import com.mallocgfw.app.model.RuleSourceStatus
 import com.mallocgfw.app.model.RuleSourceType
@@ -139,6 +140,8 @@ fun MallocGfwApp(
         mutableStateOf(initialState.ruleSources.firstOrNull()?.id.orEmpty())
     }
     var ruleEditorSourceId by rememberSaveable { mutableStateOf<String?>(null) }
+    var ruleEditorKind by rememberSaveable { mutableStateOf(RuleSourceKind.RemoteUrl) }
+    var scrollRulesToCustomSources by remember { mutableStateOf(false) }
     var preProxyPickerOwnerNodeId by rememberSaveable { mutableStateOf<String?>(null) }
     var nodeLinkPickerMode by rememberSaveable { mutableStateOf(NodeLinkPickerMode.PreProxy) }
     var serverFilter by rememberSaveable { mutableStateOf("all") }
@@ -1261,34 +1264,57 @@ fun MallocGfwApp(
     fun addRuleSource(name: String, url: String, type: RuleSourceType) {
         val draft = RuleSourceManager.createDraft(name = name, url = url, requestedType = type)
         replaceRuleSource(draft.copy(status = RuleSourceStatus.Updating))
-        refreshRuleSource(draft.id, openDetailAfter = true)
+        goToMain(MainTab.Rules)
+        scrollRulesToCustomSources = true
+        refreshRuleSource(draft.id)
+    }
+
+    fun addTextRuleSource(name: String, text: String, type: RuleSourceType) {
+        val draft = RuleSourceManager.createTextDraft(name = name, text = text, requestedType = type)
+        replaceRuleSource(draft.copy(status = RuleSourceStatus.Updating))
+        goToMain(MainTab.Rules)
+        scrollRulesToCustomSources = true
+        refreshRuleSource(draft.id)
     }
 
     fun saveRuleSourceEdits(
         editingSourceId: String?,
         name: String,
-        url: String,
+        content: String,
         type: RuleSourceType,
+        sourceKind: RuleSourceKind,
     ) {
         if (editingSourceId.isNullOrBlank()) {
-            addRuleSource(name, url, type)
+            if (sourceKind == RuleSourceKind.LocalText) {
+                addTextRuleSource(name, content, type)
+            } else {
+                addRuleSource(name, content, type)
+            }
             return
         }
         val index = ruleSources.indexOfFirst { it.id == editingSourceId }
         if (index < 0) {
-            addRuleSource(name, url, type)
+            if (sourceKind == RuleSourceKind.LocalText) {
+                addTextRuleSource(name, content, type)
+            } else {
+                addRuleSource(name, content, type)
+            }
             return
         }
         val current = ruleSources[index]
         val updated = current.copy(
             name = name.ifBlank { current.name },
-            url = url.trim(),
+            url = if (sourceKind == RuleSourceKind.LocalText) current.url.ifBlank { "local://manual-rule" } else content.trim(),
+            content = if (sourceKind == RuleSourceKind.LocalText) content else "",
             type = type,
+            sourceKind = sourceKind,
             status = RuleSourceStatus.Updating,
             lastError = null,
         )
         replaceRuleSource(updated)
-        refreshRuleSource(updated.id, openDetailAfter = true)
+        goToMain(MainTab.Rules)
+        scrollRulesToCustomSources = true
+        refreshRuleSource(updated.id)
     }
 
     fun toggleRuleSourceEnabled(sourceId: String) {
@@ -1795,6 +1821,12 @@ fun MallocGfwApp(
             pendingHomeSwitchPromptServerId = null
         }
     }
+    LaunchedEffect(screen, scrollRulesToCustomSources, ruleSources.size) {
+        if (screen != AppScreen.Rules || !scrollRulesToCustomSources) return@LaunchedEffect
+        val customHeaderIndex = 4 + ruleSources.count { it.systemDefault }
+        rulesListState.animateScrollToItem(customHeaderIndex.coerceAtLeast(0))
+        scrollRulesToCustomSources = false
+    }
     val selectedServerGroup = selectedServer?.let { server ->
         serverGroups.firstOrNull { it.id == server.groupId }
     }
@@ -1937,6 +1969,12 @@ fun MallocGfwApp(
                         },
                         onAddSource = {
                             ruleEditorSourceId = null
+                            ruleEditorKind = RuleSourceKind.RemoteUrl
+                            navigateSecondary(AppScreen.AddRuleSource)
+                        },
+                        onAddTextSource = {
+                            ruleEditorSourceId = null
+                            ruleEditorKind = RuleSourceKind.LocalText
                             navigateSecondary(AppScreen.AddRuleSource)
                         },
                         onToggleEnabled = ::toggleRuleSourceEnabled,
@@ -2263,6 +2301,7 @@ fun MallocGfwApp(
                         onRefresh = { selectedRuleSource?.id?.let(::refreshRuleSource) },
                         onEdit = {
                             ruleEditorSourceId = selectedRuleSource?.id
+                            ruleEditorKind = selectedRuleSource?.sourceKind ?: RuleSourceKind.RemoteUrl
                             navigateSecondary(AppScreen.AddRuleSource)
                         },
                         onDelete = { selectedRuleSource?.id?.let(::deleteRuleSource) },
@@ -2271,9 +2310,11 @@ fun MallocGfwApp(
                     AppScreen.AddRuleSource -> AddRuleSourceScreen(
                         padding = padding,
                         editingSource = ruleSources.firstOrNull { it.id == ruleEditorSourceId },
+                        sourceKind = ruleEditorKind,
+                        servers = servers,
                         onBack = ::onBack,
-                        onSubmit = { name, url, type ->
-                            saveRuleSourceEdits(ruleEditorSourceId, name, url, type)
+                        onSubmit = { name, content, type, sourceKind ->
+                            saveRuleSourceEdits(ruleEditorSourceId, name, content, type, sourceKind)
                         },
                     )
 

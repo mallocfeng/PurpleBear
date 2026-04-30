@@ -28,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mallocgfw.app.model.RuleSourceItem
+import com.mallocgfw.app.model.RuleSourceKind
 import com.mallocgfw.app.ui.theme.Error
 import com.mallocgfw.app.ui.theme.Primary
 import com.mallocgfw.app.ui.theme.PrimaryStrong
@@ -98,7 +99,10 @@ internal fun RuleSourceCard(
                         background = if (source.systemDefault) Primary.copy(alpha = 0.14f) else Secondary.copy(alpha = 0.14f),
                         compact = true,
                     )
-                    OutlinedActionChip(source.type.displayName(), compact = true)
+                    OutlinedActionChip(
+                        if (source.sourceKind == RuleSourceKind.LocalText) "本地文本" else source.type.displayName(),
+                        compact = true,
+                    )
                 }
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
@@ -110,7 +114,11 @@ internal fun RuleSourceCard(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = source.url,
+                    text = if (source.sourceKind == RuleSourceKind.LocalText) {
+                        "手动输入 Shadowrocket / Surge 文本规则"
+                    } else {
+                        source.url
+                    },
                     color = TextSecondary,
                     modifier = Modifier.padding(top = 3.dp),
                     fontSize = TypeScale.Meta,
@@ -118,15 +126,17 @@ internal fun RuleSourceCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    text = "最近更新时间：${source.updatedAt}",
-                    color = TextSecondary,
-                    modifier = Modifier.padding(top = 2.dp),
-                    fontSize = TypeScale.Tiny,
-                    lineHeight = TypeScale.TinyLine,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (source.sourceKind != RuleSourceKind.LocalText) {
+                    Text(
+                        text = "最近更新时间：${source.updatedAt}",
+                        color = TextSecondary,
+                        modifier = Modifier.padding(top = 2.dp),
+                        fontSize = TypeScale.Tiny,
+                        lineHeight = TypeScale.TinyLine,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             Column(horizontalAlignment = Alignment.End) {
                 StatusPill(
@@ -152,19 +162,21 @@ internal fun RuleSourceCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            )
-            {
-                Text(
-                    text = if (updating) "处理中…" else "立即更新",
-                    color = Primary,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = TypeScale.Meta,
-                    lineHeight = TypeScale.MetaLine,
-                    modifier = Modifier.clickable(onClick = onRefresh),
+            if (source.sourceKind != RuleSourceKind.LocalText) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
                 )
+                {
+                    Text(
+                        text = if (updating) "处理中…" else "立即更新",
+                        color = Primary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = TypeScale.Meta,
+                        lineHeight = TypeScale.MetaLine,
+                        modifier = Modifier.clickable(onClick = onRefresh),
+                    )
+                }
             }
         }
     }
@@ -273,9 +285,7 @@ internal fun GeoDataCard(
 }
 
 @Composable
-internal fun EmptyRulesCard(
-    onAddSource: () -> Unit,
-) {
+internal fun EmptyRulesCard() {
     SurfaceCard(compact = true) {
         Text(
             text = "还没有自定义规则源",
@@ -290,13 +300,6 @@ internal fun EmptyRulesCard(
             fontSize = TypeScale.Meta,
             lineHeight = TypeScale.MetaLine,
             modifier = Modifier.padding(top = 3.dp),
-        )
-        Spacer(modifier = Modifier.height(10.dp))
-        CompactPrimaryActionButton(
-            text = "添加规则 URL",
-            enabled = true,
-            onClick = onAddSource,
-            modifier = Modifier.fillMaxWidth(),
         )
     }
 }
@@ -333,4 +336,3 @@ internal fun AddRuleFab(
         }
     }
 }
-
