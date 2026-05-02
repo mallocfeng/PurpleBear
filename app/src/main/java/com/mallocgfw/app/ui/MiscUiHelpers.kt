@@ -1,8 +1,14 @@
 package com.mallocgfw.app.ui
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
+import android.graphics.Rect
 import android.graphics.drawable.Icon
+import android.os.Build
 import android.net.Uri
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageProxy
@@ -176,6 +182,220 @@ internal fun processQrFrame(
         .addOnCompleteListener {
             imageProxy.close()
         }
+}
+
+internal data class QrImageCandidate(
+    val rawValue: String,
+    val boundingBox: Rect?,
+)
+
+internal fun processQrImage(
+    context: Context,
+    scanner: com.google.mlkit.vision.barcode.BarcodeScanner,
+    imageUri: Uri,
+    onDetected: (List<QrImageCandidate>) -> Unit,
+    onFailure: (Throwable?) -> Unit,
+) {
+    val inputImage = runCatching {
+        InputImage.fromFilePath(context, imageUri)
+    }.getOrElse { error ->
+        onFailure(error)
+        return
+    }
+    scanner.process(inputImage)
+        .addOnSuccessListener { barcodes ->
+            val detections = barcodes.mapNotNull { barcode ->
+                val rawValue = barcode.rawValue?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                QrImageCandidate(
+                    rawValue = rawValue,
+                    boundingBox = barcode.boundingBox,
+                )
+            }
+            if (detections.isNotEmpty()) {
+                onDetected(detections)
+            } else {
+                processQrImageFallback(
+                    context = context,
+                    scanner = scanner,
+                    imageUri = imageUri,
+                    onDetected = onDetected,
+                    onFailure = onFailure,
+                )
+            }
+        }
+        .addOnFailureListener { error ->
+            processQrImageFallback(
+                context = context,
+                scanner = scanner,
+                imageUri = imageUri,
+                onDetected = onDetected,
+                onFailure = onFailure,
+                originalError = error,
+            )
+        }
+}
+
+private fun processQrImageFallback(
+    context: Context,
+    scanner: com.google.mlkit.vision.barcode.BarcodeScanner,
+    imageUri: Uri,
+    onDetected: (List<QrImageCandidate>) -> Unit,
+    onFailure: (Throwable?) -> Unit,
+    originalError: Throwable? = null,
+) {
+    val bitmap = runCatching {
+        loadBitmapFromUri(context, imageUri)
+    }.getOrElse { error ->
+        onFailure(originalError ?: error)
+        return
+    }
+    val regions = buildQrFallbackRegions(bitmap.width, bitmap.height)
+    val detectedByValue = LinkedHashMap<String, QrImageCandidate>()
+
+    fun finish() {
+        if (detectedByValue.isNotEmpty()) {
+            onDetected(detectedByValue.values.toList())
+        } else {
+            onFailure(originalError)
+        }
+    }
+
+    fun scanRegion(index: Int) {
+        if (index >= regions.size) {
+            finish()
+            return
+        }
+        val region = regions[index]
+        val regionBitmap = if (region.left == 0 && region.top == 0 && region.width == bitmap.width && region.height == bitmap.height) {
+            bitmap
+        } else {
+            Bitmap.createBitmap(bitmap, region.left, region.top, region.width, region.height)
+        }
+        scanner.process(InputImage.fromBitmap(regionBitmap, 0))
+            .addOnSuccessListener { barcodes ->
+                barcodes.forEach { barcode ->
+                    val rawValue = barcode.rawValue?.takeIf { it.isNotBlank() } ?: return@forEach
+                    if (detectedByValue.containsKey(rawValue)) return@forEach
+                    val adjustedBox = barcode.boundingBox?.let { bounds ->
+                        Rect(
+                            region.left + bounds.left,
+                            region.top + bounds.top,
+                            region.left + bounds.right,
+                            region.top + bounds.bottom,
+                        )
+                    }
+                    detectedByValue[rawValue] = QrImageCandidate(
+                        rawValue = rawValue,
+                        boundingBox = adjustedBox,
+                    )
+                }
+            }
+            .addOnCompleteListener {
+                if (regionBitmap !== bitmap) {
+                    regionBitmap.recycle()
+                }
+                scanRegion(index + 1)
+            }
+    }
+
+    scanRegion(0)
+}
+
+private data class QrFallbackRegion(
+    val left: Int,
+    val top: Int,
+    val width: Int,
+    val height: Int,
+)
+
+private fun buildQrFallbackRegions(
+    imageWidth: Int,
+    imageHeight: Int,
+): List<QrFallbackRegion> {
+    val regions = linkedSetOf<QrFallbackRegion>()
+
+    fun addRegion(left: Int, top: Int, width: Int, height: Int) {
+        val safeWidth = width.coerceIn(1, imageWidth)
+        val safeHeight = height.coerceIn(1, imageHeight)
+        val safeLeft = left.coerceIn(0, imageWidth - safeWidth)
+        val safeTop = top.coerceIn(0, imageHeight - safeHeight)
+        regions += QrFallbackRegion(safeLeft, safeTop, safeWidth, safeHeight)
+    }
+
+    addRegion(0, 0, imageWidth, imageHeight)
+    addRegion(0, 0, imageWidth * 2 / 3, imageHeight)
+    addRegion(imageWidth / 3, 0, imageWidth * 2 / 3, imageHeight)
+    addRegion(0, 0, imageWidth, imageHeight * 2 / 3)
+    addRegion(0, imageHeight / 3, imageWidth, imageHeight * 2 / 3)
+    addRegion(0, 0, imageWidth * 3 / 4, imageHeight * 3 / 4)
+    addRegion(imageWidth / 4, 0, imageWidth * 3 / 4, imageHeight * 3 / 4)
+    addRegion(0, imageHeight / 4, imageWidth * 3 / 4, imageHeight * 3 / 4)
+    addRegion(imageWidth / 4, imageHeight / 4, imageWidth * 3 / 4, imageHeight * 3 / 4)
+
+    val overlapX = imageWidth / 10
+    val overlapY = imageHeight / 10
+    val halfWidth = imageWidth / 2 + overlapX
+    val halfHeight = imageHeight / 2 + overlapY
+    addRegion(0, 0, halfWidth, halfHeight)
+    addRegion(imageWidth / 2 - overlapX, 0, halfWidth, halfHeight)
+    addRegion(0, imageHeight / 2 - overlapY, halfWidth, halfHeight)
+    addRegion(imageWidth / 2 - overlapX, imageHeight / 2 - overlapY, halfWidth, halfHeight)
+
+    return regions.toList()
+}
+
+internal fun loadBitmapFromUri(
+    context: Context,
+    imageUri: Uri,
+    maxDimensionPx: Int = 2_048,
+): Bitmap {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        val source = ImageDecoder.createSource(context.contentResolver, imageUri)
+        return ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+            decoder.setTargetSampleSize(
+                calculateBitmapSampleSize(
+                    width = info.size.width,
+                    height = info.size.height,
+                    maxDimensionPx = maxDimensionPx,
+                ),
+            )
+            decoder.isMutableRequired = false
+        }
+    }
+    val bounds = BitmapFactory.Options().apply {
+        inJustDecodeBounds = true
+    }
+    context.contentResolver.openInputStream(imageUri)?.use { input ->
+        BitmapFactory.decodeStream(input, null, bounds)
+    }
+    val decodeOptions = BitmapFactory.Options().apply {
+        inSampleSize = calculateBitmapSampleSize(
+            width = bounds.outWidth,
+            height = bounds.outHeight,
+            maxDimensionPx = maxDimensionPx,
+        )
+    }
+    val decodedBitmap = context.contentResolver.openInputStream(imageUri)?.use { input ->
+        BitmapFactory.decodeStream(input, null, decodeOptions)
+    }
+    if (decodedBitmap != null) {
+        return decodedBitmap
+    }
+    @Suppress("DEPRECATION")
+    return MediaStore.Images.Media.getBitmap(context.contentResolver, imageUri)
+}
+
+private fun calculateBitmapSampleSize(
+    width: Int,
+    height: Int,
+    maxDimensionPx: Int,
+): Int {
+    if (width <= 0 || height <= 0) return 1
+    var sampleSize = 1
+    while (width / sampleSize > maxDimensionPx || height / sampleSize > maxDimensionPx) {
+        sampleSize *= 2
+    }
+    return sampleSize.coerceAtLeast(1)
 }
 
 internal fun XrayCoreStatus.label(): String {

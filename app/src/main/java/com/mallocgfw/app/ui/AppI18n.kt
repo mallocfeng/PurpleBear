@@ -55,6 +55,7 @@ private fun translateDynamic(raw: String): String {
     englishText[raw]?.let { return it }
     return when {
         raw.startsWith("来自订阅组 ") -> "From group ${translateDynamic(raw.removePrefix("来自订阅组 "))}"
+        raw.startsWith("二维码 ") -> "QR ${raw.removePrefix("二维码 ")}"
         raw.startsWith("端口 ") -> "Port ${raw.removePrefix("端口 ")}"
         raw.startsWith("最近更新时间：") -> "Updated: ${translateDynamic(raw.removePrefix("最近更新时间："))}"
         raw.startsWith("最近同步：") -> "Last sync: ${translateDynamic(raw.removePrefix("最近同步："))}"
@@ -323,6 +324,31 @@ private val englishText = mapOf(
     "扫描订阅二维码" to "Scan a subscription QR code",
     "识别后直接导入。" to "Import after detection.",
     "本地识别。" to "On-device detection.",
+    "打开相册" to "Open gallery",
+    "正在识别图片…" to "Scanning image...",
+    "从本地图片识别二维码。" to "Scan a QR code from a local image.",
+    "当前状态" to "Status",
+    "识别结果" to "Scan result",
+    "已取消图片选择。" to "Image selection canceled.",
+    "正在识别图片中的二维码，请稍候。" to "Scanning the image for QR codes. Please wait.",
+    "已识别二维码，正在导入。" to "QR code found. Importing now.",
+    "已识别 2 个二维码，请点选一个继续导入。" to "Found 2 QR codes. Choose one to continue.",
+    "已识别 3 个二维码，请点选一个继续导入。" to "Found 3 QR codes. Choose one to continue.",
+    "已识别 4 个二维码，请点选一个继续导入。" to "Found 4 QR codes. Choose one to continue.",
+    "已识别 5 个二维码，请点选一个继续导入。" to "Found 5 QR codes. Choose one to continue.",
+    "已选择二维码，正在导入。" to "QR selected. Importing now.",
+    "已返回相机扫码。" to "Back to camera scan.",
+    "请选择一张包含二维码的图片。" to "Choose an image that contains a QR code.",
+    "请选择另一张图片。" to "Choose another image.",
+    "这张图片里没有识别到二维码，请换一张更清晰的图片再试。" to "No QR code was found. Try a clearer image.",
+    "二维码 1" to "QR 1",
+    "二维码 2" to "QR 2",
+    "二维码 3" to "QR 3",
+    "二维码 4" to "QR 4",
+    "二维码 5" to "QR 5",
+    "识别所选二维码" to "Import selected QR",
+    "重新选择图片" to "Choose another image",
+    "返回相机扫码" to "Back to camera scan",
     "跳过" to "Skip",
     "安全、稳定、私密的 Xray 代理" to "Private Xray proxy",
     "初始化安全隧道、订阅源与诊断模块…" to "Preparing tunnel, subscriptions, and diagnostics...",
@@ -525,6 +551,8 @@ private val englishText = mapOf(
     "VPN 权限已授予，正在启动连接…" to "VPN permission granted. Starting...",
     "未授予 VPN 权限。" to "VPN permission denied.",
     "未授予相机权限，无法扫码导入。" to "Camera permission denied. QR import is unavailable.",
+    "所选图片里没有识别到二维码。" to "No QR code was found in the selected image.",
+    "读取图片失败，无法识别二维码。" to "Failed to read the image for QR scanning.",
     "请先导入并选择一个节点。" to "Import and select a node first.",
     "正在申请系统 VPN 并启动连接…" to "Requesting VPN permission and starting...",
     "当前系统不支持应用内直接添加快捷开关，请到系统下拉菜单的编辑页手动添加。" to "This Android version cannot add the tile here. Add it from Quick Settings edit.",

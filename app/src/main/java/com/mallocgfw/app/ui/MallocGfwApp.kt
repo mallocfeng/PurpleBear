@@ -2267,6 +2267,9 @@ fun MallocGfwApp(
                         onDetected = { rawValue ->
                             importScannedCode(rawValue)
                         },
+                        onScanError = { message ->
+                            runtimeMessage = message
+                        },
                     )
 
                     AppScreen.Me -> MeScreen(
