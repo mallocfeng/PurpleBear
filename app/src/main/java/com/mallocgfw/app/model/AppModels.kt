@@ -18,6 +18,7 @@ enum class AppScreen {
     PerApp,
     Diagnostics,
     Settings,
+    Update,
     MediaRouting,
     MediaRoutingNodePicker,
     PreProxyNodePicker,

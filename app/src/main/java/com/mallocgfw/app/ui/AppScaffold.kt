@@ -183,7 +183,7 @@ internal fun screenMatchesTab(screen: AppScreen, tab: MainTab): Boolean {
         MainTab.Import -> screen == AppScreen.Import || screen == AppScreen.ConfirmImport || screen == AppScreen.Subscriptions
         MainTab.Me -> screen == AppScreen.Me || screen == AppScreen.PerApp || screen == AppScreen.Diagnostics ||
             screen == AppScreen.Settings || screen == AppScreen.Permission || screen == AppScreen.MediaRouting ||
-            screen == AppScreen.MediaRoutingNodePicker || screen == AppScreen.LogViewer
+            screen == AppScreen.MediaRoutingNodePicker || screen == AppScreen.LogViewer || screen == AppScreen.Update
     }
 }
 

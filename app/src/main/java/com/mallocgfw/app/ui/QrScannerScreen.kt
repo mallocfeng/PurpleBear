@@ -109,7 +109,7 @@ internal fun QrScannerScreen(
             onDetected = { detections ->
                 galleryScanInFlight = false
                 if (detections.size == 1) {
-                    scanStatusMessage = "已识别二维码，正在导入。"
+                    scanStatusMessage = "已识别二维码，正在生成导入预览。"
                     scanStatusIsError = false
                     onDetected(detections.first().rawValue)
                 } else {
@@ -302,7 +302,7 @@ internal fun QrScannerScreen(
                     PrimaryActionButton(
                         text = "识别所选二维码",
                         onClick = {
-                            scanStatusMessage = "已选择二维码，正在导入。"
+                            scanStatusMessage = "已选择二维码，正在生成导入预览。"
                             scanStatusIsError = false
                             onDetected(currentGallerySelection.detections[selectedGalleryIndex].rawValue)
                         },

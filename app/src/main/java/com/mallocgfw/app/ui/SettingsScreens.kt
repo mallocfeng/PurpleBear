@@ -27,6 +27,7 @@ import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.ripple.rememberRipple
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -55,6 +56,9 @@ import com.mallocgfw.app.model.ServerNode
 import com.mallocgfw.app.model.ServerGroupType
 import com.mallocgfw.app.model.StreamingMediaService
 import com.mallocgfw.app.model.StreamingRouteSelection
+import com.mallocgfw.app.update.AppUpdateInfo
+import com.mallocgfw.app.update.AppUpdateStatus
+import com.mallocgfw.app.update.AppUpdateUiState
 import com.mallocgfw.app.ui.theme.Primary
 import com.mallocgfw.app.ui.theme.Secondary
 import com.mallocgfw.app.ui.theme.Success
@@ -281,6 +285,7 @@ internal fun SettingsScreen(
     onVpnMtuChange: (Int) -> Unit,
     onDailyAutoUpdateChange: (Boolean) -> Unit,
     onUpdateNotificationsChange: (Boolean) -> Unit,
+    onOpenUpdates: () -> Unit,
     onSyncNow: () -> Unit,
     onDnsChange: (AppDnsMode, String) -> Unit,
     onLogLevelChange: (AppLogLevel) -> Unit,
@@ -395,6 +400,13 @@ internal fun SettingsScreen(
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 SettingActionRow(
+                    title = "检查更新",
+                    subtitle = "查看 GitHub Release 最新版本。",
+                    actionText = "进入",
+                    onAction = onOpenUpdates,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                SettingActionRow(
                     title = "规则资源同步",
                     subtitle = if (syncInFlight) {
                         "正在后台同步。"
@@ -495,6 +507,182 @@ internal fun SettingsScreen(
                 onVpnMtuChange(mtu)
                 showMtuDialog = false
             },
+        )
+    }
+}
+
+@Composable
+internal fun UpdateScreen(
+    padding: PaddingValues,
+    state: AppUpdateUiState,
+    currentVersionName: String,
+    currentVersionCode: Int,
+    onBack: () -> Unit,
+    onCheck: () -> Unit,
+    onDownload: () -> Unit,
+    onInstall: () -> Unit,
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(padding),
+        state = rememberRetainedLazyListState(),
+        contentPadding = screenPadding(),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item {
+            AppTopBar(title = "检查更新", subtitle = "GitHub Release", onBack = onBack)
+        }
+        item {
+            ScreenHeader(
+                title = "检查更新",
+                subtitle = "当前 $currentVersionName · versionCode $currentVersionCode",
+            )
+        }
+        state.message?.takeIf { it.isNotBlank() }?.let { message ->
+            item {
+                NoteBox(text = message)
+            }
+        }
+        item {
+            SettingsGroup(title = "版本状态") {
+                UpdateStatusContent(
+                    state = state,
+                    currentVersionName = currentVersionName,
+                    currentVersionCode = currentVersionCode,
+                )
+            }
+        }
+        val info = state.info
+        if (info != null) {
+            item {
+                ReleaseNotes(
+                    info = info,
+                    isCurrentVersion = state.status == AppUpdateStatus.Latest,
+                )
+            }
+        }
+        item {
+            UpdateAction(
+                state = state,
+                onCheck = onCheck,
+                onDownload = onDownload,
+                onInstall = onInstall,
+            )
+        }
+    }
+}
+
+@Composable
+private fun UpdateStatusContent(
+    state: AppUpdateUiState,
+    currentVersionName: String,
+    currentVersionCode: Int,
+) {
+    val info = state.info
+    val title = when (state.status) {
+        AppUpdateStatus.Idle -> "尚未检查更新"
+        AppUpdateStatus.Checking -> "正在检查更新"
+        AppUpdateStatus.Latest -> "当前版本"
+        AppUpdateStatus.Available -> "可更新版本"
+        AppUpdateStatus.Downloading -> "正在下载更新"
+        AppUpdateStatus.Downloaded -> "安装包已下载"
+        AppUpdateStatus.Failed -> "检查更新失败"
+    }
+    SettingInfoRow(
+        title = title,
+        subtitle = if (info == null) {
+            "当前 $currentVersionName · versionCode $currentVersionCode"
+        } else {
+            "${info.releaseName} · ${info.tagName}" +
+                (info.versionCode?.let { " · versionCode $it" } ?: "")
+        },
+    )
+    if (state.status == AppUpdateStatus.Downloading) {
+        Spacer(modifier = Modifier.height(14.dp))
+        val total = state.totalBytes.takeIf { it > 0L } ?: state.info?.apkSizeBytes ?: 0L
+        LinearProgressIndicator(
+            progress = {
+                if (total > 0L) {
+                    (state.downloadedBytes.toFloat() / total.toFloat()).coerceIn(0f, 1f)
+                } else {
+                    0f
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            color = Primary,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "${formatByteCount(state.downloadedBytes)} / ${formatByteCount(total)}",
+            color = TextSecondary,
+        )
+    }
+}
+
+@Composable
+private fun ReleaseNotes(
+    info: AppUpdateInfo,
+    isCurrentVersion: Boolean,
+) {
+    SettingsGroup(title = if (isCurrentVersion) "当前版本描述" else "更新版本描述") {
+        SettingInfoRow(
+            title = if (isCurrentVersion) {
+                "当前已安装：${info.releaseName}"
+            } else {
+                "可升级到：${info.releaseName}"
+            },
+            subtitle = buildString {
+                append("发布于 ")
+                append(info.publishedAt.ifBlank { "GitHub Release" })
+                if (info.apkSizeBytes > 0L) {
+                    append(" · ")
+                    append(formatByteCount(info.apkSizeBytes))
+                }
+            },
+        )
+        Spacer(modifier = Modifier.height(14.dp))
+        SelectionContainer {
+            Text(
+                text = info.body.ifBlank { "此版本没有填写更新说明。" },
+                color = TextPrimary,
+                fontFamily = FontFamily.Default,
+            )
+        }
+    }
+}
+
+@Composable
+private fun UpdateAction(
+    state: AppUpdateUiState,
+    onCheck: () -> Unit,
+    onDownload: () -> Unit,
+    onInstall: () -> Unit,
+) {
+    when (state.status) {
+        AppUpdateStatus.Checking -> OutlinedActionButton(
+            text = "检查中",
+            enabled = false,
+            onClick = {},
+        )
+        AppUpdateStatus.Downloading -> OutlinedActionButton(
+            text = "下载中",
+            enabled = false,
+            onClick = {},
+        )
+        AppUpdateStatus.Available -> PrimaryActionButton(
+            text = "升级",
+            onClick = onDownload,
+        )
+        AppUpdateStatus.Downloaded -> PrimaryActionButton(
+            text = "安装",
+            onClick = onInstall,
+        )
+        AppUpdateStatus.Latest,
+        AppUpdateStatus.Failed,
+        AppUpdateStatus.Idle -> PrimaryActionButton(
+            text = "重新检查",
+            onClick = onCheck,
         )
     }
 }

@@ -155,6 +155,8 @@ internal fun ConfirmImportScreen(
     onConfirm: () -> Unit,
     onImportOnly: () -> Unit,
 ) {
+    val isLocalImport = preview?.group?.type == ServerGroupType.Local
+    val localNode = preview?.nodes?.firstOrNull()
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -168,7 +170,7 @@ internal fun ConfirmImportScreen(
         }
         item {
             ScreenHeader(
-                title = if (preview?.group?.type == ServerGroupType.Local) "准备导入本地节点" else "准备导入订阅",
+                title = if (isLocalImport) "准备导入本地节点" else "准备导入订阅",
                 subtitle = preview?.summary ?: "请返回导入页先输入有效的订阅链接或单节点 URL。",
             )
         }
@@ -179,9 +181,13 @@ internal fun ConfirmImportScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Eyebrow(if (preview?.group?.type == ServerGroupType.Local) "目标分组" else "订阅名称")
+                        Eyebrow(if (isLocalImport) "当前导入节点" else "订阅名称")
                         Text(
-                            text = preview?.group?.name?.let { uiText(it) } ?: uiText("暂无可导入数据"),
+                            text = if (isLocalImport) {
+                                localNode?.name?.let { uiText(it) } ?: uiText("暂无可导入数据")
+                            } else {
+                                preview?.group?.name?.let { uiText(it) } ?: uiText("暂无可导入数据")
+                            },
                             fontSize = TypeScale.CardTitle,
                             lineHeight = TypeScale.CardTitleLine,
                             fontWeight = FontWeight.ExtraBold,
@@ -198,22 +204,34 @@ internal fun ConfirmImportScreen(
                 Spacer(modifier = Modifier.height(16.dp))
                 TwoColumnInfoGrid(
                     items = buildList {
-                        add("节点数量" to uiText("${preview?.nodes?.size ?: 0} 个节点", "${preview?.nodes?.size ?: 0} nodes"))
-                        if ((preview?.hiddenUnsupportedNodeCount ?: 0) > 0) {
-                            add("已隐藏节点" to uiText("已隐藏 ${preview?.hiddenUnsupportedNodeCount ?: 0} 个", "${preview?.hiddenUnsupportedNodeCount ?: 0} hidden"))
+                        if (isLocalImport) {
+                            add("协议" to (localNode?.protocol ?: "--"))
+                            add("地址" to (localNode?.address ?: "--"))
+                            add("端口" to (localNode?.port ?: "--"))
+                            add("传输" to (localNode?.transport ?: "--"))
+                            add("安全" to (localNode?.security ?: "--"))
+                            add("目标分组" to (preview?.group?.name?.let { uiText(it) } ?: "Local"))
+                        } else {
+                            add("节点数量" to uiText("${preview?.nodes?.size ?: 0} 个节点", "${preview?.nodes?.size ?: 0} nodes"))
+                            if ((preview?.hiddenUnsupportedNodeCount ?: 0) > 0) {
+                                add("已隐藏节点" to uiText("已隐藏 ${preview?.hiddenUnsupportedNodeCount ?: 0} 个", "${preview?.hiddenUnsupportedNodeCount ?: 0} hidden"))
+                            }
+                            add("更新时间" to (preview?.group?.updatedAt?.let { uiText(it) } ?: "--"))
+                            add("导入类型" to uiText("订阅"))
+                            add("自动更新" to if (preview?.subscription != null) uiText("可开启") else uiText("不适用"))
                         }
-                        add("更新时间" to (preview?.group?.updatedAt?.let { uiText(it) } ?: "--"))
-                        add("导入类型" to if (preview?.group?.type == ServerGroupType.Local) uiText("单节点 / Local") else uiText("订阅"))
-                        add("自动更新" to if (preview?.subscription != null) uiText("可开启") else uiText("不适用"))
                     },
+                    compact = isLocalImport,
                 )
             }
         }
-        item {
-            SurfaceCard {
-                SettingRow(title = "覆盖同来源节点", subtitle = "替换同 group 旧节点。", checked = true)
-                Spacer(modifier = Modifier.height(12.dp))
-                SettingRow(title = "启用自动更新", subtitle = "订阅链接可用。", checked = preview?.subscription != null)
+        if (!isLocalImport) {
+            item {
+                SurfaceCard {
+                    SettingRow(title = "覆盖同来源节点", subtitle = "替换同 group 旧节点。", checked = true)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    SettingRow(title = "启用自动更新", subtitle = "订阅链接可用。", checked = preview?.subscription != null)
+                }
             }
         }
         item {

@@ -2,13 +2,14 @@ package com.mallocgfw.app.ui
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.sp
+import com.mallocgfw.app.BuildConfig
 import com.mallocgfw.app.ui.theme.IsLightTheme
 import com.mallocgfw.app.ui.theme.Primary
 import com.mallocgfw.app.ui.theme.Secondary
 
 internal const val APP_BRAND_NAME = "PurpleBear"
-internal const val APP_DISPLAY_VERSION = "0.6.6"
-internal const val APP_VERSION_BADGE = "0.6.6"
+internal val APP_DISPLAY_VERSION: String get() = BuildConfig.VERSION_NAME
+internal val APP_VERSION_BADGE: String get() = BuildConfig.VERSION_NAME
 internal val HeartbeatIntervalOptionsMinutes = listOf(2, 5, 10)
 internal val BrandWordmark = Primary
 internal val BrandTitleColor: Color get() = if (IsLightTheme) Color(0xFF6849CB) else BrandWordmark

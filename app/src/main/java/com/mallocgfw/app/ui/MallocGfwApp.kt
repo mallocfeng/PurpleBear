@@ -89,6 +89,9 @@ import com.mallocgfw.app.ui.theme.MallocGfwTheme
 import com.mallocgfw.app.ui.theme.Primary
 import com.mallocgfw.app.ui.theme.TextPrimary
 import com.mallocgfw.app.ui.theme.TextSecondary
+import com.mallocgfw.app.update.AppUpdateManager
+import com.mallocgfw.app.update.AppUpdateStatus
+import com.mallocgfw.app.update.AppUpdateUiState
 import com.mallocgfw.app.sync.BackgroundSyncManager
 import com.mallocgfw.app.sync.DailySyncScheduler
 import com.mallocgfw.app.sync.SyncNotifications
@@ -180,6 +183,9 @@ fun MallocGfwApp(
     var ruleMessage by remember { mutableStateOf<String?>(null) }
     var subscriptionMessage by remember { mutableStateOf<String?>(null) }
     var settingsMessage by remember { mutableStateOf<String?>(null) }
+    var updateState by remember { mutableStateOf(AppUpdateUiState()) }
+    var showUpdatePrompt by rememberSaveable { mutableStateOf(false) }
+    var showLatestVersionDialog by rememberSaveable { mutableStateOf(false) }
     var pendingVpnServerId by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingReconnectServerId by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingReconnectMessage by rememberSaveable { mutableStateOf<String?>(null) }
@@ -1224,6 +1230,130 @@ fun MallocGfwApp(
         }
     }
 
+    fun applyUpdateCheckResult(
+        info: com.mallocgfw.app.update.AppUpdateInfo,
+        promptIfAvailable: Boolean,
+        promptIfLatest: Boolean = false,
+    ) {
+        val currentCode = AppUpdateManager.currentVersionCode(context)
+        val currentName = AppUpdateManager.currentVersionName(context)
+        if (info.isNewerThan(currentCode, currentName)) {
+            updateState = AppUpdateUiState(
+                status = AppUpdateStatus.Available,
+                info = info,
+                message = "发现新版本 ${info.versionName}。",
+            )
+            if (promptIfAvailable) {
+                showUpdatePrompt = true
+            }
+        } else {
+            updateState = AppUpdateUiState(
+                status = AppUpdateStatus.Latest,
+                info = info,
+                message = "当前为最新版。",
+            )
+            if (promptIfLatest) {
+                showLatestVersionDialog = true
+            }
+        }
+    }
+
+    fun checkForUpdates(
+        promptIfAvailable: Boolean = false,
+        promptIfLatest: Boolean = false,
+    ) {
+        if (updateState.status == AppUpdateStatus.Checking ||
+            updateState.status == AppUpdateStatus.Downloading
+        ) {
+            return
+        }
+        updateState = updateState.copy(
+            status = AppUpdateStatus.Checking,
+            message = "正在检查 GitHub Release…",
+            downloadedApkPath = null,
+            downloadedBytes = 0L,
+            totalBytes = 0L,
+        )
+        scope.launch {
+            runCatching {
+                AppUpdateManager.checkLatest()
+            }.onSuccess { info ->
+                applyUpdateCheckResult(info, promptIfAvailable, promptIfLatest)
+            }.onFailure { error ->
+                updateState = AppUpdateUiState(
+                    status = AppUpdateStatus.Failed,
+                    info = updateState.info,
+                    message = error.message ?: "检查更新失败。",
+                )
+            }
+        }
+    }
+
+    fun openUpdateScreen() {
+        navigateSecondary(AppScreen.Update)
+        if (updateState.status in setOf(
+                AppUpdateStatus.Idle,
+                AppUpdateStatus.Latest,
+                AppUpdateStatus.Failed,
+            )
+        ) {
+            checkForUpdates()
+        }
+    }
+
+    fun downloadUpdateApk() {
+        val info = updateState.info ?: return
+        if (updateState.status == AppUpdateStatus.Downloading) return
+        updateState = updateState.copy(
+            status = AppUpdateStatus.Downloading,
+            message = "正在通过代理下载 APK…",
+            downloadedApkPath = null,
+            downloadedBytes = 0L,
+            totalBytes = info.apkSizeBytes,
+        )
+        scope.launch {
+            runCatching {
+                AppUpdateManager.downloadApk(context, info) { downloaded, total ->
+                    updateState = updateState.copy(
+                        status = AppUpdateStatus.Downloading,
+                        downloadedBytes = downloaded,
+                        totalBytes = total,
+                    )
+                }
+            }.onSuccess { file ->
+                updateState = updateState.copy(
+                    status = AppUpdateStatus.Downloaded,
+                    message = "安装包已下载，点击安装继续升级。",
+                    downloadedApkPath = file.absolutePath,
+                    downloadedBytes = file.length(),
+                    totalBytes = file.length(),
+                )
+            }.onFailure { error ->
+                updateState = updateState.copy(
+                    status = AppUpdateStatus.Available,
+                    message = error.message ?: "下载更新失败。",
+                    downloadedApkPath = null,
+                )
+            }
+        }
+    }
+
+    fun installDownloadedUpdate() {
+        val file = AppUpdateManager.downloadedFile(updateState.downloadedApkPath)
+        if (file == null) {
+            updateState = updateState.copy(message = "安装包不存在，请重新下载。")
+            return
+        }
+        val message = runCatching {
+            AppUpdateManager.installDownloadedApk(context, file)
+        }.getOrElse { error ->
+            error.message ?: "无法打开系统安装器。"
+        }
+        if (!message.isNullOrBlank()) {
+            updateState = updateState.copy(message = message)
+        }
+    }
+
     fun updateDnsSettings(
         dnsMode: AppDnsMode,
         customDnsValue: String,
@@ -1279,15 +1409,8 @@ fun MallocGfwApp(
             runCatching {
                 ImportParser.buildPreview(scanned)
             }.onSuccess { preview ->
-                applyImport(preview)
-                if (preview.group.type == ServerGroupType.Subscription) {
-                    subscriptionMessage = "${preview.group.name} 已通过二维码导入，共同步 ${preview.nodes.count { !it.hiddenUnsupported }} 个节点。"
-                    navigateSecondary(AppScreen.Subscriptions)
-                } else {
-                    selectedServerId = preview.nodes.firstOrNull()?.id.orEmpty()
-                    runtimeMessage = "${preview.nodes.firstOrNull()?.name ?: "节点"} 已通过二维码导入。"
-                    goToMain(MainTab.Servers)
-                }
+                pendingImport = preview
+                navigateSecondary(AppScreen.ConfirmImport)
             }.onFailure { error ->
                 runtimeMessage = error.message ?: "二维码内容无法识别为订阅或节点链接。"
                 AppLogManager.append(context, "SCAN", "二维码导入失败", error)
@@ -1620,6 +1743,19 @@ fun MallocGfwApp(
         DailySyncScheduler.schedule(context, appSettings.dailyAutoUpdate)
     }
 
+    LaunchedEffect(Unit) {
+        if (AppUpdateManager.shouldRunAutoCheckToday(context)) {
+            AppUpdateManager.markAutoCheckToday(context)
+            runCatching {
+                AppUpdateManager.checkLatest()
+            }.onSuccess { info ->
+                applyUpdateCheckResult(info, promptIfAvailable = true)
+            }.onFailure { error ->
+                AppLogManager.append(context, "UPDATE", "自动检查更新失败", error)
+            }
+        }
+    }
+
     LaunchedEffect(screen) {
         if (screen == AppScreen.Diagnostics) {
             rerunDiagnostics()
@@ -1824,6 +1960,57 @@ fun MallocGfwApp(
             },
             confirmButton = {
                 TextButton(onClick = { startupHiddenUnsupportedNodeCount = 0 }) {
+                    Text(uiText("知道了"))
+                }
+            },
+        )
+    }
+
+    if (showUpdatePrompt && updateState.info != null && screen != AppScreen.Launch) {
+        val info = updateState.info
+        AlertDialog(
+            onDismissRequest = { showUpdatePrompt = false },
+            title = { Text(uiText("发现新版本")) },
+            text = {
+                Text(
+                    uiText(
+                        "PurpleBear ${info?.versionName.orEmpty()} 已发布，是否查看更新说明？",
+                        "PurpleBear ${info?.versionName.orEmpty()} is available. View release notes?",
+                    ),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showUpdatePrompt = false
+                        navigateSecondary(AppScreen.Update)
+                    },
+                ) {
+                    Text(uiText("查看"))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUpdatePrompt = false }) {
+                    Text(uiText("稍后"))
+                }
+            },
+        )
+    }
+
+    if (showLatestVersionDialog && screen != AppScreen.Launch) {
+        AlertDialog(
+            onDismissRequest = { showLatestVersionDialog = false },
+            title = { Text(uiText("已是最新版")) },
+            text = {
+                Text(
+                    uiText(
+                        "当前安装的 PurpleBear ${AppUpdateManager.currentVersionName(context)} 已是最新版。",
+                        "PurpleBear ${AppUpdateManager.currentVersionName(context)} is already up to date.",
+                    ),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showLatestVersionDialog = false }) {
                     Text(uiText("知道了"))
                 }
             },
@@ -2230,6 +2417,7 @@ fun MallocGfwApp(
                             }
                         },
                         onUpdateNotificationsChange = ::setUpdateNotificationsEnabled,
+                        onOpenUpdates = ::openUpdateScreen,
                         onSyncNow = ::syncAllResources,
                         onDnsChange = ::updateDnsSettings,
                         onLogLevelChange = { level ->
@@ -2238,6 +2426,17 @@ fun MallocGfwApp(
                         },
                         onAddQuickSettingsTile = ::requestQuickSettingsTile,
                         onViewLogs = ::openLogViewer,
+                    )
+
+                    AppScreen.Update -> UpdateScreen(
+                        padding = padding,
+                        state = updateState,
+                        currentVersionName = AppUpdateManager.currentVersionName(context),
+                        currentVersionCode = AppUpdateManager.currentVersionCode(context),
+                        onBack = ::onBack,
+                        onCheck = { checkForUpdates(promptIfLatest = true) },
+                        onDownload = ::downloadUpdateApk,
+                        onInstall = ::installDownloadedUpdate,
                     )
 
                     AppScreen.LogViewer -> LogViewerScreen(
