@@ -50,7 +50,7 @@ object DiagnosticsManager {
         val geoData = GeoDataManager.load(context)
 
         listOf(
-            buildConfigStep(server, settings.globalProxyEnabled),
+            buildConfigStep(server, settings),
             buildRulesStep(ruleSources, routingRules.size, geoData, settings.globalProxyEnabled),
             buildCoreStep(xraySnapshot),
             buildVpnStep(connectionStatus, vpnSnapshot, server),
@@ -60,12 +60,16 @@ object DiagnosticsManager {
         )
     }
 
-    private fun buildConfigStep(server: ServerNode?, globalProxyEnabled: Boolean): DiagnosticStep {
+    private fun buildConfigStep(server: ServerNode?, settings: AppSettings): DiagnosticStep {
         if (server == null) {
             return fail("config", "配置解析", "当前没有可诊断的节点，请先导入并选择一个节点。")
         }
         return runCatching {
-            val config = XrayConfigFactory.buildVpn(server, globalProxyEnabled = globalProxyEnabled)
+            val config = XrayConfigFactory.buildVpn(
+                server,
+                globalProxyEnabled = settings.globalProxyEnabled,
+                geoRoutingRegion = settings.geoRoutingRegion,
+            )
             JSONObject(config)
         }.fold(
             onSuccess = { config ->
@@ -102,7 +106,7 @@ object DiagnosticsManager {
         val detail = buildString {
             append(geoLabel)
             if (globalProxyEnabled) {
-                append("，全局代理已开启，规则源和 CN 直连规则暂不参与路由；局域网/私网仍直连。")
+                append("，全局代理已开启，规则源和 Geo 直连规则暂不参与路由；局域网/私网仍直连。")
             } else {
                 append("，已启用 ${readySources.size} 个规则源，转换后的自定义路由 ${routingRuleCount} 组。")
             }

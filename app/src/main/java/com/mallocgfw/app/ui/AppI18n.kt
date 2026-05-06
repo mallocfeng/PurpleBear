@@ -8,6 +8,7 @@ import java.util.Locale
 internal enum class ResolvedLanguage {
     Chinese,
     English,
+    Russian,
 }
 
 internal val LocalAppLanguage = staticCompositionLocalOf { resolveSystemLanguage() }
@@ -16,21 +17,26 @@ internal fun AppLanguage.resolveAppLanguage(): ResolvedLanguage {
     return when (this) {
         AppLanguage.Chinese -> ResolvedLanguage.Chinese
         AppLanguage.English -> ResolvedLanguage.English
+        AppLanguage.Russian -> ResolvedLanguage.Russian
         AppLanguage.System -> resolveSystemLanguage()
     }
 }
 
 private fun resolveSystemLanguage(): ResolvedLanguage {
-    return if (Locale.getDefault().language.equals("zh", ignoreCase = true)) {
-        ResolvedLanguage.Chinese
-    } else {
-        ResolvedLanguage.English
+    return when (Locale.getDefault().language.lowercase(Locale.ROOT)) {
+        "zh" -> ResolvedLanguage.Chinese
+        "ru" -> ResolvedLanguage.Russian
+        else -> ResolvedLanguage.English
     }
 }
 
 @Composable
 internal fun uiText(zh: String, en: String): String {
-    return if (LocalAppLanguage.current == ResolvedLanguage.Chinese) zh else en
+    return when (LocalAppLanguage.current) {
+        ResolvedLanguage.Chinese -> zh
+        ResolvedLanguage.English -> en
+        ResolvedLanguage.Russian -> russianText[zh] ?: translateDynamic(zh, ResolvedLanguage.Russian).takeIf { it != zh } ?: en
+    }
 }
 
 @Composable
@@ -43,23 +49,143 @@ internal fun appText(raw: String, language: ResolvedLanguage): String {
 }
 
 internal fun appText(zh: String, en: String, language: ResolvedLanguage): String {
-    return if (language == ResolvedLanguage.Chinese) zh else en
+    return when (language) {
+        ResolvedLanguage.Chinese -> zh
+        ResolvedLanguage.English -> en
+        ResolvedLanguage.Russian -> russianText[zh] ?: translateDynamic(zh, language).takeIf { it != zh } ?: en
+    }
 }
 
 private fun translate(raw: String, language: ResolvedLanguage): String {
     if (language == ResolvedLanguage.Chinese) return raw
-    return englishText[raw] ?: translateDynamic(raw)
+    return translatedText(language, raw) ?: translateDynamic(raw, language)
 }
 
-private fun translateDynamic(raw: String): String {
-    englishText[raw]?.let { return it }
+private fun translatedText(language: ResolvedLanguage, raw: String): String? {
+    return when (language) {
+        ResolvedLanguage.Chinese -> raw
+        ResolvedLanguage.English -> englishText[raw]
+        ResolvedLanguage.Russian -> russianText[raw] ?: englishText[raw]
+    }
+}
+
+private fun translateDynamic(raw: String, language: ResolvedLanguage): String {
+    translatedText(language, raw)?.let { return it }
+    if (language == ResolvedLanguage.Russian) {
+        return translateDynamicRussian(raw)
+    }
     return when {
-        raw.startsWith("来自订阅组 ") -> "From group ${translateDynamic(raw.removePrefix("来自订阅组 "))}"
+        raw.startsWith("来自订阅组 ") -> "From group ${translateDynamic(raw.removePrefix("来自订阅组 "), language)}"
         raw.startsWith("二维码 ") -> "QR ${raw.removePrefix("二维码 ")}"
         raw.startsWith("端口 ") -> "Port ${raw.removePrefix("端口 ")}"
-        raw.startsWith("最近更新时间：") -> "Updated: ${translateDynamic(raw.removePrefix("最近更新时间："))}"
-        raw.startsWith("最近同步：") -> "Last sync: ${translateDynamic(raw.removePrefix("最近同步："))}"
-        raw.startsWith("来源：") -> "Source: ${translateDynamic(raw.removePrefix("来源："))}"
+        raw.startsWith("最近更新时间：") -> "Updated: ${translateDynamic(raw.removePrefix("最近更新时间："), language)}"
+        raw.startsWith("最近同步：") -> "Last sync: ${translateDynamic(raw.removePrefix("最近同步："), language)}"
+        raw.startsWith("来源：") -> "Source: ${translateDynamic(raw.removePrefix("来源："), language)}"
+        raw.startsWith("当前 ") && raw.contains(" · versionCode ") -> raw.replaceFirst("当前 ", "Current ")
+        raw.startsWith("发现新版本 ") && raw.endsWith("。") -> {
+            val version = raw.removePrefix("发现新版本 ").removeSuffix("。")
+            "New version $version is available."
+        }
+        raw.startsWith("选择 ") && raw.endsWith(" 出口") -> {
+            val service = raw.removePrefix("选择 ").removeSuffix(" 出口")
+            "Select ${translateDynamic(service, language)} exit"
+        }
+        raw.endsWith(" · 未指定则走默认线路。") -> {
+            "${translateDynamic(raw.removeSuffix(" · 未指定则走默认线路。"), language)} · Uses default node when unset."
+        }
+        raw.startsWith("添加快捷开关失败，系统返回代码 ") && raw.endsWith("。") -> {
+            val code = raw.removePrefix("添加快捷开关失败，系统返回代码 ").removeSuffix("。")
+            "Failed to add Quick Settings tile. System returned code $code."
+        }
+        raw.startsWith("安装包下载返回 HTTP ") && raw.endsWith("。") -> {
+            val code = raw.removePrefix("安装包下载返回 HTTP ").removeSuffix("。")
+            "APK download returned HTTP $code."
+        }
+        raw.startsWith("GitHub Release 返回 HTTP ") && raw.endsWith("。") -> {
+            val code = raw.removePrefix("GitHub Release 返回 HTTP ").removeSuffix("。")
+            "GitHub Release returned HTTP $code."
+        }
+        raw.startsWith("下行样本 ") -> "Download sample ${raw.removePrefix("下行样本 ")}"
+        raw.startsWith("上行样本 ") -> "Upload sample ${raw.removePrefix("上行样本 ")}"
+        raw.startsWith("待切换线路：") -> "Pending node: ${raw.removePrefix("待切换线路：")}"
+        raw.startsWith("当前来源：") -> "Current source: ${translateDynamic(raw.removePrefix("当前来源："), language)}"
+        raw.startsWith("共 ") && raw.contains(" 条 · 已转换 ") && raw.contains(" 条 · 跳过 ") -> raw
+            .replace("共 ", "")
+            .replace(" 条 · 已转换 ", " total · ")
+            .replace(" 条 · 跳过 ", " converted · ")
+            .removeSuffix(" 条") + " skipped"
+        raw.startsWith("每 ") && raw.endsWith(" 分钟检测一次，连续 3 次失败切换备用节点。") -> {
+            val minutes = raw.removePrefix("每 ").removeSuffix(" 分钟检测一次，连续 3 次失败切换备用节点。")
+            "Check every $minutes min. Switch after 3 failures."
+        }
+        raw.startsWith("当前 ") && raw.endsWith("，更低值可改善移动网、PPPoE 和 QUIC 节点稳定性。") -> {
+            val value = raw.removePrefix("当前 ").removeSuffix("，更低值可改善移动网、PPPoE 和 QUIC 节点稳定性。")
+            "Current $value. Lower values can improve mobile, PPPoE, and QUIC node stability."
+        }
+        raw.startsWith("当前 ") && raw.endsWith("。") -> {
+            val value = raw.removePrefix("当前 ").removeSuffix("。")
+            "Current ${translateDynamic(value, language)}."
+        }
+        raw.endsWith(" 分钟") -> "${raw.removeSuffix(" 分钟")} min"
+        raw.endsWith(" 推荐") -> "${raw.removeSuffix(" 推荐")} recommended"
+        raw.startsWith("确认删除本地节点“") && raw.endsWith("”？删除后需要重新导入才能恢复。") -> {
+            val name = raw.removePrefix("确认删除本地节点“").removeSuffix("”？删除后需要重新导入才能恢复。")
+            "Delete local node \"$name\"? You will need to import it again to restore it."
+        }
+        raw.startsWith("确认删除订阅组“") && raw.endsWith("”？组内所有节点都会一起删除。") -> {
+            val name = raw.removePrefix("确认删除订阅组“").removeSuffix("”？组内所有节点都会一起删除。")
+            "Delete subscription group \"$name\"? All nodes in it will also be deleted."
+        }
+        raw.startsWith("为 ") && raw.endsWith(" 选择前置代理") -> "Choose pre-proxy for ${raw.removePrefix("为 ").removeSuffix(" 选择前置代理")}"
+        raw.startsWith("为 ") && raw.endsWith(" 选择备用节点") -> "Choose fallback for ${raw.removePrefix("为 ").removeSuffix(" 选择备用节点")}"
+        raw.startsWith("当前已安装：") -> "Installed: ${raw.removePrefix("当前已安装：")}"
+        raw.startsWith("可升级到：") -> "Available: ${raw.removePrefix("可升级到：")}"
+        raw.startsWith("已识别 ") && raw.endsWith(" 个二维码，请点选一个继续导入。") -> {
+            val count = raw.removePrefix("已识别 ").removeSuffix(" 个二维码，请点选一个继续导入。")
+            "Found $count QR codes. Choose one to continue."
+        }
+        raw.startsWith("已识别 ") && raw.endsWith(" 个二维码，请选择一个导入。") -> {
+            val count = raw.removePrefix("已识别 ").removeSuffix(" 个二维码，请选择一个导入。")
+            "Found $count QR codes. Choose one to import."
+        }
+        raw.startsWith("二维码 ") -> "QR ${raw.removePrefix("二维码 ")}"
+        raw.startsWith("确认把“") && raw.endsWith("”恢复为系统默认状态？已缓存的规则统计会被清空。") -> {
+            val name = raw.removePrefix("确认把“").removeSuffix("”恢复为系统默认状态？已缓存的规则统计会被清空。")
+            "Reset \"$name\" to system defaults? Cached rule statistics will be cleared."
+        }
+        raw.startsWith("确认删除“") && raw.endsWith("”？本地保存的转换规则也会一起移除。") -> {
+            val name = raw.removePrefix("确认删除“").removeSuffix("”？本地保存的转换规则也会一起移除。")
+            "Delete \"$name\"? Locally converted rules will also be removed."
+        }
+        raw.startsWith("心跳检测间隔已设置为 ") && raw.endsWith(" 分钟。") -> {
+            val minutes = raw.removePrefix("心跳检测间隔已设置为 ").removeSuffix(" 分钟。")
+            "Fallback check interval set to $minutes minutes."
+        }
+        raw.startsWith("日志级别已切换为 ") && raw.endsWith("。") -> {
+            val level = raw.removePrefix("日志级别已切换为 ").removeSuffix("。")
+            "Log level changed to $level."
+        }
+        raw.startsWith("DNS 已更新为 ") && raw.endsWith("。") -> "DNS updated to ${raw.removePrefix("DNS 已更新为 ").removeSuffix("。")}."
+        raw.startsWith("VPN MTU 已经是 ") && raw.endsWith("。") -> "VPN MTU is already ${raw.removePrefix("VPN MTU 已经是 ").removeSuffix("。")}."
+        raw.startsWith("VPN MTU 已设置为 ") && raw.endsWith("，正在重连以生效。") -> "VPN MTU set to ${raw.removePrefix("VPN MTU 已设置为 ").removeSuffix("，正在重连以生效。")}. Reconnecting to apply."
+        raw.startsWith("VPN MTU 已设置为 ") && raw.endsWith("，正在重连 VPN…") -> "VPN MTU set to ${raw.removePrefix("VPN MTU 已设置为 ").removeSuffix("，正在重连 VPN…")}. Reconnecting VPN..."
+        raw.startsWith("VPN MTU 已设置为 ") && raw.endsWith("，下次连接生效。") -> "VPN MTU set to ${raw.removePrefix("VPN MTU 已设置为 ").removeSuffix("，下次连接生效。")}. Applies on next connection."
+        raw.startsWith("已识别二维码，正在生成导入预览。") -> "QR code found. Generating import preview."
+        raw.startsWith("已选择二维码，正在生成导入预览。") -> "QR selected. Generating import preview."
+        raw.startsWith("节点 ") && raw.endsWith(" 正在检测中，请稍候。") -> "Node ${raw.removePrefix("节点 ").removeSuffix(" 正在检测中，请稍候。")} is being tested. Please wait."
+        raw.startsWith("正在检测节点 ") && raw.endsWith("…") -> "Testing node ${raw.removePrefix("正在检测节点 ").removeSuffix("…")}..."
+        raw.startsWith("节点 ") && raw.contains(" 检测完成，延迟 ") && raw.endsWith(" ms。") -> raw
+            .replaceFirst("节点 ", "Node ")
+            .replace(" 检测完成，延迟 ", " tested, latency ")
+            .removeSuffix("。") + "."
+        raw.startsWith("节点 ") && raw.contains(" 检测失败：") -> raw
+            .replaceFirst("节点 ", "Node ")
+            .replace(" 检测失败：", " test failed: ")
+        raw.startsWith("正在切换到 ") && raw.endsWith("，将重新连接 VPN 以应用新线路…") -> "Switching to ${raw.removePrefix("正在切换到 ").removeSuffix("，将重新连接 VPN 以应用新线路…")}. Reconnecting VPN..."
+        raw.startsWith("正在恢复上次线路 ") && raw.endsWith("…") -> "Restoring last node ${raw.removePrefix("正在恢复上次线路 ").removeSuffix("…")}..."
+        raw.endsWith(" 已加入名单。") -> "${raw.removeSuffix(" 已加入名单。")} added to the app list."
+        raw.endsWith(" 已移出名单。") -> "${raw.removeSuffix(" 已移出名单。")} removed from the app list."
+        raw.endsWith(" 节点已保存。") -> "${translateDynamic(raw.removeSuffix(" 节点已保存。"), language)} node saved."
         raw.startsWith("已隐藏 ") && raw.endsWith(" 个暂不支持节点。") -> {
             val count = raw.removePrefix("已隐藏 ").removeSuffix(" 个暂不支持节点。")
             "$count unsupported nodes hidden."
@@ -75,6 +201,138 @@ private fun translateDynamic(raw: String): String {
         raw.contains(" · 单节点 · 刚刚") -> raw.replace(" · 单节点 · 刚刚", " · Single node · Just now")
         raw.contains(" · 订阅 · ") -> raw.replace(" · 订阅 · ", " · Subscription · ")
         raw.contains(" · 单节点 · ") -> raw.replace(" · 单节点 · ", " · Single node · ")
+        else -> raw
+    }
+}
+
+private fun translateDynamicRussian(raw: String): String {
+    return when {
+        raw.startsWith("来自订阅组 ") -> "Из группы ${translateDynamic(raw.removePrefix("来自订阅组 "), ResolvedLanguage.Russian)}"
+        raw.startsWith("二维码 ") -> "QR ${raw.removePrefix("二维码 ")}"
+        raw.startsWith("端口 ") -> "Порт ${raw.removePrefix("端口 ")}"
+        raw.startsWith("最近更新时间：") -> "Обновлено: ${translateDynamic(raw.removePrefix("最近更新时间："), ResolvedLanguage.Russian)}"
+        raw.startsWith("最近同步：") -> "Последняя синхронизация: ${translateDynamic(raw.removePrefix("最近同步："), ResolvedLanguage.Russian)}"
+        raw.startsWith("来源：") -> "Источник: ${translateDynamic(raw.removePrefix("来源："), ResolvedLanguage.Russian)}"
+        raw.startsWith("当前 ") && raw.contains(" · versionCode ") -> raw.replaceFirst("当前 ", "Текущая версия ")
+        raw.startsWith("发现新版本 ") && raw.endsWith("。") -> {
+            val version = raw.removePrefix("发现新版本 ").removeSuffix("。")
+            "Доступна новая версия $version."
+        }
+        raw.startsWith("选择 ") && raw.endsWith(" 出口") -> {
+            val service = raw.removePrefix("选择 ").removeSuffix(" 出口")
+            "Выберите выход для ${translateDynamic(service, ResolvedLanguage.Russian)}"
+        }
+        raw.endsWith(" · 未指定则走默认线路。") -> {
+            "${translateDynamic(raw.removeSuffix(" · 未指定则走默认线路。"), ResolvedLanguage.Russian)} · если не задано, используется узел по умолчанию."
+        }
+        raw.startsWith("添加快捷开关失败，系统返回代码 ") && raw.endsWith("。") -> {
+            val code = raw.removePrefix("添加快捷开关失败，系统返回代码 ").removeSuffix("。")
+            "Не удалось добавить плитку быстрых настроек. Код системы: $code."
+        }
+        raw.startsWith("安装包下载返回 HTTP ") && raw.endsWith("。") -> {
+            val code = raw.removePrefix("安装包下载返回 HTTP ").removeSuffix("。")
+            "Загрузка APK вернула HTTP $code."
+        }
+        raw.startsWith("GitHub Release 返回 HTTP ") && raw.endsWith("。") -> {
+            val code = raw.removePrefix("GitHub Release 返回 HTTP ").removeSuffix("。")
+            "GitHub Release вернул HTTP $code."
+        }
+        raw.startsWith("下行样本 ") -> "Входящий трафик ${raw.removePrefix("下行样本 ")}"
+        raw.startsWith("上行样本 ") -> "Исходящий трафик ${raw.removePrefix("上行样本 ")}"
+        raw.startsWith("待切换线路：") -> "Ожидает переключения: ${raw.removePrefix("待切换线路：")}"
+        raw.startsWith("当前来源：") -> "Текущий источник: ${translateDynamic(raw.removePrefix("当前来源："), ResolvedLanguage.Russian)}"
+        raw.startsWith("共 ") && raw.contains(" 条 · 已转换 ") && raw.contains(" 条 · 跳过 ") -> raw
+            .replace("共 ", "")
+            .replace(" 条 · 已转换 ", " всего · ")
+            .replace(" 条 · 跳过 ", " преобразовано · ")
+            .removeSuffix(" 条") + " пропущено"
+        raw.startsWith("每 ") && raw.endsWith(" 分钟检测一次，连续 3 次失败切换备用节点。") -> {
+            val minutes = raw.removePrefix("每 ").removeSuffix(" 分钟检测一次，连续 3 次失败切换备用节点。")
+            "Проверка каждые $minutes мин. Переключение после 3 сбоев."
+        }
+        raw.startsWith("当前 ") && raw.endsWith("，更低值可改善移动网、PPPoE 和 QUIC 节点稳定性。") -> {
+            val value = raw.removePrefix("当前 ").removeSuffix("，更低值可改善移动网、PPPoE 和 QUIC 节点稳定性。")
+            "Текущее значение $value. Более низкие значения улучшают стабильность мобильных сетей, PPPoE и QUIC."
+        }
+        raw.startsWith("当前 ") && raw.endsWith("。") -> {
+            val value = raw.removePrefix("当前 ").removeSuffix("。")
+            "Текущее значение: ${translateDynamic(value, ResolvedLanguage.Russian)}."
+        }
+        raw.endsWith(" 分钟") -> "${raw.removeSuffix(" 分钟")} мин"
+        raw.endsWith(" 推荐") -> "${raw.removeSuffix(" 推荐")} рекомендуется"
+        raw.startsWith("确认删除本地节点“") && raw.endsWith("”？删除后需要重新导入才能恢复。") -> {
+            val name = raw.removePrefix("确认删除本地节点“").removeSuffix("”？删除后需要重新导入才能恢复。")
+            "Удалить локальный узел \"$name\"? Для восстановления потребуется импортировать его снова."
+        }
+        raw.startsWith("确认删除订阅组“") && raw.endsWith("”？组内所有节点都会一起删除。") -> {
+            val name = raw.removePrefix("确认删除订阅组“").removeSuffix("”？组内所有节点都会一起删除。")
+            "Удалить группу подписки \"$name\"? Все узлы внутри нее также будут удалены."
+        }
+        raw.startsWith("为 ") && raw.endsWith(" 选择前置代理") -> "Выберите предварительный прокси для ${raw.removePrefix("为 ").removeSuffix(" 选择前置代理")}"
+        raw.startsWith("为 ") && raw.endsWith(" 选择备用节点") -> "Выберите резервный узел для ${raw.removePrefix("为 ").removeSuffix(" 选择备用节点")}"
+        raw.startsWith("当前已安装：") -> "Установлено: ${raw.removePrefix("当前已安装：")}"
+        raw.startsWith("可升级到：") -> "Доступно: ${raw.removePrefix("可升级到：")}"
+        raw.startsWith("已识别 ") && raw.endsWith(" 个二维码，请点选一个继续导入。") -> {
+            val count = raw.removePrefix("已识别 ").removeSuffix(" 个二维码，请点选一个继续导入。")
+            "Найдено QR-кодов: $count. Выберите один."
+        }
+        raw.startsWith("已识别 ") && raw.endsWith(" 个二维码，请选择一个导入。") -> {
+            val count = raw.removePrefix("已识别 ").removeSuffix(" 个二维码，请选择一个导入。")
+            "Найдено QR-кодов: $count. Выберите один для импорта."
+        }
+        raw.startsWith("二维码 ") -> "QR ${raw.removePrefix("二维码 ")}"
+        raw.startsWith("确认把“") && raw.endsWith("”恢复为系统默认状态？已缓存的规则统计会被清空。") -> {
+            val name = raw.removePrefix("确认把“").removeSuffix("”恢复为系统默认状态？已缓存的规则统计会被清空。")
+            "Сбросить \"$name\" к системному состоянию? Кэшированная статистика правил будет очищена."
+        }
+        raw.startsWith("确认删除“") && raw.endsWith("”？本地保存的转换规则也会一起移除。") -> {
+            val name = raw.removePrefix("确认删除“").removeSuffix("”？本地保存的转换规则也会一起移除。")
+            "Удалить \"$name\"? Локально сохраненные преобразованные правила также будут удалены."
+        }
+        raw.startsWith("心跳检测间隔已设置为 ") && raw.endsWith(" 分钟。") -> {
+            val minutes = raw.removePrefix("心跳检测间隔已设置为 ").removeSuffix(" 分钟。")
+            "Интервал проверки резервного узла: $minutes мин."
+        }
+        raw.startsWith("日志级别已切换为 ") && raw.endsWith("。") -> {
+            val level = raw.removePrefix("日志级别已切换为 ").removeSuffix("。")
+            "Уровень журналов изменен на $level."
+        }
+        raw.startsWith("DNS 已更新为 ") && raw.endsWith("。") -> "DNS обновлен на ${raw.removePrefix("DNS 已更新为 ").removeSuffix("。")}."
+        raw.startsWith("VPN MTU 已经是 ") && raw.endsWith("。") -> "VPN MTU уже ${raw.removePrefix("VPN MTU 已经是 ").removeSuffix("。")}."
+        raw.startsWith("VPN MTU 已设置为 ") && raw.endsWith("，正在重连以生效。") -> "VPN MTU установлен на ${raw.removePrefix("VPN MTU 已设置为 ").removeSuffix("，正在重连以生效。")}. Переподключение для применения."
+        raw.startsWith("VPN MTU 已设置为 ") && raw.endsWith("，正在重连 VPN…") -> "VPN MTU установлен на ${raw.removePrefix("VPN MTU 已设置为 ").removeSuffix("，正在重连 VPN…")}. Переподключение VPN..."
+        raw.startsWith("VPN MTU 已设置为 ") && raw.endsWith("，下次连接生效。") -> "VPN MTU установлен на ${raw.removePrefix("VPN MTU 已设置为 ").removeSuffix("，下次连接生效。")}. Применится при следующем подключении."
+        raw.startsWith("已识别二维码，正在生成导入预览。") -> "QR-код найден. Создание предпросмотра импорта."
+        raw.startsWith("已选择二维码，正在生成导入预览。") -> "QR выбран. Создание предпросмотра импорта."
+        raw.startsWith("节点 ") && raw.endsWith(" 正在检测中，请稍候。") -> "Узел ${raw.removePrefix("节点 ").removeSuffix(" 正在检测中，请稍候。")} проверяется. Подождите."
+        raw.startsWith("正在检测节点 ") && raw.endsWith("…") -> "Проверка узла ${raw.removePrefix("正在检测节点 ").removeSuffix("…")}..."
+        raw.startsWith("节点 ") && raw.contains(" 检测完成，延迟 ") && raw.endsWith(" ms。") -> raw
+            .replaceFirst("节点 ", "Узел ")
+            .replace(" 检测完成，延迟 ", " проверен, задержка ")
+            .removeSuffix("。") + "."
+        raw.startsWith("节点 ") && raw.contains(" 检测失败：") -> raw
+            .replaceFirst("节点 ", "Проверка узла ")
+            .replace(" 检测失败：", " не удалась: ")
+        raw.startsWith("正在切换到 ") && raw.endsWith("，将重新连接 VPN 以应用新线路…") -> "Переключение на ${raw.removePrefix("正在切换到 ").removeSuffix("，将重新连接 VPN 以应用新线路…")}. Переподключение VPN..."
+        raw.startsWith("正在恢复上次线路 ") && raw.endsWith("…") -> "Восстановление последнего узла ${raw.removePrefix("正在恢复上次线路 ").removeSuffix("…")}..."
+        raw.endsWith(" 已加入名单。") -> "${raw.removeSuffix(" 已加入名单。")} добавлено в список приложений."
+        raw.endsWith(" 已移出名单。") -> "${raw.removeSuffix(" 已移出名单。")} удалено из списка приложений."
+        raw.endsWith(" 节点已保存。") -> "Узел для ${translateDynamic(raw.removeSuffix(" 节点已保存。"), ResolvedLanguage.Russian)} сохранен."
+        raw.startsWith("已隐藏 ") && raw.endsWith(" 个暂不支持节点。") -> {
+            val count = raw.removePrefix("已隐藏 ").removeSuffix(" 个暂不支持节点。")
+            "Скрыто неподдерживаемых узлов: $count."
+        }
+        raw.startsWith("已隐藏 ") && raw.endsWith(" 个") -> {
+            val count = raw.removePrefix("已隐藏 ").removeSuffix(" 个")
+            "Скрыто: $count"
+        }
+        raw.endsWith(" 个节点") -> "Узлов: ${raw.removeSuffix(" 个节点")}"
+        raw.endsWith(" 个") -> "Элементов: ${raw.removeSuffix(" 个")}"
+        raw.endsWith(" 条") -> "Правил: ${raw.removeSuffix(" 条")}"
+        raw.contains(" · 订阅 · 刚刚") -> raw.replace(" · 订阅 · 刚刚", " · Подписка · Только что")
+        raw.contains(" · 单节点 · 刚刚") -> raw.replace(" · 单节点 · 刚刚", " · Один узел · Только что")
+        raw.contains(" · 订阅 · ") -> raw.replace(" · 订阅 · ", " · Подписка · ")
+        raw.contains(" · 单节点 · ") -> raw.replace(" · 单节点 · ", " · Один узел · ")
         else -> raw
     }
 }
@@ -101,6 +359,9 @@ private val englishText = mapOf(
     "订阅与更新" to "Subscriptions",
     "每日自动更新" to "Daily updates",
     "非计费网络下自动刷新。" to "Refresh on unmetered networks.",
+    "检查更新" to "Check for updates",
+    "查看 GitHub Release 最新版本。" to "View the latest GitHub Release.",
+    "进入" to "Open",
     "规则资源同步" to "Sync resources",
     "正在后台同步。" to "Syncing in the background.",
     "同步订阅、规则和 Geo。" to "Sync nodes, rules, and Geo data.",
@@ -131,9 +392,26 @@ private val englishText = mapOf(
     "全局代理" to "Global proxy",
     "已开启：正常上网流量走代理，局域网/私网不走代理。" to "On: internet traffic uses proxy; LAN/private traffic stays direct.",
     "已关闭：按规则源、Geo CN 和流媒体分流处理。" to "Off: use rules, Geo CN, and media routing.",
+    "已关闭：按规则源、Geo 分流和流媒体分流处理。" to "Off: use rule sources, Geo routing, and media routing.",
     "开启后会忽略规则源、流媒体分流和 CN 直连规则；局域网、私有地址仍直连，其余 TCP 与 UDP 流量走当前节点。" to "When on, rule sources, media routing, and CN direct rules are ignored. LAN/private addresses stay direct; other TCP/UDP traffic uses the active node.",
+    "开启后会忽略规则源、流媒体分流和 Geo 直连规则；局域网、私有地址仍直连，其余 TCP 与 UDP 流量走当前节点。" to "When on, rule sources, media routing, and Geo direct rules are ignored. LAN/private addresses stay direct; other TCP/UDP traffic uses the active node.",
     "Geo 数据资源" to "Geo data",
     "Geo 数据更新" to "Geo data update",
+    "Geo 分流国家" to "Geo routing country",
+    "中国（CN）" to "China (CN)",
+    "英语区域（US）" to "English region (US)",
+    "俄罗斯（RU）" to "Russia (RU)",
+    "直连 geosite:cn 与 geoip:cn。" to "Direct geosite:cn and geoip:cn.",
+    "直连 geoip:us；EN 不是 Geo 国家码。" to "Direct geoip:us; EN is not a Geo country code.",
+    "直连 geosite:category-ru 与 geoip:ru。" to "Direct geosite:category-ru and geoip:ru.",
+    "Geo 分流国家已更新，正在重连 VPN 以应用新规则。" to "Geo routing country updated. Reconnecting VPN to apply the new rules.",
+    "Geo 分流国家已更新，连接后会按新规则分流。" to "Geo routing country updated. New connections will use the new rules.",
+    "Geo 分流国家已更新，正在重连 VPN 以应用新规则…" to "Geo routing country updated. Reconnecting VPN to apply the new rules...",
+    "Geo 分流国家已随界面语言更新，正在重连 VPN 以应用新规则…" to "Geo routing country changed with display language. Reconnecting VPN to apply the new rules...",
+    "内置资源" to "Built-in resources",
+    "本地已更新" to "Locally updated",
+    "v2fly 最新资源" to "Latest v2fly resources",
+    "已更新" to "Updated",
     "更新后重新连接生效。" to "Reconnect to apply updates.",
     "系统默认规则源" to "Default rules",
     "默认启用。" to "Enabled by default.",
@@ -380,15 +658,35 @@ private val englishText = mapOf(
     "启用分应用代理" to "Enable per-app",
     "搜索应用名称或分类…" to "Search apps or categories...",
     "应用设置后会重连 VPN。" to "Reconnect VPN to apply app changes.",
+    "应用设置后生效。" to "Applies after applying changes.",
+    "未指定时走默认线路。" to "Uses the default node when unset.",
     "先启用分应用代理" to "Enable per-app first",
     "应用设置" to "Apply",
     "等待连接后应用" to "Connect first",
     "当前名单已生效" to "App list is current",
+    "当前设置已生效" to "Settings are current",
     "没有匹配到应用。" to "No matching apps.",
     "搜索会实时过滤应用。" to "Search filters the app list live.",
+    "通讯" to "Messaging",
+    "视频" to "Video",
+    "社交" to "Social",
+    "社区" to "Community",
+    "音乐" to "Music",
     "系统诊断" to "Diagnostics",
     "故障分析" to "Troubleshooting",
     "检查配置、内核、VPN、DNS 和握手。" to "Check config, core, VPN, DNS, and handshake.",
+    "配置解析" to "Config parsing",
+    "已成功校验订阅生成的 JSON 配置和路由标签。" to "Subscription-generated JSON config and routing tags are valid.",
+    "Xray 内核启动" to "Xray core startup",
+    "已加载官方编译产物并完成本地环境初始化。" to "Official build loaded and local environment initialized.",
+    "VPN 建立" to "VPN setup",
+    "已获取 VpnService 授权，TUN 接口可用。" to "VpnService permission granted and TUN interface is available.",
+    "DNS 解析" to "DNS resolution",
+    "保护后的 DNS 通道工作正常，当前 RTT 24ms。" to "Protected DNS channel is working. Current RTT is 24ms.",
+    "远端握手" to "Remote handshake",
+    "成功完成目标节点握手并建立安全隧道。" to "Target node handshake completed and secure tunnel established.",
+    "代理可达性" to "Proxy reachability",
+    "HTTP 与 UDP 测试通过，可开始转发应用流量。" to "HTTP and UDP tests passed. App traffic can be forwarded.",
     "重新测试" to "Retest",
     "复制诊断摘要" to "Copy summary",
     "日志查看" to "Logs",
@@ -530,6 +828,34 @@ private val englishText = mapOf(
     "默认关闭。只有你明确知道当前设备不适合 kernel tun 时再打开。" to "Off by default. Enable only if this device cannot use kernel tun.",
     "从分享链接预填" to "Fill from link",
     "预填" to "Fill",
+    "版本状态" to "Version status",
+    "尚未检查更新" to "Not checked yet",
+    "正在检查更新" to "Checking for updates",
+    "当前版本" to "Current version",
+    "可更新版本" to "Update available",
+    "正在下载更新" to "Downloading update",
+    "安装包已下载" to "APK downloaded",
+    "检查更新失败" to "Update check failed",
+    "当前版本描述" to "Current release notes",
+    "更新版本描述" to "Update release notes",
+    "发布于 " to "Published ",
+    "此版本没有填写更新说明。" to "This release has no notes.",
+    "检查中" to "Checking",
+    "下载中" to "Downloading",
+    "升级" to "Update",
+    "安装" to "Install",
+    "重新检查" to "Check again",
+    "已识别二维码，正在生成导入预览。" to "QR code found. Generating import preview.",
+    "已选择二维码，正在生成导入预览。" to "QR selected. Generating import preview.",
+    "来源：文件导入" to "Source: file import",
+    "来源：订阅链接" to "Source: subscription URL",
+    "来源：订阅快照（不刷新）" to "Source: subscription snapshot (no refresh)",
+    "发现新版本" to "Update available",
+    "已是最新版" to "Up to date",
+    "稍后" to "Later",
+    "当前还没有选中线路" to "No node selected",
+    "选择节点" to "Select node",
+    "选择一个出口节点。" to "Select an exit node.",
     "已隐藏不支持节点" to "Unsupported nodes hidden",
     "知道了" to "OK",
     "正在重新连接" to "Reconnecting",
@@ -537,6 +863,8 @@ private val englishText = mapOf(
     "流媒体分流已关闭。" to "Media routing disabled.",
     "当前流媒体分流设置已经是最新状态。" to "Media routing settings are already current.",
     "流媒体分流设置已保存。" to "Media routing settings saved.",
+    "正在重连 VPN 以应用新的流媒体分流设置…" to "Reconnecting VPN to apply new media routing settings...",
+    "正在重连 VPN 以移除流媒体分流设置…" to "Reconnecting VPN to remove media routing settings...",
     "更新通知已关闭。" to "Update notifications disabled.",
     "更新通知已开启。" to "Update notifications enabled.",
     "系统未授予通知权限，无法显示更新通知。" to "Notification permission was denied.",
@@ -570,16 +898,73 @@ private val englishText = mapOf(
     "请先启用分应用代理，再应用当前应用名单。" to "Enable per-app proxy before applying the app list.",
     "当前分应用代理名单已经是最新状态。" to "The per-app list is already current.",
     "应用名单已保存。" to "App list saved.",
+    "已开启分应用代理，正在重连 VPN 以只代理指定应用。" to "Per-app proxy enabled. Reconnecting VPN to proxy selected apps only.",
+    "分应用代理已开启。" to "Per-app proxy enabled.",
+    "已关闭分应用代理，正在重连 VPN 以恢复默认模式。" to "Per-app proxy disabled. Reconnecting VPN to restore default mode.",
+    "已关闭分应用代理，已切回默认模式。" to "Per-app proxy disabled. Default mode restored.",
+    "分应用代理已开启，正在重连 VPN 以应用新模式…" to "Per-app proxy enabled. Reconnecting VPN to apply the new mode...",
+    "分应用代理已关闭，正在重连 VPN 以恢复默认模式…" to "Per-app proxy disabled. Reconnecting VPN to restore default mode...",
+    "正在重连 VPN 以应用新的分应用代理名单…" to "Reconnecting VPN to apply the new per-app list...",
     "按服务指定出口" to "Per-service exit",
     "按服务指定出口节点。" to "Set an exit node for each service.",
+    "流媒体" to "media",
     "总开关" to "Master switch",
     "启用流媒体分流" to "Enable media routing",
     "流媒体列表" to "Services",
     "默认线路" to "Default node",
+    "默认节点" to "Default node",
     "默认出口" to "Default exit",
     "可选节点" to "Available nodes",
     "当前还没有 Local 或订阅节点可选。" to "No Local or subscription nodes are available.",
     "导入线路后即可连接。" to "Import a node to connect.",
+    "剧集和电影分流规则" to "Series and movie routing rules",
+    "Disney / Hulu on Disney 相关域名" to "Disney / Hulu on Disney domains",
+    "视频与会员相关域名" to "Video and membership domains",
+    "音乐播放与账号相关域名" to "Music playback and account domains",
+    "Prime Video 播放域名" to "Prime Video playback domains",
+    "Amazon Prime Video 更完整规则" to "Fuller Amazon Prime Video rules",
+    "Hulu 视频服务分流规则" to "Hulu video routing rules",
+    "日本区 Hulu 规则" to "Japan Hulu rules",
+    "美国区 Hulu 规则" to "US Hulu rules",
+    "Max / HBO Max 美国规则" to "Max / HBO Max US rules",
+    "HBO 通用规则" to "General HBO rules",
+    "HBO Asia 区域规则" to "HBO Asia regional rules",
+    "HBO 香港区规则" to "HBO Hong Kong rules",
+    "音乐流媒体与账号接口" to "Music streaming and account endpoints",
+    "Apple TV / TV+ 播放规则" to "Apple TV / TV+ playback rules",
+    "Apple Music 媒体规则" to "Apple Music media rules",
+    "巴哈姆特动画疯规则" to "Bahamut Anime rules",
+    "日本 AbemaTV 视频规则" to "Japan AbemaTV video rules",
+    "Bilibili 视频服务规则" to "Bilibili video service rules",
+    "BiliBili 国际版规则" to "BiliBili international rules",
+    "ViuTV 港区流媒体规则" to "ViuTV Hong Kong media rules",
+    "Line TV 视频规则" to "Line TV video rules",
+    "LiTV 台湾影视规则" to "LiTV Taiwan video rules",
+    "KKTV 台湾视频规则" to "KKTV Taiwan video rules",
+    "KKBOX 音乐服务规则" to "KKBOX music rules",
+    "Discovery+ 流媒体规则" to "Discovery+ media rules",
+    "FOX NOW 视频规则" to "FOX NOW video rules",
+    "TVB 海外点播规则" to "TVB overseas on-demand rules",
+    "DAZN 体育流媒体规则" to "DAZN sports media rules",
+    "TIDAL 音乐服务规则" to "TIDAL music rules",
+    "SoundCloud 音乐规则" to "SoundCloud music rules",
+    "Pandora 音乐电台规则" to "Pandora radio rules",
+    "Deezer 音乐服务规则" to "Deezer music rules",
+    "Paramount+ 视频规则" to "Paramount+ video rules",
+    "Peacock 视频规则" to "Peacock video rules",
+    "Niconico 视频规则" to "Niconico video rules",
+    "Hami Video 台湾视频规则" to "Hami Video Taiwan rules",
+    "TVB 流媒体规则" to "TVB media rules",
+    "建议香港" to "Suggested: Hong Kong",
+    "建议美国" to "Suggested: US",
+    "建议美国或日本" to "Suggested: US or Japan",
+    "建议日本" to "Suggested: Japan",
+    "建议新加坡" to "Suggested: Singapore",
+    "建议美国或新加坡" to "Suggested: US or Singapore",
+    "建议台湾" to "Suggested: Taiwan",
+    "建议台湾或香港" to "Suggested: Taiwan or Hong Kong",
+    "建议日本或德国" to "Suggested: Japan or Germany",
+    "建议美国或法国" to "Suggested: US or France",
     "DNS 与分流规则已生效。" to "DNS and routing rules are active.",
     "正在启动内核和 VPN。" to "Starting core and VPN.",
     "正在释放 VPN 会话。" to "Releasing VPN session.",
@@ -609,6 +994,21 @@ private val englishText = mapOf(
     "默认规则" to "Default rules",
     "本地导入单节点" to "Local import",
     "请返回导入页先输入有效的订阅链接或单节点 URL。" to "Return to Import and enter a valid subscription or node URL first.",
+    "当前为最新版。" to "Already up to date.",
+    "正在检查 GitHub Release…" to "Checking GitHub Release...",
+    "正在通过代理下载 APK…" to "Downloading APK through proxy...",
+    "安装包已下载，点击安装继续升级。" to "APK downloaded. Tap Install to continue.",
+    "下载更新失败。" to "Update download failed.",
+    "安装包不存在，请重新下载。" to "APK not found. Download it again.",
+    "无法打开系统安装器。" to "Unable to open the system installer.",
+    "请先允许 PurpleBear 安装未知来源应用，然后返回继续安装。" to "Allow PurpleBear to install unknown apps, then return to continue.",
+    "请先连接代理后再下载更新。" to "Connect the proxy before downloading the update.",
+    "安装包大小不完整，请重新下载。" to "APK size is incomplete. Download it again.",
+    "安装包校验失败，请重新下载。" to "APK verification failed. Download it again.",
+    "安装包下载重定向次数过多。" to "APK download had too many redirects.",
+    "安装包下载重定向缺少 Location。" to "APK download redirect is missing Location.",
+    "GitHub Release 没有安装包。" to "GitHub Release has no assets.",
+    "GitHub Release 没有 APK 安装包。" to "GitHub Release has no APK asset.",
     "已同步" to "Synced",
     "已导入" to "Imported",
     "未更新" to "Not updated",
@@ -623,4 +1023,771 @@ private val englishText = mapOf(
     "Local group 还没有节点。" to "No Local nodes yet.",
     "这个订阅组当前没有可显示节点。" to "No visible nodes in this group.",
     "这个订阅组当前没有匹配到节点。" to "No matching nodes in this group.",
+)
+
+private val russianText = mapOf(
+    "首页" to "Главная",
+    "线路" to "Узлы",
+    "规则" to "Правила",
+    "导入" to "Импорт",
+    "我的" to "Профиль",
+    "设置" to "Настройки",
+    "偏好与高级" to "Параметры",
+    "连接、更新、DNS 与日志。" to "Подключение, обновления, DNS и журналы.",
+    "连接设置" to "Подключение",
+    "启动后自动连接" to "Автоподключение",
+    "打开应用时恢复上次线路。" to "Восстанавливать последний узел при запуске приложения.",
+    "断线自动重连" to "Автопереподключение",
+    "断开后重连上次节点。" to "Переподключаться к последнему узлу после обрыва.",
+    "备用节点心跳" to "Проверка резервного узла",
+    "VPN MTU" to "VPN MTU",
+    "快捷开关" to "Быстрые настройки",
+    "添加到系统下拉菜单。" to "Добавить плитку в системную панель.",
+    "添加" to "Добавить",
+    "订阅与更新" to "Подписки и обновления",
+    "每日自动更新" to "Ежедневные обновления",
+    "非计费网络下自动刷新。" to "Обновлять в сетях без тарификации.",
+    "检查更新" to "Проверить обновления",
+    "查看 GitHub Release 最新版本。" to "Посмотреть последнюю версию GitHub Release.",
+    "进入" to "Открыть",
+    "规则资源同步" to "Синхронизация ресурсов",
+    "正在后台同步。" to "Синхронизация в фоне.",
+    "同步订阅、规则和 Geo。" to "Синхронизировать узлы, правила и Geo.",
+    "同步中" to "Синхронизация",
+    "同步" to "Синхронизировать",
+    "显示更新通知" to "Уведомления об обновлениях",
+    "同步完成后通知。" to "Уведомлять после синхронизации.",
+    "高级设置" to "Дополнительно",
+    "自定义 DNS" to "Свой DNS",
+    "编辑" to "Изменить",
+    "日志级别" to "Уровень журналов",
+    "调整" to "Настроить",
+    "查看" to "Просмотр",
+    "核心资产" to "Файлы ядра",
+    "官方编译产物 · " to "Официальная сборка · ",
+    "未初始化" to "Не инициализировано",
+    "准备中" to "Подготовка",
+    "启动中" to "Запуск",
+    "运行中" to "Работает",
+    "语言" to "Язык",
+    "跟随系统" to "Системный",
+    "中文" to "Китайский",
+    "英文" to "Английский",
+    "俄语" to "Русский",
+    "使用 Android 系统语言。" to "Использовать язык Android.",
+    "界面语言" to "Язык интерфейса",
+    "规则管理" to "Правила",
+    "管理规则源与 Geo 数据。" to "Управление источниками правил и Geo-данными.",
+    "全局代理" to "Глобальный прокси",
+    "已开启：正常上网流量走代理，局域网/私网不走代理。" to "Включено: интернет-трафик идет через прокси, LAN/частные сети напрямую.",
+    "已关闭：按规则源、Geo CN 和流媒体分流处理。" to "Выключено: используются правила, Geo CN и маршрутизация медиа.",
+    "已关闭：按规则源、Geo 分流和流媒体分流处理。" to "Выключено: используются источники правил, Geo-маршрутизация и маршрутизация медиа.",
+    "开启后会忽略规则源、流媒体分流和 CN 直连规则；局域网、私有地址仍直连，其余 TCP 与 UDP 流量走当前节点。" to "При включении источники правил, медиа-маршрутизация и прямые правила CN игнорируются. LAN/частные адреса остаются прямыми, остальной TCP/UDP идет через текущий узел.",
+    "开启后会忽略规则源、流媒体分流和 Geo 直连规则；局域网、私有地址仍直连，其余 TCP 与 UDP 流量走当前节点。" to "При включении источники правил, медиа-маршрутизация и прямые Geo-правила игнорируются. LAN/частные адреса остаются прямыми, остальной TCP/UDP идет через текущий узел.",
+    "Geo 数据资源" to "Geo-данные",
+    "Geo 数据更新" to "Обновление Geo-данных",
+    "Geo 分流国家" to "Страна Geo-маршрутизации",
+    "中国（CN）" to "Китай (CN)",
+    "英语区域（US）" to "Английский регион (US)",
+    "俄罗斯（RU）" to "Россия (RU)",
+    "直连 geosite:cn 与 geoip:cn。" to "Напрямую: geosite:cn и geoip:cn.",
+    "直连 geoip:us；EN 不是 Geo 国家码。" to "Напрямую: geoip:us; EN не является Geo-кодом страны.",
+    "直连 geosite:category-ru 与 geoip:ru。" to "Напрямую: geosite:category-ru и geoip:ru.",
+    "Geo 分流国家已更新，正在重连 VPN 以应用新规则。" to "Страна Geo-маршрутизации обновлена. VPN переподключается для применения правил.",
+    "Geo 分流国家已更新，连接后会按新规则分流。" to "Страна Geo-маршрутизации обновлена. Новые подключения будут использовать новые правила.",
+    "Geo 分流国家已更新，正在重连 VPN 以应用新规则…" to "Страна Geo-маршрутизации обновлена. VPN переподключается для применения правил...",
+    "Geo 分流国家已随界面语言更新，正在重连 VPN 以应用新规则…" to "Страна Geo-маршрутизации изменена вместе с языком интерфейса. VPN переподключается для применения правил...",
+    "内置资源" to "Встроенные ресурсы",
+    "本地已更新" to "Локально обновлено",
+    "v2fly 最新资源" to "Последние ресурсы v2fly",
+    "已更新" to "Обновлено",
+    "更新后重新连接生效。" to "Переподключитесь после обновления.",
+    "系统默认规则源" to "Правила по умолчанию",
+    "默认启用。" to "Включено по умолчанию.",
+    "自定义规则源" to "Свои правила",
+    "还没有手动文本规则。" to "Текстовых правил пока нет.",
+    "还没有 URL 规则源。" to "URL-источников пока нет.",
+    "文本规则" to "Текстовые правила",
+    "URL 规则" to "URL-правила",
+    "手动文本规则" to "Текстовые правила",
+    "添加规则 URL" to "Добавить URL правил",
+    "规则详情" to "Детали правил",
+    "规则来源" to "Источник правил",
+    "未选择规则源" to "Источник не выбран",
+    "查看来源和转换结果。" to "Проверка источника и результата преобразования.",
+    "规则类型" to "Тип",
+    "本地文本规则" to "Локальные текстовые правила",
+    "暂无 URL" to "Нет URL",
+    "更新中" to "Обновление",
+    "未选择" to "Не выбрано",
+    "最后更新时间" to "Последнее обновление",
+    "本地规则条数" to "Локальные правила",
+    "成功转换数" to "Преобразовано",
+    "跳过数" to "Пропущено",
+    "规则内容" to "Текст правил",
+    "完整 URL" to "Полный URL",
+    "暂无" to "Нет",
+    "域名规则" to "Правила доменов",
+    "最近错误" to "Последняя ошибка",
+    "最近一次更新没有错误。" to "Последнее обновление без ошибок.",
+    "系统内置" to "Встроено",
+    "用户添加" to "Пользовательское",
+    "编辑文本规则" to "Изменить текстовые правила",
+    "删除规则源" to "Удалить источник",
+    "正在更新…" to "Обновление...",
+    "立即更新" to "Обновить",
+    "编辑名称或 URL" to "Изменить имя или URL",
+    "恢复默认" to "Сбросить",
+    "新增规则源" to "Новый источник правил",
+    "编辑规则源" to "Изменить источник правил",
+    "添加文本规则" to "Добавить текстовые правила",
+    "修改规则 URL" to "Изменить URL правил",
+    "手动输入 Shadowrocket / Surge 文本规则。" to "Введите текстовые правила Shadowrocket / Surge.",
+    "支持 Shadowrocket / Surge 文本规则。" to "Поддерживаются текстовые правила Shadowrocket / Surge.",
+    "编写规则" to "Написать правила",
+    "规则名称" to "Название правил",
+    "自动识别" to "Авто",
+    "本地节点" to "Локальный узел",
+    "例如：OpenAI 代理规则" to "Например: правила прокси OpenAI",
+    "规则文本" to "Текст правил",
+    "规则 URL" to "URL правил",
+    "插入节点策略" to "Вставить политику узла",
+    "保存" to "Сохранить",
+    "取消" to "Отмена",
+    "关闭" to "Закрыть",
+    "选择策略节点" to "Выбрать узел политики",
+    "搜索节点" to "Поиск узлов",
+    "输入节点名、订阅、协议" to "Имя узла, подписка или протокол",
+    "没有匹配的节点。" to "Подходящих узлов нет.",
+    "自动补全" to "Автодополнение",
+    "添加新连接" to "Добавить подключение",
+    "支持订阅和单节点链接。" to "Поддерживаются подписки и ссылки на отдельные узлы.",
+    "导入源" to "Источник импорта",
+    "粘贴订阅或单节点链接" to "Вставьте подписку или ссылку на узел",
+    "订阅进入 group，单节点进入 Local。" to "Подписки попадают в группы, отдельные узлы в Local.",
+    "订阅链接或节点 URL" to "URL подписки или узла",
+    "正在解析…" to "Разбор...",
+    "解析并确认" to "Разобрать",
+    "导入附件" to "Импорт файла",
+    "最近导入" to "Недавний импорт",
+    "继续上次操作" to "Продолжить",
+    "最多 30 天" to "До 30 дней",
+    "订阅与规则统一更新" to "Обновить узлы и правила",
+    "一键同步节点与规则资源。" to "Синхронизировать узлы и правила одним действием.",
+    "导入确认" to "Подтверждение импорта",
+    "配置导入" to "Импорт конфигурации",
+    "准备导入本地节点" to "Готово к импорту локального узла",
+    "准备导入订阅" to "Готово к импорту подписки",
+    "目标分组" to "Целевая группа",
+    "订阅名称" to "Название подписки",
+    "暂无可导入数据" to "Нет данных для импорта",
+    "待输入" to "Ожидание",
+    "检测完成" to "Проверено",
+    "节点数量" to "Узлы",
+    "已隐藏节点" to "Скрытые узлы",
+    "更新时间" to "Обновлено",
+    "导入类型" to "Тип импорта",
+    "单节点 / Local" to "Один узел / Local",
+    "订阅" to "Подписка",
+    "自动更新" to "Автообновление",
+    "可开启" to "Доступно",
+    "不适用" to "Н/Д",
+    "覆盖同来源节点" to "Заменить узлы того же источника",
+    "替换同 group 旧节点。" to "Заменить старые узлы в той же группе.",
+    "启用自动更新" to "Включить автообновление",
+    "订阅链接可用。" to "URL подписки доступен.",
+    "返回导入页" to "Назад к импорту",
+    "订阅管理" to "Подписки",
+    "资源中心" to "Ресурсы",
+    "订阅与资源" to "Подписки",
+    "节点订阅与资源状态。" to "Состояние подписок и ресурсов.",
+    "刷新中" to "Обновление",
+    "失败" to "Ошибка",
+    "删除" to "Удалить",
+    "刷新中…" to "Обновление...",
+    "手动刷新" to "Обновить",
+    "还没有订阅组。" to "Подписок пока нет.",
+    "立即刷新" to "Обновить сейчас",
+    "打开设置" to "Открыть настройки",
+    "个人环境" to "Профиль",
+    "状态与工具。" to "Состояние и инструменты.",
+    "当前环境" to "Текущее состояние",
+    "已受保护" to "Защищено",
+    "正在建立连接" to "Подключение",
+    "正在断开连接" to "Отключение",
+    "尚未建立连接" to "Не подключено",
+    "节点与资源" to "Узлы и ресурсы",
+    "分应用代理" to "Прокси по приложениям",
+    "应用名单" to "Список приложений",
+    "流媒体分流" to "Маршрутизация медиа",
+    "已启用" to "Включено",
+    "单独出口" to "Отдельный выход",
+    "系统诊断" to "Диагностика",
+    "VPN / DNS / 握手" to "VPN / DNS / рукопожатие",
+    "连接与更新" to "Подключение",
+    "授权与设备" to "Устройство",
+    "VPN 授权状态" to "Разрешение VPN",
+    "已授权" to "Разрешено",
+    "兼容平台" to "Платформа",
+    "已匹配" to "Готово",
+    "当前节点" to "Текущий узел",
+    "暂无节点" to "Нет узла",
+    "请先导入线路。" to "Сначала импортируйте узел.",
+    "切换线路" to "Сменить узел",
+    "查看详情" to "Детали",
+    "导入线路" to "Импорт",
+    "选择线路" to "Выбрать узел",
+    "内核 / VPN / DNS" to "Ядро / VPN / DNS",
+    "按分组管理线路。" to "Управление узлами по группам.",
+    "节点详情" to "Детали узла",
+    "线路信息" to "Информация об узле",
+    "当前没有可查看的节点信息。" to "Нет информации об узле.",
+    "前置代理节点" to "Предварительный прокси",
+    "选择可用节点作为跳板" to "Использовать другой узел как переход",
+    "未设置" to "Не задано",
+    "备用节点" to "Резервный узел",
+    "当前线路检测失败时自动切换" to "Переключаться при сбое текущего узла",
+    "此协议不能可靠触发自动切换" to "Этот протокол не поддерживает надежное переключение",
+    "不支持" to "Не поддерживается",
+    "当前状态" to "Состояние",
+    "等待导入" to "Ожидание импорта",
+    "当前已连接线路" to "Подключенный узел",
+    "可热切换到这条线路" to "Можно переключиться на этот узел",
+    "可用节点" to "Доступные узлы",
+    "协议" to "Протокол",
+    "安全层" to "Безопасность",
+    "传输层" to "Транспорт",
+    "接入地址" to "Адрес",
+    "端口" to "Порт",
+    "订阅来源" to "Источник",
+    "未导入" to "Не импортировано",
+    "订阅组" to "Группа",
+    "官方核心兼容" to "Совместимо с Xray",
+    "完整节点参数在这里查看。" to "Полные параметры узла здесь.",
+    "全部参数" to "Все параметры",
+    "返回线路页" to "Назад к узлам",
+    "当前线路已连接" to "Уже подключено",
+    "切换为当前线路" to "Переключиться на этот узел",
+    "连接此线路" to "Подключить",
+    "检测中…" to "Проверка...",
+    "测试延迟" to "Проверить задержку",
+    "编辑节点" to "Изменить узел",
+    "删除整个订阅" to "Удалить подписку",
+    "删除节点" to "Удалить узел",
+    "前置代理" to "Предварительный прокси",
+    "直接连接目标节点" to "Подключаться напрямую",
+    "当前设置" to "Текущие",
+    "状态总览" to "Обзор",
+    "模式" to "Режим",
+    "核心版本" to "Ядро",
+    "初始化中" to "Инициализация",
+    " · 前置" to " · Предв.",
+    " · 备用" to " · Резерв",
+    " · 备用不可用" to " · Резерв недоступен",
+    "扫码导入" to "Сканировать QR",
+    "相机扫码" to "Камера",
+    "扫描订阅二维码" to "Сканировать QR подписки",
+    "识别后直接导入。" to "Импорт после распознавания.",
+    "本地识别。" to "Распознавание на устройстве.",
+    "打开相册" to "Открыть галерею",
+    "正在识别图片…" to "Распознавание изображения...",
+    "从本地图片识别二维码。" to "Распознать QR с локального изображения.",
+    "识别结果" to "Результат",
+    "已取消图片选择。" to "Выбор изображения отменен.",
+    "正在识别图片中的二维码，请稍候。" to "Идет поиск QR-кодов на изображении.",
+    "已识别二维码，正在导入。" to "QR-код найден. Импорт.",
+    "已识别 2 个二维码，请点选一个继续导入。" to "Найдено 2 QR-кода. Выберите один.",
+    "已识别 3 个二维码，请点选一个继续导入。" to "Найдено 3 QR-кода. Выберите один.",
+    "已识别 4 个二维码，请点选一个继续导入。" to "Найдено 4 QR-кода. Выберите один.",
+    "已识别 5 个二维码，请点选一个继续导入。" to "Найдено 5 QR-кодов. Выберите один.",
+    "已选择二维码，正在导入。" to "QR выбран. Импорт.",
+    "已返回相机扫码。" to "Возврат к камере.",
+    "请选择一张包含二维码的图片。" to "Выберите изображение с QR-кодом.",
+    "请选择另一张图片。" to "Выберите другое изображение.",
+    "这张图片里没有识别到二维码，请换一张更清晰的图片再试。" to "QR-код не найден. Попробуйте более четкое изображение.",
+    "二维码 1" to "QR 1",
+    "二维码 2" to "QR 2",
+    "二维码 3" to "QR 3",
+    "二维码 4" to "QR 4",
+    "二维码 5" to "QR 5",
+    "识别所选二维码" to "Импорт выбранного QR",
+    "重新选择图片" to "Выбрать другое изображение",
+    "返回相机扫码" to "Назад к камере",
+    "跳过" to "Пропустить",
+    "安全、稳定、私密的 Xray 代理" to "Приватный Xray-прокси",
+    "初始化安全隧道、订阅源与诊断模块…" to "Подготовка туннеля, подписок и диагностики...",
+    "隐私至上" to "Приватность",
+    "简单易用" to "Простота",
+    "守护你的数字足迹" to "Защитите свой трафик",
+    "一键开启加密隧道。" to "Запуск защищенного туннеля одним нажатием.",
+    "下一步" to "Далее",
+    "个人隧道" to "Личный туннель",
+    "建立安全隧道" to "Создать защищенный туннель",
+    "需要系统 VPN 权限来建立加密隧道。" to "Для туннеля требуется разрешение VPN.",
+    "端到端加密" to "Зашифрованный путь",
+    "公网传输前加密。" to "Шифрование перед передачей в интернет.",
+    "零日志架构" to "Без журналов",
+    "不记录访问历史、IP 或 DNS 查询内容。" to "История, IP и DNS-запросы не записываются.",
+    "系统级集成" to "Системная интеграция",
+    "授权后通过 Android VPN 工作。" to "Работает через Android VPN после разрешения.",
+    "应用选择" to "Выбор приложений",
+    "只代理需要保护的应用" to "Проксировать только выбранные приложения",
+    "选择需要代理的应用。" to "Выберите приложения для прокси.",
+    "当前模式" to "Режим",
+    "仅代理选中应用" to "Только выбранные приложения",
+    "智能分流" to "Умная маршрутизация",
+    "仅勾选应用进入 VPN。" to "Только выбранные приложения входят в VPN.",
+    "切换到分应用后生效。" to "Действует после включения режима по приложениям.",
+    "未启用" to "Выключено",
+    "切回智能分流" to "Вернуться к умной маршрутизации",
+    "启用分应用代理" to "Включить прокси по приложениям",
+    "搜索应用名称或分类…" to "Поиск приложений или категорий...",
+    "应用设置后会重连 VPN。" to "VPN переподключится после применения.",
+    "应用设置后生效。" to "Вступит в силу после применения.",
+    "未指定时走默认线路。" to "Если не задано, используется узел по умолчанию.",
+    "先启用分应用代理" to "Сначала включите режим по приложениям",
+    "应用设置" to "Применить",
+    "等待连接后应用" to "Сначала подключитесь",
+    "当前名单已生效" to "Список уже применен",
+    "当前设置已生效" to "Настройки уже применены",
+    "没有匹配到应用。" to "Приложения не найдены.",
+    "搜索会实时过滤应用。" to "Поиск фильтрует список сразу.",
+    "通讯" to "Сообщения",
+    "视频" to "Видео",
+    "社交" to "Соцсети",
+    "社区" to "Сообщества",
+    "音乐" to "Музыка",
+    "故障分析" to "Диагностика сбоев",
+    "检查配置、内核、VPN、DNS 和握手。" to "Проверка конфигурации, ядра, VPN, DNS и рукопожатия.",
+    "配置解析" to "Разбор конфигурации",
+    "已成功校验订阅生成的 JSON 配置和路由标签。" to "JSON-конфигурация и маршруты подписки проверены.",
+    "Xray 内核启动" to "Запуск ядра Xray",
+    "已加载官方编译产物并完成本地环境初始化。" to "Официальная сборка загружена, окружение готово.",
+    "VPN 建立" to "Создание VPN",
+    "已获取 VpnService 授权，TUN 接口可用。" to "Разрешение VpnService получено, TUN доступен.",
+    "DNS 解析" to "DNS",
+    "保护后的 DNS 通道工作正常，当前 RTT 24ms。" to "Защищенный DNS-канал работает, RTT 24 мс.",
+    "远端握手" to "Рукопожатие",
+    "成功完成目标节点握手并建立安全隧道。" to "Рукопожатие узла выполнено, туннель создан.",
+    "代理可达性" to "Доступность прокси",
+    "HTTP 与 UDP 测试通过，可开始转发应用流量。" to "HTTP и UDP тесты пройдены, можно пересылать трафик.",
+    "重新测试" to "Проверить снова",
+    "复制诊断摘要" to "Копировать отчет",
+    "日志查看" to "Журналы",
+    "最新日志" to "Последние журналы",
+    "暂无日志。" to "Журналов нет.",
+    "通过" to "ОК",
+    "检测中" to "Проверка",
+    "解锁超低延迟" to "Низкая задержка",
+    "不可用" to "Недоступно",
+    "已选" to "Выбрано",
+    "选择" to "Выбрать",
+    "搜索服务器、地区或协议…" to "Поиск узлов, регионов или протоколов...",
+    "所有位置" to "Все",
+    "亚洲" to "Азия",
+    "低延迟" to "Низкая задержка",
+    "收藏" to "Избранное",
+    "连接时长" to "Длительность",
+    "节点下载" to "Загрузка",
+    "节点上传" to "Отдача",
+    "名称" to "Имя",
+    "协议类型" to "Протокол",
+    "来源" to "Источник",
+    "分享链接" to "Ссылка",
+    "配置" to "Конфигурация",
+    "配置 JSON" to "JSON конфигурации",
+    "已选中待切换节点" to "Узел выбран",
+    "去首页切换" to "Переключить на главной",
+    "AES-256 加密保护" to "Защита AES-256",
+    "无日志 · 高速连接 · 主流节点" to "Без журналов · Быстрые соединения · Популярные узлы",
+    "测速中" to "Тест",
+    "节点超时" to "Тайм-аут",
+    "正在刷新" to "Обновление",
+    "请稍后重试" to "Повторите позже",
+    "等待连接" to "Ожидание",
+    "已连接" to "Подключено",
+    "连接中" to "Подключение",
+    "断开中" to "Отключение",
+    "未连接" to "Отключено",
+    "系统受保护" to "Система защищена",
+    "正在建立安全隧道…" to "Открытие защищенного туннеля...",
+    "正在关闭安全隧道…" to "Закрытие защищенного туннеля...",
+    "尚未连接" to "Не подключено",
+    "系统 DNS" to "Системный DNS",
+    "远端 DNS 1.1.1.1" to "Удаленный DNS 1.1.1.1",
+    "手动输入" to "Вручную",
+    "DNS 地址" to "Адрес DNS",
+    "例如 8.8.8.8 或 8.8.8.8:53" to "Например 8.8.8.8 или 8.8.8.8:53",
+    "默认推荐：移动网络、PPPoE 宽带、QUIC / Hysteria2 节点，或不确定当前网络时使用。" to "Рекомендуется по умолчанию: мобильные сети, PPPoE, QUIC / Hysteria2 или если сеть неизвестна.",
+    "偏稳妥：普通宽带但偶尔出现网页半加载、下载停住时使用。" to "Стабильнее: если страницы загружаются частично или загрузки останавливаются.",
+    "偏性能：确认网络路径较稳定，且没有明显卡顿或下载 stall 时使用。" to "Производительность: если маршрут стабилен и нет подвисаний.",
+    "最大值：仅建议在直连宽带、局域网或确认链路支持 1500 MTU 时使用。" to "Максимум: только если канал поддерживает MTU 1500.",
+    "不确定时使用 1400。" to "Если не уверены, используйте 1400.",
+    "本地文本" to "Локальный текст",
+    "手动输入 Shadowrocket / Surge 文本规则" to "Ручные правила Shadowrocket / Surge",
+    "处理中…" to "Обработка...",
+    "更新资源" to "Обновить ресурсы",
+    "已就绪" to "Готово",
+    "内置" to "Встроено",
+    "基础资源" to "Базовые данные",
+    "还没有自定义规则源" to "Пользовательских источников нет",
+    "可继续使用系统默认规则。" to "Можно использовать правила по умолчанию.",
+    "添加规则" to "Добавить правило",
+    "点击节点后会插入可长期识别的 NODE 策略。" to "Нажатие на узел вставит стабильную политику NODE.",
+    "每行一条规则：规则类型,匹配内容,策略。支持 DOMAIN-SUFFIX、DOMAIN、DOMAIN-KEYWORD、URL-REGEX、IP-CIDR、IP-CIDR6、GEOIP。策略支持 DIRECT、PROXY、REJECT，也可以用下方节点菜单插入 NODE 策略。IP 规则可追加 no-resolve。" to "Одно правило в строке: тип, совпадение, политика. Поддерживаются DOMAIN-SUFFIX, DOMAIN, DOMAIN-KEYWORD, URL-REGEX, IP-CIDR, IP-CIDR6 и GEOIP. Политики: DIRECT, PROXY, REJECT или NODE из меню ниже. Для IP-правил можно добавить no-resolve.",
+    "示例：\nDOMAIN-SUFFIX,openai.com,PROXY\nDOMAIN-SUFFIX,apple.com,DIRECT\nGEOIP,CN,DIRECT,no-resolve\nURL-REGEX,^(.+\\.)?example\\.com$,REJECT" to "Пример:\nDOMAIN-SUFFIX,openai.com,PROXY\nDOMAIN-SUFFIX,apple.com,DIRECT\nGEOIP,CN,DIRECT,no-resolve\nURL-REGEX,^(.+\\.)?example\\.com$,REJECT",
+    "选择节点会把可识别的 NODE 策略插入到光标位置。订阅刷新后会优先按稳定节点信息重新绑定；找不到节点时默认走 PROXY。" to "Выбор узла вставляет политику NODE в позицию курсора. После обновления подписки привязка восстанавливается по стабильным данным узла; если узел не найден, используется PROXY.",
+    "请输入规则文本。" to "Введите текст правил.",
+    "请输入规则 URL。" to "Введите URL правил.",
+    "规则 URL 必须以 http:// 或 https:// 开头。" to "URL правил должен начинаться с http:// или https://.",
+    "前置代理重新连接后生效；备用节点会在当前连接节点检测失败后自动阻断操作并切换。" to "Предварительный прокси действует после переподключения. Резервный узел переключается при сбое текущего.",
+    "选择任意可用节点作为跳板。" to "Выберите доступный узел как переход.",
+    "当前节点检测失败时，会自动断开并切换到备用节点。" to "При сбое текущего узла приложение отключится и переключится на резервный.",
+    "不使用前置代理" to "Без предварительного прокси",
+    "不使用备用节点" to "Без резервного узла",
+    "检测失败时只提示，不自动切换" to "Только предупреждать, не переключать",
+    "当前没有其它可用节点可做前置代理。" to "Нет других узлов для предварительного прокси.",
+    "当前没有其它可用节点可做备用节点。" to "Нет других узлов для резерва.",
+    "节点名称" to "Имя узла",
+    "可留空。留空时会按协议和地址自动命名。" to "Необязательно. Пустое имя будет создано из протокола и адреса.",
+    "节点协议" to "Протокол",
+    "套用示例" to "Пример",
+    "分享链接预填" to "Из ссылки",
+    "服务端地址" to "Адрес сервера",
+    "默认 none" to "По умолчанию none",
+    "可留空。VLESS 客户端一般用 none。" to "Необязательно. Для VLESS обычно none.",
+    "例如 xtls-rprx-vision" to "Например xtls-rprx-vision",
+    "可留空。只有服务端明确要求时再填。" to "Необязательно. Заполняйте только если сервер явно требует.",
+    "VMess 加密方式" to "Шифрование VMess",
+    "密码" to "Пароль",
+    "例如 my-strong-password" to "Например my-strong-password",
+    "加密方法" to "Шифр",
+    "密码 / 密钥" to "Пароль / ключ",
+    "例如 super-secret-key" to "Например super-secret-key",
+    "旧机场或特殊链路需要时再打开。默认关闭。" to "Выключено по умолчанию. Включайте только для старых или специальных линий.",
+    "UoT 版本" to "Версия UoT",
+    "默认 2" to "По умолчанию 2",
+    "可留空。通常保持 2。" to "Необязательно. Обычно 2.",
+    "用户名" to "Имя пользователя",
+    "可留空" to "Необязательно",
+    "可留空。上游代理不要求鉴权时不用填。" to "Необязательно. Оставьте пустым, если прокси не требует входа.",
+    "可留空。和用户名一起使用。" to "Необязательно. Используется вместе с именем пользователя.",
+    "自定义 HTTP 头" to "Свои HTTP-заголовки",
+    "可留空。每行一个，格式为 Header: Value。" to "Необязательно. Один на строку: Header: Value.",
+    "客户端私钥" to "Приватный ключ клиента",
+    "32 字节 WireGuard 私钥" to "32-байтный приватный ключ WireGuard",
+    "对端公钥" to "Публичный ключ пира",
+    "32 字节 WireGuard 公钥" to "32-байтный публичный ключ WireGuard",
+    "预共享密钥" to "Предварительный ключ",
+    "认证口令" to "Пароль авторизации",
+    "例如 hy2-password" to "Например hy2-password",
+    "UDP 空闲超时（秒）" to "Тайм-аут UDP (сек)",
+    "默认 60" to "По умолчанию 60",
+    "可留空。默认按 Xray 的 60 秒。" to "Необязательно. По умолчанию Xray: 60 секунд.",
+    "传输方式" to "Транспорт",
+    "可留空。WS / HTTP 类传输常用。" to "Необязательно. Часто используется для WS/HTTP.",
+    "/ 或其他路径" to "/ или другой путь",
+    "可留空。HTTP 类传输常用。" to "Необязательно. Часто используется для HTTP-транспорта.",
+    "可留空。只有服务端配置了 gRPC 时才需要填。" to "Необязательно. Нужно только если сервер использует gRPC.",
+    "指纹 fingerprint" to "Отпечаток fingerprint",
+    "例如 chrome / safari" to "Например chrome / safari",
+    "可留空。uTLS / REALITY 常见。" to "Необязательно. Часто для uTLS / REALITY.",
+    "例如 h2,http/1.1" to "Например h2,http/1.1",
+    "可留空。多个值用逗号分隔。" to "Необязательно. Несколько значений через запятую.",
+    "跳过证书校验" to "Пропуск проверки сертификата",
+    "不推荐。只有你确认上游证书异常但仍可信时再打开。" to "Не рекомендуется. Используйте только если сертификат доверенный, но нестандартный.",
+    "REALITY 公钥" to "Публичный ключ REALITY",
+    "地址和 Allowed IPs 需要带 CIDR。" to "Адреса и Allowed IPs должны содержать CIDR.",
+    "本地地址列表" to "Локальные адреса",
+    "可留空。多个值用逗号或换行分隔。" to "Необязательно. Значения через запятую или новую строку.",
+    "可留空。默认会按 Xray 的全量路由处理。" to "Необязательно. По умолчанию Xray обрабатывает полную маршрутизацию.",
+    "例如 1,2,3" to "Например 1,2,3",
+    "可留空。Cloudflare WARP 等部分线路会用到。" to "Необязательно. Используется некоторыми линиями, например Cloudflare WARP.",
+    "默认 1420" to "По умолчанию 1420",
+    "可留空。一般保持默认。" to "Необязательно. Обычно оставляют по умолчанию.",
+    "可留空。默认按 CPU 核心数。" to "Необязательно. По умолчанию по числу ядер CPU.",
+    "可留空。单位秒。" to "Необязательно. Единица: секунды.",
+    "域名解析策略" to "Стратегия доменов",
+    "强制 noKernelTun" to "Принудительно noKernelTun",
+    "默认关闭。只有你明确知道当前设备不适合 kernel tun 时再打开。" to "Выключено по умолчанию. Включайте только если kernel tun не подходит устройству.",
+    "从分享链接预填" to "Заполнить из ссылки",
+    "预填" to "Заполнить",
+    "版本状态" to "Состояние версии",
+    "尚未检查更新" to "Еще не проверено",
+    "正在检查更新" to "Проверка обновлений",
+    "当前版本" to "Текущая версия",
+    "可更新版本" to "Доступно обновление",
+    "正在下载更新" to "Загрузка обновления",
+    "安装包已下载" to "APK загружен",
+    "检查更新失败" to "Проверка обновлений не удалась",
+    "当前版本描述" to "Описание текущей версии",
+    "更新版本描述" to "Описание обновления",
+    "发布于 " to "Опубликовано ",
+    "此版本没有填写更新说明。" to "У этой версии нет описания.",
+    "检查中" to "Проверка",
+    "下载中" to "Загрузка",
+    "升级" to "Обновить",
+    "安装" to "Установить",
+    "重新检查" to "Проверить снова",
+    "已识别二维码，正在生成导入预览。" to "QR-код найден. Создание предпросмотра импорта.",
+    "已选择二维码，正在生成导入预览。" to "QR выбран. Создание предпросмотра импорта.",
+    "来源：文件导入" to "Источник: импорт файла",
+    "来源：订阅链接" to "Источник: URL подписки",
+    "来源：订阅快照（不刷新）" to "Источник: снимок подписки (без обновления)",
+    "发现新版本" to "Новая версия",
+    "已是最新版" to "Последняя версия",
+    "稍后" to "Позже",
+    "当前还没有选中线路" to "Узел не выбран",
+    "选择节点" to "Выбрать узел",
+    "选择一个出口节点。" to "Выберите выходной узел.",
+    "已隐藏不支持节点" to "Неподдерживаемые узлы скрыты",
+    "知道了" to "ОК",
+    "正在重新连接" to "Переподключение",
+    "流媒体分流已开启。" to "Маршрутизация медиа включена.",
+    "流媒体分流已关闭。" to "Маршрутизация медиа выключена.",
+    "当前流媒体分流设置已经是最新状态。" to "Настройки медиа-маршрутизации уже актуальны.",
+    "流媒体分流设置已保存。" to "Настройки медиа-маршрутизации сохранены.",
+    "正在重连 VPN 以应用新的流媒体分流设置…" to "Переподключение VPN для применения медиа-маршрутизации...",
+    "正在重连 VPN 以移除流媒体分流设置…" to "Переподключение VPN для удаления медиа-маршрутизации...",
+    "更新通知已关闭。" to "Уведомления об обновлениях выключены.",
+    "更新通知已开启。" to "Уведомления об обновлениях включены.",
+    "系统未授予通知权限，无法显示更新通知。" to "Нет разрешения на уведомления.",
+    "已开始后台同步订阅、规则和 Geo 资源。" to "Фоновая синхронизация подписок, правил и Geo запущена.",
+    "请输入自定义 DNS 地址。" to "Введите свой DNS-адрес.",
+    "DNS 已切换为系统解析。" to "DNS переключен на системный.",
+    "DNS 已切换为远端 1.1.1.1。" to "DNS переключен на удаленный 1.1.1.1.",
+    "规则更新失败。" to "Ошибка обновления правил.",
+    "Geo 数据已更新。" to "Geo-данные обновлены.",
+    "Geo 数据更新失败。" to "Ошибка обновления Geo-данных.",
+    "后台同步失败。" to "Фоновая синхронизация не удалась.",
+    "VPN 权限已授予，正在启动连接…" to "Разрешение VPN получено. Запуск...",
+    "未授予 VPN 权限。" to "Разрешение VPN не выдано.",
+    "未授予相机权限，无法扫码导入。" to "Нет разрешения камеры. QR-импорт недоступен.",
+    "所选图片里没有识别到二维码。" to "На выбранном изображении QR-код не найден.",
+    "读取图片失败，无法识别二维码。" to "Не удалось прочитать изображение для QR.",
+    "请先导入并选择一个节点。" to "Сначала импортируйте и выберите узел.",
+    "正在申请系统 VPN 并启动连接…" to "Запрос разрешения VPN и запуск...",
+    "当前系统不支持应用内直接添加快捷开关，请到系统下拉菜单的编辑页手动添加。" to "Эта версия Android не может добавить плитку отсюда. Добавьте ее в панели быстрых настроек.",
+    "当前无法拉起系统快捷开关面板，请稍后重试。" to "Не удалось открыть панель быстрых настроек. Повторите позже.",
+    "当前系统没有提供快捷开关服务，请在系统编辑页手动添加。" to "Служба быстрых настроек недоступна. Добавьте вручную.",
+    "VPN 快捷开关已添加到下拉菜单。" to "Плитка VPN добавлена.",
+    "VPN 快捷开关已经添加过了。" to "Плитка VPN уже добавлена.",
+    "你取消了添加快捷开关。" to "Добавление плитки отменено.",
+    "请保持应用在前台后再试一次。" to "Оставьте приложение на переднем плане и повторите.",
+    "快捷开关组件无效，请重新安装这版应用后再试。" to "Компонент плитки недействителен. Переустановите приложение.",
+    "系统拒绝了当前快捷开关请求。" to "Система отклонила запрос плитки.",
+    "当前系统用户不支持添加这个快捷开关。" to "Текущий пользователь Android не может добавить эту плитку.",
+    "当前系统没有状态栏快捷开关服务。" to "Служба плиток состояния недоступна.",
+    "系统已经在处理另一个快捷开关请求，请稍后再试。" to "Другой запрос плитки уже обрабатывается.",
+    "请先启用分应用代理，再应用当前应用名单。" to "Сначала включите прокси по приложениям.",
+    "当前分应用代理名单已经是最新状态。" to "Список приложений уже актуален.",
+    "应用名单已保存。" to "Список приложений сохранен.",
+    "已开启分应用代理，正在重连 VPN 以只代理指定应用。" to "Прокси по приложениям включен. VPN переподключается.",
+    "分应用代理已开启。" to "Прокси по приложениям включен.",
+    "已关闭分应用代理，正在重连 VPN 以恢复默认模式。" to "Прокси по приложениям выключен. VPN переподключается.",
+    "已关闭分应用代理，已切回默认模式。" to "Прокси по приложениям выключен. Режим по умолчанию восстановлен.",
+    "分应用代理已开启，正在重连 VPN 以应用新模式…" to "Прокси по приложениям включен. Переподключение VPN...",
+    "分应用代理已关闭，正在重连 VPN 以恢复默认模式…" to "Прокси по приложениям выключен. Переподключение VPN...",
+    "正在重连 VPN 以应用新的分应用代理名单…" to "Переподключение VPN для применения списка приложений...",
+    "按服务指定出口" to "Выход по сервисам",
+    "按服务指定出口节点。" to "Назначьте выходной узел для каждого сервиса.",
+    "流媒体" to "медиа",
+    "总开关" to "Главный переключатель",
+    "启用流媒体分流" to "Включить маршрутизацию медиа",
+    "流媒体列表" to "Сервисы",
+    "默认线路" to "Узел по умолчанию",
+    "默认节点" to "Узел по умолчанию",
+    "默认出口" to "Выход по умолчанию",
+    "可选节点" to "Доступные узлы",
+    "当前还没有 Local 或订阅节点可选。" to "Нет доступных Local или подписочных узлов.",
+    "导入线路后即可连接。" to "Импортируйте узел для подключения.",
+    "剧集和电影分流规则" to "Правила маршрутизации сериалов и фильмов",
+    "Disney / Hulu on Disney 相关域名" to "Домены Disney / Hulu on Disney",
+    "视频与会员相关域名" to "Домены видео и подписок",
+    "音乐播放与账号相关域名" to "Домены музыки и аккаунта",
+    "Prime Video 播放域名" to "Домены воспроизведения Prime Video",
+    "Amazon Prime Video 更完整规则" to "Более полные правила Amazon Prime Video",
+    "Hulu 视频服务分流规则" to "Правила маршрутизации Hulu",
+    "日本区 Hulu 规则" to "Правила Hulu Japan",
+    "美国区 Hulu 规则" to "Правила Hulu USA",
+    "Max / HBO Max 美国规则" to "Правила Max / HBO Max USA",
+    "HBO 通用规则" to "Общие правила HBO",
+    "HBO Asia 区域规则" to "Правила HBO Asia",
+    "HBO 香港区规则" to "Правила HBO Hong Kong",
+    "音乐流媒体与账号接口" to "Музыкальный стриминг и аккаунт",
+    "Apple TV / TV+ 播放规则" to "Правила воспроизведения Apple TV / TV+",
+    "Apple Music 媒体规则" to "Медиа-правила Apple Music",
+    "巴哈姆特动画疯规则" to "Правила Bahamut Anime",
+    "日本 AbemaTV 视频规则" to "Правила AbemaTV Japan",
+    "Bilibili 视频服务规则" to "Правила Bilibili",
+    "BiliBili 国际版规则" to "Правила BiliBili Intl",
+    "ViuTV 港区流媒体规则" to "Правила ViuTV Hong Kong",
+    "Line TV 视频规则" to "Правила Line TV",
+    "LiTV 台湾影视规则" to "Правила LiTV Taiwan",
+    "KKTV 台湾视频规则" to "Правила KKTV Taiwan",
+    "KKBOX 音乐服务规则" to "Правила KKBOX Music",
+    "Discovery+ 流媒体规则" to "Правила Discovery+",
+    "FOX NOW 视频规则" to "Правила FOX NOW",
+    "TVB 海外点播规则" to "Правила TVB Overseas",
+    "DAZN 体育流媒体规则" to "Правила спортивного стриминга DAZN",
+    "TIDAL 音乐服务规则" to "Правила TIDAL Music",
+    "SoundCloud 音乐规则" to "Правила SoundCloud Music",
+    "Pandora 音乐电台规则" to "Правила Pandora Radio",
+    "Deezer 音乐服务规则" to "Правила Deezer Music",
+    "Paramount+ 视频规则" to "Правила Paramount+",
+    "Peacock 视频规则" to "Правила Peacock",
+    "Niconico 视频规则" to "Правила Niconico",
+    "Hami Video 台湾视频规则" to "Правила Hami Video Taiwan",
+    "TVB 流媒体规则" to "Правила TVB",
+    "建议香港" to "Рекомендуется: Гонконг",
+    "建议美国" to "Рекомендуется: США",
+    "建议美国或日本" to "Рекомендуется: США или Япония",
+    "建议日本" to "Рекомендуется: Япония",
+    "建议新加坡" to "Рекомендуется: Сингапур",
+    "建议美国或新加坡" to "Рекомендуется: США или Сингапур",
+    "建议台湾" to "Рекомендуется: Тайвань",
+    "建议台湾或香港" to "Рекомендуется: Тайвань или Гонконг",
+    "建议日本或德国" to "Рекомендуется: Япония или Германия",
+    "建议美国或法国" to "Рекомендуется: США или Франция",
+    "DNS 与分流规则已生效。" to "DNS и правила маршрутизации активны.",
+    "正在启动内核和 VPN。" to "Запуск ядра и VPN.",
+    "正在释放 VPN 会话。" to "Освобождение VPN-сессии.",
+    "当前线路工作正常。" to "Текущий узел работает нормально.",
+    "正在检查连接。" to "Проверка подключения.",
+    "正在关闭 VPN。" to "Закрытие VPN.",
+    "建议刷新订阅或切换节点。" to "Обновите подписку или смените узел.",
+    "刚刚" to "Только что",
+    "手动" to "Вручную",
+    "快照" to "Снимок",
+    "单节点" to "Один узел",
+    "文件导入" to "Импорт файла",
+    "订阅链接" to "URL подписки",
+    "订阅快照（不刷新）" to "Снимок подписки",
+    "欧洲" to "Европа",
+    "美洲" to "Америка",
+    "北美" to "Северная Америка",
+    "南美" to "Южная Америка",
+    "日本" to "Япония",
+    "韩国" to "Корея",
+    "香港" to "Гонконг",
+    "台湾" to "Тайвань",
+    "新加坡" to "Сингапур",
+    "Shadowrocket 默认规则" to "Правила Shadowrocket по умолчанию",
+    "Surge 默认规则" to "Правила Surge по умолчанию",
+    "自定义规则" to "Свои правила",
+    "默认规则" to "Правила по умолчанию",
+    "本地导入单节点" to "Локальный импорт",
+    "请返回导入页先输入有效的订阅链接或单节点 URL。" to "Вернитесь на импорт и введите корректный URL подписки или узла.",
+    "当前为最新版。" to "Уже последняя версия.",
+    "正在检查 GitHub Release…" to "Проверка GitHub Release...",
+    "正在通过代理下载 APK…" to "Загрузка APK через прокси...",
+    "安装包已下载，点击安装继续升级。" to "APK загружен. Нажмите Установить.",
+    "下载更新失败。" to "Ошибка загрузки обновления.",
+    "安装包不存在，请重新下载。" to "APK не найден. Загрузите снова.",
+    "无法打开系统安装器。" to "Не удалось открыть системный установщик.",
+    "请先允许 PurpleBear 安装未知来源应用，然后返回继续安装。" to "Разрешите PurpleBear устанавливать неизвестные приложения, затем продолжите.",
+    "请先连接代理后再下载更新。" to "Подключите прокси перед загрузкой обновления.",
+    "安装包大小不完整，请重新下载。" to "Размер APK неполный. Загрузите снова.",
+    "安装包校验失败，请重新下载。" to "Проверка APK не пройдена. Загрузите снова.",
+    "安装包下载重定向次数过多。" to "Слишком много перенаправлений при загрузке APK.",
+    "安装包下载重定向缺少 Location。" to "В перенаправлении APK нет Location.",
+    "GitHub Release 没有安装包。" to "В GitHub Release нет файлов.",
+    "GitHub Release 没有 APK 安装包。" to "В GitHub Release нет APK.",
+    "已同步" to "Синхронизировано",
+    "已导入" to "Импортировано",
+    "未更新" to "Не обновлено",
+    "正常" to "ОК",
+    "拉取失败" to "Ошибка загрузки",
+    "解析失败" to "Ошибка разбора",
+    "刷新失败" to "Ошибка обновления",
+    "Local group 目前没有可显示节点。" to "В группе Local нет видимых узлов.",
+    "Local group 还没有节点。" to "В группе Local пока нет узлов.",
+    "这个订阅组当前没有可显示节点。" to "В этой группе нет видимых узлов.",
+    "这个订阅组当前没有匹配到节点。" to "В этой группе нет подходящих узлов.",
+    "Flow / 附加字段" to "Flow / дополнительные поля",
+    "远端 1.1.1.1" to "Удаленный 1.1.1.1",
+    "连接后按间隔检测当前节点；连续 3 次失败时自动切换到备用节点。" to "После подключения текущий узел проверяется по интервалу; после 3 сбоев выполняется переключение на резерв.",
+    "不清楚就保留 1400。较低 MTU 可减少移动网、PPPoE 和 QUIC 节点出现加载到一半卡住的问题；修改后需要重连 VPN 生效。" to "Если не уверены, оставьте 1400. Более низкий MTU помогает при зависании загрузки в мобильных сетях, PPPoE и QUIC; после изменения нужно переподключить VPN.",
+    "https://... 或 ss://... / vless://..." to "https://... или ss://... / vless://...",
+    "当前导入节点" to "Импортируемый узел",
+    "地址" to "Адрес",
+    "传输" to "Транспорт",
+    "安全" to "Безопасность",
+    "新建节点" to "Новый узел",
+    "编辑 Local 节点" to "Изменить Local-узел",
+    "手动新建客户端节点" to "Создать клиентский узел вручную",
+    "编辑 Local 节点参数。" to "Изменение параметров Local-узла.",
+    "填写必要参数生成 Local 节点。" to "Заполните параметры для создания Local-узла.",
+    "基础信息" to "Основная информация",
+    "HTTP 代理不加密，只适合你明确知道链路安全的场景。" to "HTTP-прокси не шифруется; используйте только если уверены в безопасности канала.",
+    "SOCKS5 不加密，适合上游代理。" to "SOCKS5 не шифруется; подходит для вышестоящего прокси.",
+    "按 Xray WireGuard 出站结构写入。" to "Записывается как outbound WireGuard в Xray.",
+    "按 Hysteria2 出站结构写入。" to "Записывается как outbound Hysteria2.",
+    "鉴权与密钥" to "Авторизация и ключи",
+    "可留空。只有服务端要求时再填。" to "Необязательно. Заполняйте только если требует сервер.",
+    "传输与安全" to "Транспорт и безопасность",
+    "按服务端要求填写传输与安全。" to "Заполните транспорт и безопасность согласно серверу.",
+    "通常保持 auto。" to "Обычно оставьте auto.",
+    "通常配合 TLS 使用。" to "Обычно используется вместе с TLS.",
+    "按服务端提供的 method 填写。" to "Укажите method, предоставленный сервером.",
+    "映射到 Xray streamSettings。" to "Соответствует streamSettings Xray.",
+    "固定值" to "Фиксированное значение",
+    "建议填写，不要留空。" to "Рекомендуется заполнить.",
+    "可留空。多数 TLS 节点建议填写。" to "Необязательно. Для большинства TLS-узлов рекомендуется заполнить.",
+    "可留空。服务端要求时再填。" to "Необязательно. Заполняйте если требует сервер.",
+    "可留空。部分 REALITY 配置会要求。" to "Необязательно. Требуется некоторыми конфигурациями REALITY.",
+    "收起高级选项" to "Скрыть дополнительные параметры",
+    "展开高级选项" to "Показать дополнительные параметры",
+    "WireGuard 进阶" to "Расширенные WireGuard",
+    "保存修改" to "Сохранить изменения",
+    "保存到 Local" to "Сохранить в Local",
+    "分享链接预填失败。" to "Не удалось заполнить из ссылки.",
+    "粘贴分享链接后自动填表。" to "Вставьте ссылку, чтобы заполнить форму автоматически.",
+    "粘贴 vless:// / vmess:// / trojan:// ..." to "Вставьте vless:// / vmess:// / trojan:// ...",
+    "删除订阅组" to "Удалить группу подписки",
+    "官方 Xray 内核已就绪" to "Официальное ядро Xray готово",
+    "加载中…" to "Загрузка...",
+    "未找到要连接的节点。" to "Узел для подключения не найден.",
+    "界面语言已更新。" to "Язык интерфейса обновлен.",
+    "全局代理已开启，正在重启 VPN 服务；局域网/私网不走代理。" to "Глобальный прокси включен. Перезапуск VPN; LAN/частные сети идут напрямую.",
+    "全局代理已开启，连接后正常上网流量走代理，局域网/私网不走代理。" to "Глобальный прокси включен. После подключения интернет-трафик пойдет через прокси, LAN/частные сети напрямую.",
+    "全局代理已关闭，正在重连 VPN 以恢复规则分流。" to "Глобальный прокси выключен. Переподключение VPN для восстановления правил.",
+    "全局代理已关闭，连接后会按规则分流。" to "Глобальный прокси выключен. После подключения будут применяться правила.",
+    "全局代理已开启，正在重启 VPN 服务。完成前请稍候，局域网/私网仍不走代理。" to "Глобальный прокси включен. Перезапуск VPN; LAN/частные сети остаются прямыми.",
+    "全局代理已关闭，正在重连 VPN 以恢复规则分流…" to "Глобальный прокси выключен. Переподключение VPN для восстановления правил...",
+    "附件导入" to "Импорт вложения",
+    "无法读取文件内容。" to "Не удалось прочитать файл.",
+    "文件导入失败。" to "Импорт файла не удался.",
+    "旧版 Local 节点，建议谨慎编辑。" to "Старый Local-узел; редактируйте осторожно.",
+    "当前 Local 节点暂时无法编辑。" to "Этот Local-узел пока нельзя редактировать.",
+    "所选节点" to "Выбранный узел",
+    "保存节点失败，请检查必填项。" to "Не удалось сохранить узел. Проверьте обязательные поля.",
+    "新建节点失败，请检查必填项。" to "Не удалось создать узел. Проверьте обязательные поля.",
+    "订阅已同步，正在重新连接当前线路…" to "Подписка синхронизирована. Переподключение текущего узла...",
+    "手动同步失败" to "Ручная синхронизация не удалась",
+    "检查更新失败。" to "Проверка обновлений не удалась.",
+    "二维码里没有可导入的链接。" to "В QR-коде нет ссылки для импорта.",
+    "二维码内容无法识别为订阅或节点链接。" to "QR-код не распознан как подписка или ссылка узла.",
+    "二维码导入失败" to "QR-импорт не удался",
+    "正在断开 VPN…" to "Отключение VPN...",
+    "当前节点检测失败，准备切换备用节点" to "Проверка текущего узла не удалась. Подготовка переключения на резерв.",
+    "当前节点检测不通" to "Текущий узел недоступен",
+    "无法加载 Xray 内核。" to "Не удалось загрузить ядро Xray.",
+    "自动检查更新失败" to "Автопроверка обновлений не удалась",
+    "原线路已不存在，无法自动重连。" to "Исходный узел больше не существует. Автопереподключение невозможно.",
+    "设置已更新，正在重新连接当前线路…" to "Настройки обновлены. Переподключение текущего узла...",
+    "当前节点连接失败" to "Ошибка подключения текущего узла",
+    "导入失败，请检查链接格式。" to "Импорт не удался. Проверьте формат ссылки.",
+    "订阅已更新，正在重新连接当前线路…" to "Подписка обновлена. Переподключение текущего узла...",
+    "订阅已刷新，正在重新连接当前线路…" to "Подписка обновлена. Переподключение текущего узла...",
+    "订阅刷新失败。" to "Обновление подписки не удалось.",
+    "已开启启动后自动连接。" to "Автоподключение при запуске включено.",
+    "已关闭启动后自动连接。" to "Автоподключение при запуске выключено.",
+    "已开启断线自动重连。" to "Автопереподключение включено.",
+    "已关闭断线自动重连。" to "Автопереподключение выключено.",
+    "已开启每日自动更新。仅在非计费网络下执行。" to "Ежедневное автообновление включено. Только в сетях без тарификации.",
+    "已关闭每日自动更新。" to "Ежедневное автообновление выключено.",
+    "正在重新连接 VPN 并应用新的流媒体分流设置，请稍候…" to "Переподключение VPN и применение новой медиа-маршрутизации...",
+    "图片上的编号与下方选项一一对应。" to "Номера на изображении соответствуют вариантам ниже.",
+    "恢复默认规则" to "Восстановить правила по умолчанию",
 )

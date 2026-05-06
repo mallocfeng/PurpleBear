@@ -17,9 +17,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AddCircle
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -27,6 +33,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.mallocgfw.app.model.AppGeoRoutingRegion
 import com.mallocgfw.app.model.RuleSourceItem
 import com.mallocgfw.app.model.RuleSourceKind
 import com.mallocgfw.app.ui.theme.Error
@@ -189,6 +196,8 @@ internal fun RuleSourceCard(
 internal fun GeoDataCard(
     snapshot: GeoDataSnapshot,
     updating: Boolean,
+    selectedRegion: AppGeoRoutingRegion,
+    onRegionChange: (AppGeoRoutingRegion) -> Unit,
     onRefresh: () -> Unit,
 ) {
     SurfaceCard(
@@ -219,14 +228,14 @@ internal fun GeoDataCard(
                     fontWeight = FontWeight.ExtraBold,
                 )
                 Text(
-                    text = uiText("当前来源：${snapshot.sourceLabel}", "Source: ${snapshot.sourceLabel}"),
+                    text = uiText("当前来源：${snapshot.sourceLabel}"),
                     color = TextSecondary,
                     fontSize = TypeScale.Body,
                     lineHeight = TypeScale.BodyLine,
                     modifier = Modifier.padding(top = 8.dp),
                 )
                 Text(
-                    text = uiText("最近更新时间：${snapshot.updatedAt}", "Updated: ${snapshot.updatedAt}"),
+                    text = uiText("最近更新时间：${snapshot.updatedAt}"),
                     color = TextSecondary,
                     fontSize = TypeScale.Body,
                     lineHeight = TypeScale.BodyLine,
@@ -261,6 +270,11 @@ internal fun GeoDataCard(
             fontSize = TypeScale.Meta,
             lineHeight = TypeScale.MetaLine,
         )
+        Spacer(modifier = Modifier.height(12.dp))
+        GeoRoutingRegionDropdown(
+            selectedRegion = selectedRegion,
+            onRegionChange = onRegionChange,
+        )
         if (!snapshot.lastError.isNullOrBlank()) {
             Text(
                 text = snapshot.lastError,
@@ -284,6 +298,81 @@ internal fun GeoDataCard(
                 modifier = Modifier.clickable(onClick = onRefresh),
             )
         }
+    }
+}
+
+@Composable
+private fun GeoRoutingRegionDropdown(
+    selectedRegion: AppGeoRoutingRegion,
+    onRegionChange: (AppGeoRoutingRegion) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = uiText("Geo 分流国家"),
+            color = TextPrimary,
+            fontWeight = FontWeight.Bold,
+            fontSize = TypeScale.Body,
+            lineHeight = TypeScale.BodyLine,
+        )
+        Text(
+            text = geoRoutingRegionSubtitle(selectedRegion),
+            color = TextSecondary,
+            fontSize = TypeScale.Meta,
+            lineHeight = TypeScale.MetaLine,
+        )
+        Box {
+            Box(modifier = Modifier.clickable { expanded = true }) {
+                OutlinedActionChip(geoRoutingRegionLabel(selectedRegion))
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+            ) {
+                AppGeoRoutingRegion.entries.forEach { region ->
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(
+                                    text = geoRoutingRegionLabel(region),
+                                    color = TextPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                Text(
+                                    text = geoRoutingRegionSubtitle(region),
+                                    color = TextSecondary,
+                                    fontSize = TypeScale.Meta,
+                                    lineHeight = TypeScale.MetaLine,
+                                )
+                            }
+                        },
+                        onClick = {
+                            expanded = false
+                            onRegionChange(region)
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun geoRoutingRegionLabel(region: AppGeoRoutingRegion): String {
+    return when (region) {
+        AppGeoRoutingRegion.China -> uiText("中国（CN）")
+        AppGeoRoutingRegion.English -> uiText("英语区域（US）")
+        AppGeoRoutingRegion.Russia -> uiText("俄罗斯（RU）")
+    }
+}
+
+@Composable
+private fun geoRoutingRegionSubtitle(region: AppGeoRoutingRegion): String {
+    return when (region) {
+        AppGeoRoutingRegion.China -> uiText("直连 geosite:cn 与 geoip:cn。")
+        AppGeoRoutingRegion.English -> uiText("直连 geoip:us；EN 不是 Geo 国家码。")
+        AppGeoRoutingRegion.Russia -> uiText("直连 geosite:category-ru 与 geoip:ru。")
     }
 }
 

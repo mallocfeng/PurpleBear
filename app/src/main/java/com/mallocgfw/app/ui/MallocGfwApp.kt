@@ -60,6 +60,7 @@ import com.mallocgfw.app.MainActivity
 import com.mallocgfw.app.R
 import com.mallocgfw.app.model.AppScreen
 import com.mallocgfw.app.model.AppDnsMode
+import com.mallocgfw.app.model.AppGeoRoutingRegion
 import com.mallocgfw.app.model.AppStateStore
 import com.mallocgfw.app.model.ConnectionStatus
 import com.mallocgfw.app.model.ImportParser
@@ -535,10 +536,57 @@ fun MallocGfwApp(
 
     fun updateLanguage(language: AppLanguage) {
         if (appSettings.language == language) return
-        appSettings = appSettings.copy(language = language)
+        val currentDefaultRegion = AppGeoRoutingRegion.defaultForLanguage(appSettings.language)
+        val nextDefaultRegion = AppGeoRoutingRegion.defaultForLanguage(language)
+        val nextGeoRoutingRegion = if (appSettings.geoRoutingRegion == currentDefaultRegion) {
+            nextDefaultRegion
+        } else {
+            appSettings.geoRoutingRegion
+        }
+        val geoRoutingRegionChanged = nextGeoRoutingRegion != appSettings.geoRoutingRegion
+        appSettings = appSettings.copy(
+            language = language,
+            geoRoutingRegion = nextGeoRoutingRegion,
+        )
         settingsMessage = when (language.resolveAppLanguage()) {
             ResolvedLanguage.Chinese -> "界面语言已更新。"
             ResolvedLanguage.English -> "Language updated."
+            ResolvedLanguage.Russian -> "Язык интерфейса обновлен."
+        }
+        val shouldReconnect = geoRoutingRegionChanged && (
+            VpnServiceController.isRunning() ||
+                connectionStatus == ConnectionStatus.Connected ||
+                connectionStatus == ConnectionStatus.Connecting ||
+                connectionStatus == ConnectionStatus.Disconnecting
+            )
+        val reconnectServer = resolveServerForSettingsReconnect()
+        if (shouldReconnect && reconnectServer != null) {
+            reconnectVpnForSettingsChange(
+                server = reconnectServer,
+                message = "Geo 分流国家已随界面语言更新，正在重连 VPN 以应用新规则…",
+            )
+        }
+    }
+
+    fun updateGeoRoutingRegion(region: AppGeoRoutingRegion) {
+        if (blockingReconnectInFlight) return
+        if (appSettings.geoRoutingRegion == region) return
+        appSettings = appSettings.copy(geoRoutingRegion = region)
+        val shouldReconnect = VpnServiceController.isRunning() ||
+            connectionStatus == ConnectionStatus.Connected ||
+            connectionStatus == ConnectionStatus.Connecting ||
+            connectionStatus == ConnectionStatus.Disconnecting
+        ruleMessage = if (shouldReconnect) {
+            "Geo 分流国家已更新，正在重连 VPN 以应用新规则。"
+        } else {
+            "Geo 分流国家已更新，连接后会按新规则分流。"
+        }
+        val reconnectServer = resolveServerForSettingsReconnect()
+        if (shouldReconnect && reconnectServer != null) {
+            reconnectVpnForSettingsChange(
+                server = reconnectServer,
+                message = "Geo 分流国家已更新，正在重连 VPN 以应用新规则…",
+            )
         }
     }
 
@@ -2201,10 +2249,12 @@ fun MallocGfwApp(
                         selectedRuleSourceId = selectedRuleSourceId,
                         geoDataSnapshot = geoDataSnapshot,
                         geoDataUpdating = geoDataUpdating,
+                        geoRoutingRegion = appSettings.geoRoutingRegion,
                         globalProxyEnabled = appSettings.globalProxyEnabled,
                         ruleMessage = ruleMessage,
                         updatingIds = ruleUpdateInFlight.keys,
                         onGlobalProxyChange = ::updateGlobalProxyEnabled,
+                        onGeoRoutingRegionChange = ::updateGeoRoutingRegion,
                         onRefreshGeoData = ::refreshGeoData,
                         onSelectSource = { sourceId ->
                             selectedRuleSourceId = sourceId
@@ -2631,7 +2681,7 @@ fun MallocGfwApp(
                                 fontWeight = FontWeight.Bold,
                             )
                             Text(
-                                text = blockingReconnectMessage
+                                text = blockingReconnectMessage?.let { uiText(it) }
                                     ?: uiText(
                                         "正在重新连接 VPN 并应用新的流媒体分流设置，请稍候…",
                                         "Reconnecting VPN to apply changes. Please wait...",

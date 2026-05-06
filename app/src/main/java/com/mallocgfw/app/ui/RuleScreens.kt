@@ -46,6 +46,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mallocgfw.app.model.RuleSourceKind
+import com.mallocgfw.app.model.AppGeoRoutingRegion
 import com.mallocgfw.app.model.RuleSourceDetailSummary
 import com.mallocgfw.app.model.RuleSourceItem
 import com.mallocgfw.app.model.RuleSourceType
@@ -67,10 +68,12 @@ internal fun RulesScreen(
     selectedRuleSourceId: String,
     geoDataSnapshot: GeoDataSnapshot,
     geoDataUpdating: Boolean,
+    geoRoutingRegion: AppGeoRoutingRegion,
     globalProxyEnabled: Boolean,
     ruleMessage: String?,
     updatingIds: Set<String>,
     onGlobalProxyChange: (Boolean) -> Unit,
+    onGeoRoutingRegionChange: (AppGeoRoutingRegion) -> Unit,
     onRefreshGeoData: () -> Unit,
     onSelectSource: (String) -> Unit,
     onAddSource: () -> Unit,
@@ -108,13 +111,13 @@ internal fun RulesScreen(
                         subtitle = if (globalProxyEnabled) {
                             "已开启：正常上网流量走代理，局域网/私网不走代理。"
                         } else {
-                            "已关闭：按规则源、Geo CN 和流媒体分流处理。"
+                            "已关闭：按规则源、Geo 分流和流媒体分流处理。"
                         },
                         checked = globalProxyEnabled,
                         onToggle = { onGlobalProxyChange(!globalProxyEnabled) },
                     )
                     Text(
-                        text = uiText("开启后会忽略规则源、流媒体分流和 CN 直连规则；局域网、私有地址仍直连，其余 TCP 与 UDP 流量走当前节点。"),
+                        text = uiText("开启后会忽略规则源、流媒体分流和 Geo 直连规则；局域网、私有地址仍直连，其余 TCP 与 UDP 流量走当前节点。"),
                         color = TextSecondary,
                         fontSize = TypeScale.Meta,
                         lineHeight = TypeScale.MetaLine,
@@ -135,6 +138,8 @@ internal fun RulesScreen(
                 GeoDataCard(
                     snapshot = geoDataSnapshot,
                     updating = geoDataUpdating,
+                    selectedRegion = geoRoutingRegion,
+                    onRegionChange = onGeoRoutingRegionChange,
                     onRefresh = onRefreshGeoData,
                 )
             }

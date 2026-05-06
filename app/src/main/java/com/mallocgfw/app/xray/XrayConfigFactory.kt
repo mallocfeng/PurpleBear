@@ -1,6 +1,8 @@
 package com.mallocgfw.app.xray
 
 import com.mallocgfw.app.model.ManualNodeFactory
+import com.mallocgfw.app.model.AppGeoRoutingRegion
+import com.mallocgfw.app.model.AppLanguage
 import com.mallocgfw.app.model.RuleTargetPolicy
 import com.mallocgfw.app.model.ServerNode
 import com.mallocgfw.app.model.XrayNamedOutbound
@@ -29,6 +31,7 @@ object XrayConfigFactory {
         errorLogPath: String? = null,
         accessLogPath: String? = null,
         globalProxyEnabled: Boolean = false,
+        geoRoutingRegion: AppGeoRoutingRegion = AppGeoRoutingRegion.defaultForLanguage(AppLanguage.System),
     ): String {
         return JSONObject().apply {
             put(
@@ -70,7 +73,14 @@ object XrayConfigFactory {
                     // IP-literal targets. Keeps routing predictable without
                     // requiring an in-config DNS section to drive IPIfNonMatch.
                     put("domainStrategy", "AsIs")
-                    put("rules", buildRoutingRules(routingRules, globalProxyEnabled = globalProxyEnabled))
+                    put(
+                        "rules",
+                        buildRoutingRules(
+                            routingRules,
+                            globalProxyEnabled = globalProxyEnabled,
+                            geoRoutingRegion = geoRoutingRegion,
+                        ),
+                    )
                 },
             )
         }.toString(2)
@@ -86,6 +96,7 @@ object XrayConfigFactory {
         accessLogPath: String? = null,
         vpnMtu: Int = DEFAULT_VPN_MTU,
         globalProxyEnabled: Boolean = false,
+        geoRoutingRegion: AppGeoRoutingRegion = AppGeoRoutingRegion.defaultForLanguage(AppLanguage.System),
     ): String {
         val normalizedMtu = normalizedAppVpnMtu(vpnMtu)
         return JSONObject().apply {
@@ -144,6 +155,7 @@ object XrayConfigFactory {
                             routingRules,
                             forceSpeedTestToProxy = true,
                             globalProxyEnabled = globalProxyEnabled,
+                            geoRoutingRegion = geoRoutingRegion,
                         ),
                     )
                 },
@@ -155,6 +167,7 @@ object XrayConfigFactory {
         routingRules: List<XrayRoutingRule>,
         forceSpeedTestToProxy: Boolean = false,
         globalProxyEnabled: Boolean = false,
+        geoRoutingRegion: AppGeoRoutingRegion = AppGeoRoutingRegion.defaultForLanguage(AppLanguage.System),
     ): JSONArray {
         val rules = JSONArray()
 
@@ -228,20 +241,22 @@ object XrayConfigFactory {
         )
 
         if (!globalProxyEnabled) {
-            rules.put(
-                JSONObject().apply {
-                    put("type", "field")
-                    put("domain", JSONArray().apply {
-                        put("geosite:cn")
-                    })
-                    put("outboundTag", "direct")
-                },
-            )
+            geoRoutingRegion.geositeCode?.let { geositeCode ->
+                rules.put(
+                    JSONObject().apply {
+                        put("type", "field")
+                        put("domain", JSONArray().apply {
+                            put("geosite:$geositeCode")
+                        })
+                        put("outboundTag", "direct")
+                    },
+                )
+            }
             rules.put(
                 JSONObject().apply {
                     put("type", "field")
                     put("ip", JSONArray().apply {
-                        put("geoip:cn")
+                        put("geoip:${geoRoutingRegion.geoipCode}")
                     })
                     put("outboundTag", "direct")
                 },

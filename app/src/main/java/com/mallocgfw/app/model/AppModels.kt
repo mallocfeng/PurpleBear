@@ -1,5 +1,7 @@
 package com.mallocgfw.app.model
 
+import java.util.Locale
+
 enum class AppScreen {
     Launch,
     Onboarding,
@@ -67,6 +69,31 @@ enum class AppLanguage {
     System,
     Chinese,
     English,
+    Russian,
+}
+
+enum class AppGeoRoutingRegion(
+    val geoipCode: String,
+    val geositeCode: String?,
+) {
+    China("cn", "cn"),
+    English("us", null),
+    Russia("ru", "category-ru");
+
+    companion object {
+        fun defaultForLanguage(language: AppLanguage): AppGeoRoutingRegion {
+            return when (language) {
+                AppLanguage.Chinese -> China
+                AppLanguage.English -> English
+                AppLanguage.Russian -> Russia
+                AppLanguage.System -> when (Locale.getDefault().language.lowercase(Locale.ROOT)) {
+                    "zh" -> China
+                    "ru" -> Russia
+                    else -> English
+                }
+            }
+        }
+    }
 }
 
 enum class ServerGroupType {
@@ -306,6 +333,7 @@ data class AppSettings(
     val lastConnectedServerId: String,
     val resumeConnectionOnLaunch: Boolean,
     val language: AppLanguage,
+    val geoRoutingRegion: AppGeoRoutingRegion,
     val globalProxyEnabled: Boolean,
     val streamingRoutingEnabled: Boolean,
     val streamingSelections: List<StreamingRouteSelection>,

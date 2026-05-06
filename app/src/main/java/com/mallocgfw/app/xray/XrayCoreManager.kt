@@ -91,6 +91,7 @@ object XrayCoreManager {
                 errorLogPath = AppLogManager.xrayErrorLogFile(context).absolutePath,
                 accessLogPath = AppLogManager.xrayAccessLogFile(context).absolutePath,
                 globalProxyEnabled = settings.globalProxyEnabled,
+                geoRoutingRegion = settings.geoRoutingRegion,
             )
         }
     }
@@ -121,6 +122,7 @@ object XrayCoreManager {
                 accessLogPath = AppLogManager.xrayAccessLogFile(context).absolutePath,
                 vpnMtu = vpnMtu,
                 globalProxyEnabled = settings.globalProxyEnabled,
+                geoRoutingRegion = settings.geoRoutingRegion,
             )
         }
     }

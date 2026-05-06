@@ -23,6 +23,7 @@ object AppStateStore {
             lastConnectedServerId = "",
             resumeConnectionOnLaunch = false,
             language = AppLanguage.System,
+            geoRoutingRegion = AppGeoRoutingRegion.defaultForLanguage(AppLanguage.System),
             globalProxyEnabled = false,
             streamingRoutingEnabled = false,
             streamingSelections = emptyList(),
@@ -359,6 +360,7 @@ object AppStateStore {
                 put("lastConnectedServerId", state.settings.lastConnectedServerId)
                 put("resumeConnectionOnLaunch", state.settings.resumeConnectionOnLaunch)
                 put("language", state.settings.language.name)
+                put("geoRoutingRegion", state.settings.geoRoutingRegion.name)
                 put("globalProxyEnabled", state.settings.globalProxyEnabled)
                 put("streamingRoutingEnabled", state.settings.streamingRoutingEnabled)
                 put("heartbeatIntervalMinutes", state.settings.heartbeatIntervalMinutes)
@@ -378,6 +380,7 @@ object AppStateStore {
     private fun JSONObject?.toSettings(): AppSettings {
         val defaults = defaultSettings()
         if (this == null) return defaults
+        val language = optString("language").toEnumOrDefault(defaults.language)
         return AppSettings(
             autoConnectOnLaunch = optBoolean("autoConnectOnLaunch", defaults.autoConnectOnLaunch),
             autoReconnect = optBoolean("autoReconnect", defaults.autoReconnect),
@@ -390,7 +393,9 @@ object AppStateStore {
             logLevel = optString("logLevel").toEnumOrDefault(defaults.logLevel),
             lastConnectedServerId = optString("lastConnectedServerId", defaults.lastConnectedServerId),
             resumeConnectionOnLaunch = optBoolean("resumeConnectionOnLaunch", defaults.resumeConnectionOnLaunch),
-            language = optString("language").toEnumOrDefault(defaults.language),
+            language = language,
+            geoRoutingRegion = optString("geoRoutingRegion")
+                .toEnumOrDefault(AppGeoRoutingRegion.defaultForLanguage(language)),
             globalProxyEnabled = optBoolean("globalProxyEnabled", defaults.globalProxyEnabled),
             streamingRoutingEnabled = optBoolean("streamingRoutingEnabled", defaults.streamingRoutingEnabled),
             streamingSelections = optJSONArray("streamingSelections").toStreamingSelections(),

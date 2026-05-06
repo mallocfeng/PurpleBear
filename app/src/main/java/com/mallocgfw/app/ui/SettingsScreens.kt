@@ -3,6 +3,7 @@ package com.mallocgfw.app.ui
 import android.graphics.drawable.Icon
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
@@ -80,14 +82,16 @@ internal fun PerAppScreen(
     onToggleApp: (String) -> Unit,
     onApplyChanges: () -> Unit,
 ) {
+    val language = LocalAppLanguage.current
     val normalizedSearch = search.trim().lowercase()
-    val filteredApps = remember(apps, normalizedSearch) {
+    val filteredApps = remember(apps, normalizedSearch, language) {
         if (normalizedSearch.isBlank()) {
             apps
         } else {
             apps.filter { app ->
                 app.name.lowercase().contains(normalizedSearch) ||
-                    app.category.lowercase().contains(normalizedSearch)
+                    app.category.lowercase().contains(normalizedSearch) ||
+                    appText(app.category, language).lowercase().contains(normalizedSearch)
             }
         }
     }
@@ -117,17 +121,19 @@ internal fun PerAppScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Eyebrow("当前模式")
                         Text(
-                            text = if (proxyMode == ProxyMode.PerApp) "仅代理选中应用" else "智能分流",
+                            text = uiText(if (proxyMode == ProxyMode.PerApp) "仅代理选中应用" else "智能分流"),
                             fontSize = TypeScale.CardTitle,
                             lineHeight = TypeScale.CardTitleLine,
                             fontWeight = FontWeight.ExtraBold,
                         )
                         Text(
-                            text = if (proxyMode == ProxyMode.PerApp) {
-                                "仅勾选应用进入 VPN。"
-                            } else {
-                                "切换到分应用后生效。"
-                            },
+                            text = uiText(
+                                if (proxyMode == ProxyMode.PerApp) {
+                                    "仅勾选应用进入 VPN。"
+                                } else {
+                                    "切换到分应用后生效。"
+                                },
+                            ),
                             color = TextSecondary,
                             modifier = Modifier.padding(top = 6.dp),
                         )
@@ -160,7 +166,7 @@ internal fun PerAppScreen(
             SurfaceCard {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
-                        text = "应用设置后会重连 VPN。",
+                        text = uiText("应用设置后会重连 VPN。"),
                         color = TextSecondary,
                     )
                     OutlinedActionButton(
@@ -199,7 +205,7 @@ internal fun PerAppScreen(
                                 lineHeight = TypeScale.ListTitleLine,
                                 fontWeight = FontWeight.Bold,
                             )
-                            Text(app.category, color = TextSecondary)
+                            Text(uiText(app.category), color = TextSecondary)
                         }
                     }
                     TogglePill(checked = app.enabled, onClick = { onToggleApp(app.id) })
@@ -327,10 +333,16 @@ internal fun SettingsScreen(
                         AppLanguage.System -> uiText("使用 Android 系统语言。")
                         AppLanguage.Chinese -> uiText("中文")
                         AppLanguage.English -> uiText("英文")
+                        AppLanguage.Russian -> uiText("俄语")
                     },
                 )
                 Spacer(modifier = Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
                     ModeChip(
                         text = uiText("跟随系统"),
                         selected = settings.language == AppLanguage.System,
@@ -343,6 +355,10 @@ internal fun SettingsScreen(
                         text = uiText("English", "English"),
                         selected = settings.language == AppLanguage.English,
                     ) { onLanguageChange(AppLanguage.English) }
+                    ModeChip(
+                        text = uiText("Русский", "Russian"),
+                        selected = settings.language == AppLanguage.Russian,
+                    ) { onLanguageChange(AppLanguage.Russian) }
                 }
             }
         }
@@ -536,7 +552,10 @@ internal fun UpdateScreen(
         item {
             ScreenHeader(
                 title = "检查更新",
-                subtitle = "当前 $currentVersionName · versionCode $currentVersionCode",
+                subtitle = uiText(
+                    "当前 $currentVersionName · versionCode $currentVersionCode",
+                    "Current $currentVersionName · versionCode $currentVersionCode",
+                ),
             )
         }
         state.message?.takeIf { it.isNotBlank() }?.let { message ->
@@ -590,9 +609,12 @@ private fun UpdateStatusContent(
         AppUpdateStatus.Failed -> "检查更新失败"
     }
     SettingInfoRow(
-        title = title,
+        title = uiText(title),
         subtitle = if (info == null) {
-            "当前 $currentVersionName · versionCode $currentVersionCode"
+            uiText(
+                "当前 $currentVersionName · versionCode $currentVersionCode",
+                "Current $currentVersionName · versionCode $currentVersionCode",
+            )
         } else {
             "${info.releaseName} · ${info.tagName}" +
                 (info.versionCode?.let { " · versionCode $it" } ?: "")
@@ -625,15 +647,17 @@ private fun ReleaseNotes(
     info: AppUpdateInfo,
     isCurrentVersion: Boolean,
 ) {
-    SettingsGroup(title = if (isCurrentVersion) "当前版本描述" else "更新版本描述") {
+    val publishedPrefix = uiText("发布于 ", "Published ")
+    val emptyReleaseNotes = uiText("此版本没有填写更新说明。")
+    SettingsGroup(title = uiText(if (isCurrentVersion) "当前版本描述" else "更新版本描述")) {
         SettingInfoRow(
             title = if (isCurrentVersion) {
-                "当前已安装：${info.releaseName}"
+                uiText("当前已安装：${info.releaseName}", "Installed: ${info.releaseName}")
             } else {
-                "可升级到：${info.releaseName}"
+                uiText("可升级到：${info.releaseName}", "Available: ${info.releaseName}")
             },
             subtitle = buildString {
-                append("发布于 ")
+                append(publishedPrefix)
                 append(info.publishedAt.ifBlank { "GitHub Release" })
                 if (info.apkSizeBytes > 0L) {
                     append(" · ")
@@ -644,7 +668,7 @@ private fun ReleaseNotes(
         Spacer(modifier = Modifier.height(14.dp))
         SelectionContainer {
             Text(
-                text = info.body.ifBlank { "此版本没有填写更新说明。" },
+                text = info.body.ifBlank { emptyReleaseNotes },
                 color = TextPrimary,
                 fontFamily = FontFamily.Default,
             )
@@ -744,7 +768,7 @@ internal fun MediaRoutingScreen(
             SurfaceCard {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
-                        text = "应用设置后会重连 VPN。",
+                        text = uiText("应用设置后会重连 VPN。"),
                         color = TextSecondary,
                     )
                     OutlinedActionButton(
@@ -830,16 +854,22 @@ internal fun MediaRoutingNodePickerScreen(
         }
         item {
             ScreenHeader(
-                title = "选择 ${service?.name ?: "流媒体"} 出口",
+                title = uiText(
+                    "选择 ${service?.name ?: "流媒体"} 出口",
+                    "Select ${service?.name ?: "media"} exit",
+                ),
                 subtitle = service?.let {
-                    "${it.suggestedRegion} · 未指定则走默认线路。"
-                } ?: "选择一个出口节点。",
+                    uiText(
+                        "${uiText(it.suggestedRegion)} · 未指定则走默认线路。",
+                        "${uiText(it.suggestedRegion)} · Uses default node when unset.",
+                    )
+                } ?: uiText("选择一个出口节点。"),
             )
         }
         item {
             SettingsGroup(title = "默认线路") {
                 MediaRoutingNodeRow(
-                    title = currentServer?.name ?: "当前还没有选中线路",
+                    title = currentServer?.name ?: uiText("当前还没有选中线路"),
                     subtitle = "默认出口",
                     selected = selectedServerId.isBlank(),
                     onClick = { onSelect("") },
@@ -924,7 +954,7 @@ internal fun MediaRoutingGroupCard(
                         )
                     }
                     Text(
-                        text = "${section.servers.size} 个节点",
+                        text = uiText("${section.servers.size} 个节点"),
                         color = TextSecondary,
                         modifier = Modifier.padding(top = 8.dp),
                     )
