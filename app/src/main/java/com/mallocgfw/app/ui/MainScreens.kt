@@ -41,6 +41,7 @@ import com.mallocgfw.app.model.ProxyMode
 import com.mallocgfw.app.model.ServerGroup
 import com.mallocgfw.app.model.ServerNode
 import com.mallocgfw.app.model.ServerGroupType
+import com.mallocgfw.app.model.ssrCompatibilityLabel
 import com.mallocgfw.app.ui.theme.Primary
 import com.mallocgfw.app.ui.theme.Secondary
 import com.mallocgfw.app.ui.theme.SurfaceHigh
@@ -73,6 +74,7 @@ internal fun HomeScreen(
     onOpenMediaRouting: () -> Unit,
 ) {
     val currentRouteLabel = currentServer?.name ?: uiText("未选择")
+    val currentRouteHint = currentServer?.ssrCompatibilityLabel()
     val liveDurationMs by produceState(
         initialValue = 0L,
         key1 = connectionStatus,
@@ -96,11 +98,16 @@ internal fun HomeScreen(
         ConnectionStatus.Connecting -> "00:00:00"
         ConnectionStatus.Disconnected -> "--:--:--"
     }
+    val speedTestTimeoutSubtitle = if (currentRouteHint != null) {
+        uiText("连接可用可忽略", "Usable connection")
+    } else {
+        uiText("请稍后重试")
+    }
     val downloadRate = when (connectionStatus) {
         ConnectionStatus.Connected,
         ConnectionStatus.Disconnecting -> when {
             vpnSnapshot.speedTestInFlight -> "测速中"
-            vpnSnapshot.speedTestTimedOut -> "节点超时"
+            vpnSnapshot.speedTestTimedOut -> "测速超时"
             else -> formatRate(vpnSnapshot.rxRateBytesPerSec)
         }
         ConnectionStatus.Connecting,
@@ -110,7 +117,7 @@ internal fun HomeScreen(
         ConnectionStatus.Connected,
         ConnectionStatus.Disconnecting -> when {
             vpnSnapshot.speedTestInFlight -> "测速中"
-            vpnSnapshot.speedTestTimedOut -> "节点超时"
+            vpnSnapshot.speedTestTimedOut -> "测速超时"
             else -> formatRate(vpnSnapshot.txRateBytesPerSec)
         }
         ConnectionStatus.Connecting,
@@ -120,7 +127,7 @@ internal fun HomeScreen(
         ConnectionStatus.Connected,
         ConnectionStatus.Disconnecting -> when {
             vpnSnapshot.speedTestInFlight -> uiText("正在刷新")
-            vpnSnapshot.speedTestTimedOut -> uiText("请稍后重试")
+            vpnSnapshot.speedTestTimedOut -> speedTestTimeoutSubtitle
             else -> uiText("下行样本 ${formatByteCount(vpnSnapshot.rxBytes)}", "Down ${formatByteCount(vpnSnapshot.rxBytes)}")
         }
         ConnectionStatus.Connecting,
@@ -130,7 +137,7 @@ internal fun HomeScreen(
         ConnectionStatus.Connected,
         ConnectionStatus.Disconnecting -> when {
             vpnSnapshot.speedTestInFlight -> uiText("正在刷新")
-            vpnSnapshot.speedTestTimedOut -> uiText("请稍后重试")
+            vpnSnapshot.speedTestTimedOut -> speedTestTimeoutSubtitle
             else -> uiText("上行样本 ${formatByteCount(vpnSnapshot.txBytes)}", "Up ${formatByteCount(vpnSnapshot.txBytes)}")
         }
         ConnectionStatus.Connecting -> uiText("等待连接")
@@ -163,6 +170,7 @@ internal fun HomeScreen(
                 connectionStatus = connectionStatus,
                 proxyMode = proxyMode,
                 currentRouteLabel = currentRouteLabel,
+                currentRouteHint = currentRouteHint,
                 coreVersion = coreVersion,
                 onToggleConnection = onToggleConnection,
             )

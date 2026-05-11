@@ -6,6 +6,16 @@ PurpleBear 是一款 Android 网络代理与线路管理工具，基于系统 VP
 
 本仓库只包含 PurpleBear Android 应用本身的项目代码、资源、构建配置和必要的运行时依赖，不包含 Xray-core 的完整源码。
 
+SSR / ShadowsocksR 依赖独立的 mihomo sidecar。打包 SSR 功能时，需要将 arm64-v8a 的 mihomo 可执行文件放在：
+
+```text
+app/src/main/assets/mihomo/arm64-v8a/mihomo
+```
+
+连接 SSR 节点时，应用会先启动该 sidecar 并监听本机 SOCKS 端口，再由 Xray 通过本地 SOCKS outbound 转发到 SSR 节点。未打包该文件时，其它协议不受影响，SSR 连接会提示缺少 mihomo sidecar。
+
+mihomo 使用 GPL-3.0 许可证。PurpleBear 已在仓库和 APK assets 中包含 GPL-3.0 文本，并在 `THIRD_PARTY_NOTICES.md` 记录对应版本、源码地址、release 资产和校验值。
+
 ## 主要功能
 
 ### 系统 VPN 连接
@@ -40,6 +50,7 @@ PurpleBear 的导入解析器目前支持以下常见分享格式：
 - VMess
 - Trojan
 - Shadowsocks
+- SSR / ShadowsocksR（通过本地 mihomo sidecar 桥接）
 - SOCKS
 - HTTP
 - Hysteria2
@@ -176,6 +187,24 @@ app/build/outputs/apk/release/app-release.apk
 ```
 
 ## 更新日志
+
+## 版本 0.6.9 更新
+
+1. 新增 SSR / ShadowsocksR 节点支持，应用会通过本地 mihomo sidecar 桥接到 Xray，普通 Xray 支持的节点不受影响。
+
+2. 兼容部分以 `ssr://` 包装的 Shadowsocks 2022 节点，导入后会优先按原生 Shadowsocks 2022 连接，避免错误进入 SSR sidecar。
+
+3. 新增 SSR 本地节点创建字段，包括加密方法、协议、混淆、协议参数、混淆参数和 UDP 开关。
+
+4. 状态总览会提示当前使用 SSR 兼容模式；SSR 链路下首页测速超时时改为“测速超时”，并提示连接可用时可忽略。
+
+5. 首页测速样本调整为更轻量的下载 256KiB、上传 64KiB，并放宽总测速窗口，减少 SSR / IEPL 链路可用但测速超时的误判。
+
+6. 检查更新流程改为打开 GitHub Release 下载页，让用户在浏览器中手动下载最新 APK。
+
+7. 仓库和 APK assets 中加入 mihomo 对应的 GPL-3.0 许可证文本与第三方 notice，README 补充 SSR sidecar 打包说明。
+
+8. 更新版本号到 `0.6.9`，`versionCode` 更新为 `269`。
 
 ## 版本 0.6.8 更新
 

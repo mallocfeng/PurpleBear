@@ -351,7 +351,7 @@ fun MallocGfwApp(
             AppScreen.Rules, AppScreen.RuleSourceDetail, AppScreen.AddRuleSource -> MainTab.Rules
             AppScreen.Import, AppScreen.ConfirmImport, AppScreen.Subscriptions -> MainTab.Import
             AppScreen.Me, AppScreen.PerApp, AppScreen.Diagnostics, AppScreen.Settings, AppScreen.Permission,
-            AppScreen.MediaRouting, AppScreen.MediaRoutingNodePicker, AppScreen.LogViewer -> MainTab.Me
+            AppScreen.OpenSourceLicenses, AppScreen.MediaRouting, AppScreen.MediaRoutingNodePicker, AppScreen.LogViewer -> MainTab.Me
             else -> mainTab
         }
     }
@@ -380,7 +380,7 @@ fun MallocGfwApp(
             AppScreen.Rules, AppScreen.RuleSourceDetail, AppScreen.AddRuleSource -> MainTab.Rules
             AppScreen.Import, AppScreen.ConfirmImport, AppScreen.Subscriptions -> MainTab.Import
             AppScreen.Me, AppScreen.PerApp, AppScreen.Diagnostics, AppScreen.Settings, AppScreen.Permission,
-            AppScreen.MediaRouting, AppScreen.MediaRoutingNodePicker, AppScreen.LogViewer -> MainTab.Me
+            AppScreen.OpenSourceLicenses, AppScreen.MediaRouting, AppScreen.MediaRoutingNodePicker, AppScreen.LogViewer -> MainTab.Me
             else -> MainTab.Home
         }
         screenHistory = screenHistory + screen
@@ -1351,38 +1351,18 @@ fun MallocGfwApp(
 
     fun downloadUpdateApk() {
         val info = updateState.info ?: return
-        if (updateState.status == AppUpdateStatus.Downloading) return
+        val message = AppUpdateManager.openReleaseDownload(context, info)
         updateState = updateState.copy(
-            status = AppUpdateStatus.Downloading,
-            message = "正在通过代理下载 APK…",
+            status = AppUpdateStatus.Available,
+            message = message ?: "已打开浏览器，请在 GitHub Release 页面下载 APK。",
             downloadedApkPath = null,
             downloadedBytes = 0L,
             totalBytes = info.apkSizeBytes,
         )
-        scope.launch {
-            runCatching {
-                AppUpdateManager.downloadApk(context, info) { downloaded, total ->
-                    updateState = updateState.copy(
-                        status = AppUpdateStatus.Downloading,
-                        downloadedBytes = downloaded,
-                        totalBytes = total,
-                    )
-                }
-            }.onSuccess { file ->
-                updateState = updateState.copy(
-                    status = AppUpdateStatus.Downloaded,
-                    message = "安装包已下载，点击安装继续升级。",
-                    downloadedApkPath = file.absolutePath,
-                    downloadedBytes = file.length(),
-                    totalBytes = file.length(),
-                )
-            }.onFailure { error ->
-                updateState = updateState.copy(
-                    status = AppUpdateStatus.Available,
-                    message = error.message ?: "下载更新失败。",
-                    downloadedApkPath = null,
-                )
-            }
+        if (!message.isNullOrBlank() && info.htmlUrl.isNotBlank()) {
+            updateState = updateState.copy(
+                message = "$message\n下载页面：${info.htmlUrl}",
+            )
         }
     }
 
@@ -2476,6 +2456,12 @@ fun MallocGfwApp(
                         },
                         onAddQuickSettingsTile = ::requestQuickSettingsTile,
                         onViewLogs = ::openLogViewer,
+                        onOpenLicenses = { navigateSecondary(AppScreen.OpenSourceLicenses) },
+                    )
+
+                    AppScreen.OpenSourceLicenses -> OpenSourceLicensesScreen(
+                        padding = padding,
+                        onBack = ::onBack,
                     )
 
                     AppScreen.Update -> UpdateScreen(

@@ -172,6 +172,7 @@ internal fun LocalNodeBuilderScreen(
                         LocalNodeProtocol.SOCKS -> "SOCKS5 不加密，适合上游代理。"
                         LocalNodeProtocol.WIREGUARD -> "按 Xray WireGuard 出站结构写入。"
                         LocalNodeProtocol.HYSTERIA -> "按 Hysteria2 出站结构写入。"
+                        LocalNodeProtocol.SHADOWSOCKSR -> "SSR 通过本地 mihomo sidecar 接入，Xray 会连接本机 SOCKS 端口。"
                         else -> protocol.subtitle
                     },
                 )
@@ -269,6 +270,61 @@ internal fun LocalNodeBuilderScreen(
                         }
                     }
 
+                    LocalNodeProtocol.SHADOWSOCKSR -> {
+                        BuilderTextField(
+                            label = "密码",
+                            value = draft.password,
+                            onValueChange = { onDraftChange(draft.copy(password = it)) },
+                            placeholder = "例如 super-secret-key",
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        BuilderTextField(
+                            label = "加密方法",
+                            value = draft.ssrMethod,
+                            onValueChange = { onDraftChange(draft.copy(ssrMethod = it)) },
+                            placeholder = "例如 aes-256-cfb",
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        BuilderTextField(
+                            label = "协议",
+                            value = draft.ssrProtocol,
+                            onValueChange = { onDraftChange(draft.copy(ssrProtocol = it)) },
+                            placeholder = "例如 auth_sha1_v4",
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        BuilderTextField(
+                            label = "混淆",
+                            value = draft.ssrObfs,
+                            onValueChange = { onDraftChange(draft.copy(ssrObfs = it)) },
+                            placeholder = "例如 tls1.2_ticket_auth",
+                        )
+                        if (advancedExpanded) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            BuilderTextField(
+                                label = "协议参数",
+                                value = draft.ssrProtocolParam,
+                                onValueChange = { onDraftChange(draft.copy(ssrProtocolParam = it)) },
+                                placeholder = "例如 32:password",
+                                helper = "可留空。按服务端提供值填写。",
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            BuilderTextField(
+                                label = "混淆参数",
+                                value = draft.ssrObfsParam,
+                                onValueChange = { onDraftChange(draft.copy(ssrObfsParam = it)) },
+                                placeholder = "例如 cdn.example.com",
+                                helper = "可留空。常见值是伪装域名。",
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            BooleanSettingRow(
+                                title = "UDP",
+                                subtitle = "允许 mihomo 为 SSR 节点启用 UDP 转发。",
+                                checked = draft.ssrUdp,
+                                onCheckedChange = { onDraftChange(draft.copy(ssrUdp = it)) },
+                            )
+                        }
+                    }
+
                     LocalNodeProtocol.SOCKS,
                     LocalNodeProtocol.HTTP,
                     -> {
@@ -357,6 +413,7 @@ internal fun LocalNodeBuilderScreen(
                             LocalNodeProtocol.VMESS -> "通常保持 auto。"
                             LocalNodeProtocol.TROJAN -> "通常配合 TLS 使用。"
                             LocalNodeProtocol.SHADOWSOCKS -> "按服务端提供的 method 填写。"
+                            LocalNodeProtocol.SHADOWSOCKSR -> "SSR 的协议与混淆参数在上方填写。"
                             else -> "映射到 Xray streamSettings。"
                         },
                     )

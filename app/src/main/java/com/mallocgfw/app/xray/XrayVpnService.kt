@@ -294,10 +294,8 @@ class XrayVpnService : VpnService() {
         dnsServer?.let(builder::addDnsServer)
 
         if (state.proxyMode == ProxyMode.PerApp && !globalProxyEnabled) {
-            val allowedPackages = buildSet {
-                add(packageName)
-                state.protectedApps.filter { it.enabled }.forEach { add(it.id) }
-            }
+            val allowedPackages = state.protectedApps.filter { it.enabled }.map { it.id }.distinct()
+            require(allowedPackages.isNotEmpty()) { "请先选择需要代理的应用。" }
             allowedPackages.forEach { pkg ->
                 try {
                     builder.addAllowedApplication(pkg)
@@ -934,15 +932,15 @@ class XrayVpnService : VpnService() {
         private const val NOTIFICATION_CHANNEL_ID = "mallocgfw_vpn"
         private const val NOTIFICATION_ID = 2001
         private const val SPEED_TEST_SETTLE_MS = 1_500L
-        private const val SPEED_TEST_TIMEOUT_MS = 10_000L
+        private const val SPEED_TEST_TIMEOUT_MS = 22_000L
         private const val SYSTEM_DNS_NETWORK_WAIT_MS = 1_000L
         private const val DEFAULT_HEARTBEAT_INTERVAL_MINUTES = 5
         private const val FAILBACK_SUCCESS_THRESHOLD = 3
-        private const val SPEED_TEST_CONNECT_TIMEOUT_MS = 8_000
-        private const val SPEED_TEST_READ_TIMEOUT_MS = 12_000
+        private const val SPEED_TEST_CONNECT_TIMEOUT_MS = 6_000
+        private const val SPEED_TEST_READ_TIMEOUT_MS = 8_000
         private const val LOG_MAINTENANCE_INTERVAL_MS = 5 * 60 * 1_000L
-        private const val UPLOAD_TEST_BYTES = 256 * 1024
-        private const val DOWNLOAD_TEST_URL = "https://speed.cloudflare.com/__down?bytes=1048576"
+        private const val UPLOAD_TEST_BYTES = 64 * 1024
+        private const val DOWNLOAD_TEST_URL = "https://speed.cloudflare.com/__down?bytes=262144"
         private const val UPLOAD_TEST_URL = "https://speed.cloudflare.com/__up"
         private val HEARTBEAT_INTERVAL_OPTIONS_MINUTES = setOf(2, 5, 10)
         private val LOCAL_EXCLUDED_ROUTES = listOf(

@@ -131,6 +131,20 @@ object AppUpdateManager {
         return null
     }
 
+    fun openReleaseDownload(context: Context, info: AppUpdateInfo): String? {
+        val targetUrl = info.apkDownloadUrl.ifBlank { info.htmlUrl }
+        if (targetUrl.isBlank()) return "GitHub Release 没有可打开的下载链接。"
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl)).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        return runCatching {
+            context.startActivity(intent)
+            null
+        }.getOrElse { error ->
+            error.message ?: "无法打开浏览器，请手动访问 ${info.htmlUrl.ifBlank { targetUrl }}。"
+        }
+    }
+
     suspend fun checkLatest(): AppUpdateInfo {
         val response = withContext(Dispatchers.IO) {
             val connection = openMetadataConnection(LATEST_RELEASE_URL)

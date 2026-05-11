@@ -18,6 +18,7 @@ enum class LocalNodeProtocol(
     VMESS("vmess", "VMess", "兼容旧订阅体系，支持常见 TCP / WS / gRPC", 443),
     TROJAN("trojan", "Trojan", "基于 TLS 的密码节点，适合伪装成普通 HTTPS", 443),
     SHADOWSOCKS("shadowsocks", "Shadowsocks", "适合传统机场节点，支持 2022 和 AEAD", 8388),
+    SHADOWSOCKSR("shadowsocksr", "SSR", "通过本地 mihomo sidecar 兼容 ShadowsocksR", 8388),
     SOCKS("socks", "SOCKS5", "对接现成 Socks5 代理，通常只支持 TCP / UDP 转发", 1080),
     HTTP("http", "HTTP Proxy", "对接现成 HTTP 代理，通常只适合 TCP", 8080),
     WIREGUARD("wireguard", "WireGuard", "内建 WireGuard 出站，适合直连隧道型节点", 51820),
@@ -96,6 +97,12 @@ data class LocalNodeDraft(
     val shadowsocksMethod: LocalNodeShadowsocksMethod = LocalNodeShadowsocksMethod.CHACHA20_POLY1305,
     val shadowsocksUot: Boolean = false,
     val shadowsocksUotVersion: String = "2",
+    val ssrMethod: String = "aes-256-cfb",
+    val ssrProtocol: String = "auth_sha1_v4",
+    val ssrProtocolParam: String = "",
+    val ssrObfs: String = "tls1.2_ticket_auth",
+    val ssrObfsParam: String = "",
+    val ssrUdp: Boolean = true,
     val httpHeaders: String = "",
     val wireGuardSecretKey: String = "",
     val wireGuardPublicKey: String = "",
@@ -119,6 +126,7 @@ object ManualNodeFactory {
         "vmess://",
         "trojan://",
         "ss://",
+        "ssr://",
         "socks://",
         "socks5://",
         "http://",
@@ -150,6 +158,7 @@ object ManualNodeFactory {
                 LocalNodeProtocol.WIREGUARD,
                 LocalNodeProtocol.HTTP,
                 LocalNodeProtocol.SOCKS,
+                LocalNodeProtocol.SHADOWSOCKSR,
                 -> LocalNodeTransport.TCP
 
                 else -> current.transport
@@ -162,6 +171,7 @@ object ManualNodeFactory {
                 LocalNodeProtocol.WIREGUARD -> LocalNodeSecurity.NONE
                 LocalNodeProtocol.VMESS,
                 LocalNodeProtocol.SHADOWSOCKS,
+                LocalNodeProtocol.SHADOWSOCKSR,
                 LocalNodeProtocol.HTTP,
                 LocalNodeProtocol.SOCKS,
                 LocalNodeProtocol.VLESS,
@@ -185,11 +195,13 @@ object ManualNodeFactory {
             LocalNodeProtocol.HTTP,
             -> listOf(LocalNodeSecurity.NONE, LocalNodeSecurity.TLS)
 
+            LocalNodeProtocol.SHADOWSOCKSR,
+            LocalNodeProtocol.WIREGUARD,
+            -> listOf(LocalNodeSecurity.NONE)
+
             LocalNodeProtocol.TROJAN,
             LocalNodeProtocol.HYSTERIA,
             -> listOf(LocalNodeSecurity.TLS)
-
-            LocalNodeProtocol.WIREGUARD -> listOf(LocalNodeSecurity.NONE)
         }
     }
 
@@ -212,10 +224,20 @@ object ManualNodeFactory {
     }
 
     fun buildOutboundConfig(server: ServerNode): JSONObject? {
+        val rawUri = server.rawUri.trim()
+        if (SsrLinkCodec.isSsrShareLink(rawUri)) {
+            return runCatching {
+                val draft = prefillFromShareLink(rawUri)
+                buildOutboundConfig(
+                    draft = draft,
+                    address = draft.address.trim(),
+                    port = parsePort(draft.port, field = "端口"),
+                )
+            }.getOrNull()
+        }
         server.outboundJson.trim().takeIf { it.isNotBlank() }?.let { outboundJson ->
             return runCatching { JSONObject(outboundJson) }.getOrNull()
         }
-        val rawUri = server.rawUri.trim()
         if (rawUri.isBlank() || !supportsShareLink(rawUri)) return null
         return runCatching {
             val draft = prefillFromShareLink(rawUri)
@@ -259,9 +281,35 @@ object ManualNodeFactory {
             flow = flowLabel(draft),
             stable = false,
             favorite = false,
-            rawUri = "",
+            rawUri = if (draft.protocol == LocalNodeProtocol.SHADOWSOCKSR) {
+                SsrLinkCodec.encode(buildSsrEndpoint(draft, address, port, name))
+            } else {
+                ""
+            },
             outboundJson = outboundJson.toString(2),
         )
+    }
+
+    fun isSsrNode(server: ServerNode): Boolean {
+        return server.protocol.equals(LocalNodeProtocol.SHADOWSOCKSR.displayName, ignoreCase = true) ||
+            SsrLinkCodec.isSsrShareLink(server.rawUri)
+    }
+
+    fun ssrEndpointFromServer(server: ServerNode): SsrEndpoint? {
+        val rawUri = server.rawUri.trim()
+        if (SsrLinkCodec.isSsrShareLink(rawUri)) {
+            return runCatching { SsrLinkCodec.parse(rawUri).takeUnless { it.canUseNativeShadowsocks() } }.getOrNull()
+        }
+        if (!server.protocol.equals(LocalNodeProtocol.SHADOWSOCKSR.displayName, ignoreCase = true)) return null
+        return runCatching {
+            val draft = prefillFromLegacyServerNode(server)
+            buildSsrEndpoint(
+                draft = draft.copy(nodeName = server.name),
+                address = server.address,
+                port = parsePort(server.port, field = "端口"),
+                name = server.name,
+            )
+        }.getOrNull()
     }
 
     private fun buildOutboundConfig(
@@ -274,6 +322,7 @@ object ManualNodeFactory {
             LocalNodeProtocol.VMESS -> buildVmessOutbound(draft, address, port)
             LocalNodeProtocol.TROJAN -> buildTrojanOutbound(draft, address, port)
             LocalNodeProtocol.SHADOWSOCKS -> buildShadowsocksOutbound(draft, address, port)
+            LocalNodeProtocol.SHADOWSOCKSR -> SsrMihomoConfigFactory.localSocksOutbound()
             LocalNodeProtocol.SOCKS -> buildSocksOutbound(draft, address, port)
             LocalNodeProtocol.HTTP -> buildHttpOutbound(draft, address, port)
             LocalNodeProtocol.WIREGUARD -> buildWireGuardOutbound(draft, address, port)
@@ -296,6 +345,12 @@ object ManualNodeFactory {
                 require(draft.password.trim().isNotBlank()) { "Shadowsocks 需要填写密码或密钥。" }
                 draft.shadowsocksUotVersion.trim().takeIf { it.isNotBlank() }?.toIntOrNull()?.takeIf { it > 0 }
                     ?: error("UoT 版本需要是正整数。")
+            }
+            LocalNodeProtocol.SHADOWSOCKSR -> {
+                require(draft.password.trim().isNotBlank()) { "SSR 需要填写密码。" }
+                require(draft.ssrMethod.trim().isNotBlank()) { "SSR 需要填写加密方法。" }
+                require(draft.ssrProtocol.trim().isNotBlank()) { "SSR 需要填写协议参数。" }
+                require(draft.ssrObfs.trim().isNotBlank()) { "SSR 需要填写混淆参数。" }
             }
 
             LocalNodeProtocol.SOCKS,
@@ -357,6 +412,7 @@ object ManualNodeFactory {
             LocalNodeProtocol.VMESS -> "例如 VMess 日本 Tokyo"
             LocalNodeProtocol.TROJAN -> "例如 Trojan 备用线"
             LocalNodeProtocol.SHADOWSOCKS -> "例如 SS 新加坡低延迟"
+            LocalNodeProtocol.SHADOWSOCKSR -> "例如 SSR 香港兼容线"
             LocalNodeProtocol.SOCKS -> "例如 Office SOCKS5"
             LocalNodeProtocol.HTTP -> "例如 HTTP 上游代理"
             LocalNodeProtocol.WIREGUARD -> "例如 WARP / WG 美国"
@@ -382,6 +438,7 @@ object ManualNodeFactory {
             -> "例如 443"
 
             LocalNodeProtocol.SHADOWSOCKS -> "例如 8388"
+            LocalNodeProtocol.SHADOWSOCKSR -> "例如 443 / 8388"
             LocalNodeProtocol.SOCKS -> "例如 1080"
             LocalNodeProtocol.HTTP -> "例如 8080 / 3128"
             LocalNodeProtocol.WIREGUARD -> "例如 2408 / 51820"
@@ -455,6 +512,21 @@ object ManualNodeFactory {
                 security = LocalNodeSecurity.NONE,
             )
 
+            LocalNodeProtocol.SHADOWSOCKSR -> LocalNodeDraft(
+                protocol = protocol,
+                nodeName = "SSR 香港示例",
+                address = "ssr.example.com",
+                port = "443",
+                password = "replace-with-secret",
+                ssrMethod = "aes-256-cfb",
+                ssrProtocol = "auth_sha1_v4",
+                ssrProtocolParam = "32:password",
+                ssrObfs = "tls1.2_ticket_auth",
+                ssrObfsParam = "cdn.example.com",
+                ssrUdp = true,
+                security = LocalNodeSecurity.NONE,
+            )
+
             LocalNodeProtocol.SOCKS -> LocalNodeDraft(
                 protocol = protocol,
                 nodeName = "SOCKS5 示例",
@@ -509,6 +581,7 @@ object ManualNodeFactory {
             trimmed.startsWith("vmess://", ignoreCase = true) -> parseVmessDraft(trimmed)
             trimmed.startsWith("trojan://", ignoreCase = true) -> parseTrojanDraft(trimmed)
             trimmed.startsWith("ss://", ignoreCase = true) -> parseShadowsocksDraft(trimmed)
+            trimmed.startsWith("ssr://", ignoreCase = true) -> parseShadowsocksRDraft(trimmed)
             trimmed.startsWith("socks://", ignoreCase = true) -> parseProxyDraft(trimmed, LocalNodeProtocol.SOCKS)
             trimmed.startsWith("socks5://", ignoreCase = true) -> parseProxyDraft(trimmed, LocalNodeProtocol.SOCKS)
             trimmed.startsWith("http://", ignoreCase = true) -> parseProxyDraft(trimmed, LocalNodeProtocol.HTTP)
@@ -517,11 +590,17 @@ object ManualNodeFactory {
             trimmed.startsWith("hy2://", ignoreCase = true) || trimmed.startsWith("hysteria2://", ignoreCase = true) ->
                 parseHysteriaDraft(trimmed)
 
-            else -> error("当前预填支持 VLESS / VMess / Trojan / Shadowsocks / SOCKS / HTTP / Hysteria2 分享链接。")
+            else -> error("当前预填支持 VLESS / VMess / Trojan / Shadowsocks / SSR / SOCKS / HTTP / Hysteria2 分享链接。")
         }
     }
 
     fun prefillFromServerNode(server: ServerNode): LocalNodeDraft {
+        val rawUri = server.rawUri.trim()
+        if (SsrLinkCodec.isSsrShareLink(rawUri)) {
+            return prefillFromShareLink(rawUri).copy(
+                nodeName = server.name.ifBlank { SsrLinkCodec.parse(rawUri).name },
+            )
+        }
         if (server.outboundJson.isBlank()) {
             return prefillFromLegacyServerNode(server)
         }
@@ -533,6 +612,7 @@ object ManualNodeFactory {
             "vmess" -> LocalNodeProtocol.VMESS
             "trojan" -> LocalNodeProtocol.TROJAN
             "shadowsocks" -> LocalNodeProtocol.SHADOWSOCKS
+            "shadowsocksr", "ssr" -> LocalNodeProtocol.SHADOWSOCKSR
             "socks" -> LocalNodeProtocol.SOCKS
             "http" -> LocalNodeProtocol.HTTP
             "wireguard" -> LocalNodeProtocol.WIREGUARD
@@ -635,6 +715,8 @@ object ManualNodeFactory {
                 shadowsocksUotVersion = jsonNumberToString(settings, "uotVersion", "2"),
             )
 
+            LocalNodeProtocol.SHADOWSOCKSR -> baseDraft.copy()
+
             LocalNodeProtocol.SOCKS -> baseDraft.copy(
                 username = settings.optString("user"),
                 password = settings.optString("pass"),
@@ -721,6 +803,7 @@ object ManualNodeFactory {
                 LocalNodeProtocol.HTTP,
                 LocalNodeProtocol.SOCKS,
                 LocalNodeProtocol.HYSTERIA,
+                LocalNodeProtocol.SHADOWSOCKSR,
                 -> LocalNodeTransport.TCP
 
                 else -> inferredTransport
@@ -741,6 +824,7 @@ object ManualNodeFactory {
             } else {
                 LocalNodeShadowsocksMethod.CHACHA20_POLY1305
             },
+            ssrMethod = if (protocol == LocalNodeProtocol.SHADOWSOCKSR) server.flow.substringBefore(" /", "aes-256-cfb") else "aes-256-cfb",
         )
     }
 
@@ -1284,6 +1368,65 @@ object ManualNodeFactory {
         return applyShadowsocksPlugin(baseDraft, pluginSpec) ?: baseDraft
     }
 
+    private fun parseShadowsocksRDraft(raw: String): LocalNodeDraft {
+        val endpoint = SsrLinkCodec.parse(raw)
+        if (endpoint.canUseNativeShadowsocks()) {
+            return applyProtocolDefaults(LocalNodeDraft(), LocalNodeProtocol.SHADOWSOCKS).copy(
+                nodeName = endpoint.name,
+                address = endpoint.server,
+                port = endpoint.port.toString(),
+                password = endpoint.password,
+                shadowsocksMethod = shadowsocksMethodFrom(endpoint.method),
+                transport = LocalNodeTransport.TCP,
+                security = LocalNodeSecurity.NONE,
+            )
+        }
+        return applyProtocolDefaults(LocalNodeDraft(), LocalNodeProtocol.SHADOWSOCKSR).copy(
+            nodeName = endpoint.name,
+            address = endpoint.server,
+            port = endpoint.port.toString(),
+            password = endpoint.password,
+            ssrMethod = endpoint.method,
+            ssrProtocol = endpoint.protocol,
+            ssrProtocolParam = endpoint.protocolParam,
+            ssrObfs = endpoint.obfs,
+            ssrObfsParam = endpoint.obfsParam,
+            ssrUdp = endpoint.udp,
+            security = LocalNodeSecurity.NONE,
+        )
+    }
+
+    private fun SsrEndpoint.canUseNativeShadowsocks(): Boolean {
+        val plainProtocol = protocol.equals("none", ignoreCase = true) ||
+            protocol.equals("origin", ignoreCase = true)
+        val plainObfs = obfs.equals("none", ignoreCase = true) ||
+            obfs.equals("plain", ignoreCase = true)
+        val supportedMethod = LocalNodeShadowsocksMethod.entries.any {
+            it.wireValue.equals(method, ignoreCase = true)
+        }
+        return plainProtocol && plainObfs && supportedMethod
+    }
+
+    private fun buildSsrEndpoint(
+        draft: LocalNodeDraft,
+        address: String,
+        port: Int,
+        name: String,
+    ): SsrEndpoint {
+        return SsrEndpoint(
+            name = name,
+            server = address.trim(),
+            port = port,
+            protocol = draft.ssrProtocol.trim(),
+            method = draft.ssrMethod.trim(),
+            obfs = draft.ssrObfs.trim(),
+            password = draft.password.trim(),
+            obfsParam = draft.ssrObfsParam.trim(),
+            protocolParam = draft.ssrProtocolParam.trim(),
+            udp = draft.ssrUdp,
+        )
+    }
+
     private fun parseProxyDraft(raw: String, protocol: LocalNodeProtocol): LocalNodeDraft {
         val uri = URI(raw)
         val userInfo = uri.userInfo.orEmpty()
@@ -1335,6 +1478,7 @@ object ManualNodeFactory {
             "VMESS" -> LocalNodeProtocol.VMESS
             "TROJAN" -> LocalNodeProtocol.TROJAN
             "SHADOWSOCKS", "SS" -> LocalNodeProtocol.SHADOWSOCKS
+            "SHADOWSOCKSR", "SSR" -> LocalNodeProtocol.SHADOWSOCKSR
             "SOCKS", "SOCKS5" -> LocalNodeProtocol.SOCKS
             "HTTP", "HTTP PROXY" -> LocalNodeProtocol.HTTP
             "WIREGUARD" -> LocalNodeProtocol.WIREGUARD
@@ -1483,6 +1627,7 @@ object ManualNodeFactory {
         return when (draft.protocol) {
             LocalNodeProtocol.WIREGUARD -> "内建加密"
             LocalNodeProtocol.HYSTERIA -> "TLS"
+            LocalNodeProtocol.SHADOWSOCKSR -> "SSR"
             else -> draft.security.displayName
         }
     }
@@ -1492,6 +1637,7 @@ object ManualNodeFactory {
             LocalNodeProtocol.WIREGUARD -> "WireGuard"
             LocalNodeProtocol.HTTP,
             LocalNodeProtocol.SOCKS,
+            LocalNodeProtocol.SHADOWSOCKSR,
             -> "TCP"
 
             LocalNodeProtocol.HYSTERIA -> "QUIC / Hysteria"
@@ -1505,6 +1651,7 @@ object ManualNodeFactory {
             LocalNodeProtocol.VMESS -> draft.vmessSecurity.trim().ifBlank { "auto" }
             LocalNodeProtocol.TROJAN -> "password"
             LocalNodeProtocol.SHADOWSOCKS -> draft.shadowsocksMethod.displayName
+            LocalNodeProtocol.SHADOWSOCKSR -> "${draft.ssrProtocol.trim()} / ${draft.ssrObfs.trim()}"
             LocalNodeProtocol.SOCKS,
             LocalNodeProtocol.HTTP,
             -> if (draft.username.trim().isNotBlank()) "密码鉴权" else "无鉴权"

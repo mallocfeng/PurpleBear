@@ -20,8 +20,8 @@ android {
         applicationId = "com.mallocgfw.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 268
-        versionName = "0.6.8"
+        versionCode = 269
+        versionName = "0.6.9"
 
         ndk {
             abiFilters += "arm64-v8a"
@@ -130,4 +130,7 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling:1.6.8")
     debugImplementation("androidx.compose.ui:ui-test-manifest:1.6.8")
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

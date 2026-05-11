@@ -297,6 +297,7 @@ internal fun SettingsScreen(
     onLogLevelChange: (AppLogLevel) -> Unit,
     onAddQuickSettingsTile: () -> Unit,
     onViewLogs: () -> Unit,
+    onOpenLicenses: () -> Unit,
 ) {
     var showDnsDialog by remember { mutableStateOf(false) }
     var showLogLevelDialog by remember { mutableStateOf(false) }
@@ -477,6 +478,13 @@ internal fun SettingsScreen(
                         append(appVersion)
                     },
                 )
+                Spacer(modifier = Modifier.height(12.dp))
+                SettingActionRow(
+                    title = "开源许可",
+                    subtitle = "查看 Xray、mihomo 与 GPL-3.0 说明。",
+                    actionText = "查看",
+                    onAction = onOpenLicenses,
+                )
             }
         }
     }
@@ -524,6 +532,81 @@ internal fun SettingsScreen(
                 showMtuDialog = false
             },
         )
+    }
+}
+
+@Composable
+internal fun OpenSourceLicensesScreen(
+    padding: PaddingValues,
+    onBack: () -> Unit,
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(padding),
+        state = rememberRetainedLazyListState(),
+        contentPadding = screenPadding(),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item {
+            AppTopBar(title = "开源许可", subtitle = "Third-party notices", onBack = onBack)
+        }
+        item {
+            ScreenHeader(
+                title = "第三方组件",
+                subtitle = "PurpleBear 是开源软件；第三方组件保留各自许可证。",
+            )
+        }
+        item {
+            SettingsGroup(title = "mihomo") {
+                SelectionContainer {
+                    Text(
+                        text = """
+                            Project: MetaCubeX/mihomo
+                            Version: v1.19.24
+                            License: GPL-3.0
+                            Source: https://github.com/MetaCubeX/mihomo/tree/v1.19.24
+                            Release asset: mihomo-android-arm64-v8-v1.19.24.gz
+                            Release asset SHA-256:
+                            e45a0b18ea3554cf7f322b59cf2dd21f3e4879dd2db657cbba6a557235e33115
+                            Packaged binary:
+                            app/src/main/assets/mihomo/arm64-v8a/mihomo
+                            Packaged binary SHA-256:
+                            5915d69c8440267158d7b9fbcb4089d522a3d66e86482dd121200e614c1af68f
+                        """.trimIndent(),
+                        color = TextSecondary,
+                        fontSize = TypeScale.Body,
+                        lineHeight = TypeScale.BodyLine,
+                    )
+                }
+            }
+        }
+        item {
+            SettingsGroup(title = "GPL-3.0") {
+                Text(
+                    text = "GPL-3.0 全文已随 APK 打包在 assets/licenses/GPL-3.0.txt，并在源码仓库的 LICENSES/GPL-3.0.txt 提供。",
+                    color = TextSecondary,
+                    fontSize = TypeScale.Body,
+                    lineHeight = TypeScale.BodyLine,
+                )
+            }
+        }
+        item {
+            SettingsGroup(title = "Xray") {
+                SelectionContainer {
+                    Text(
+                        text = """
+                            Project: XTLS/Xray-core
+                            Source: https://github.com/XTLS/Xray-core
+                            PurpleBear 使用 Xray 作为主要代理核心。请查看上游项目获取源码和许可证详情。
+                        """.trimIndent(),
+                        color = TextSecondary,
+                        fontSize = TypeScale.Body,
+                        lineHeight = TypeScale.BodyLine,
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -695,7 +778,7 @@ private fun UpdateAction(
             onClick = {},
         )
         AppUpdateStatus.Available -> PrimaryActionButton(
-            text = "升级",
+            text = "打开下载页",
             onClick = onDownload,
         )
         AppUpdateStatus.Downloaded -> PrimaryActionButton(

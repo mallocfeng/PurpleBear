@@ -25,7 +25,7 @@ object ImportParser {
             looksLikeHttpProxyShareLink(trimmed) -> buildLocalPreview(trimmed)
             trimmed.startsWith("http://") || trimmed.startsWith("https://") -> buildSubscriptionPreview(trimmed)
             ManualNodeFactory.supportsShareLink(trimmed) -> buildLocalPreview(trimmed)
-            else -> error("当前仅支持 http(s) 订阅，以及 VLESS / VMess / Trojan / Shadowsocks / SOCKS / HTTP / Hysteria2 单节点导入。")
+            else -> error("当前仅支持 http(s) 订阅，以及 VLESS / VMess / Trojan / Shadowsocks / SSR / SOCKS / HTTP / Hysteria2 单节点导入。")
         }
     }
 
@@ -111,7 +111,7 @@ object ImportParser {
             sourceLabel = "Local",
             index = 1,
         )?.let(::markHiddenIfUnsupported)
-            ?: error("当前仅支持可解析的 VLESS / VMess / Trojan / Shadowsocks / SOCKS / HTTP / Hysteria2 单节点。")
+            ?: error("当前仅支持可解析的 VLESS / VMess / Trojan / Shadowsocks / SSR / SOCKS / HTTP / Hysteria2 单节点。")
         return ImportPreview(
             input = nodeUrl,
             group = ServerGroup(
@@ -515,6 +515,7 @@ object ImportParser {
         val type = item.string("type")?.lowercase(Locale.ROOT) ?: return null
         val draft = when (type) {
             "ss", "shadowsocks" -> buildClashShadowsocksDraft(item)
+            "ssr", "shadowsocksr" -> buildClashShadowsocksRDraft(item)
             "vmess" -> buildClashVmessDraft(item)
             "vless" -> buildClashVlessDraft(item)
             "trojan" -> buildClashTrojanDraft(item)
@@ -605,6 +606,22 @@ object ImportParser {
             draft = baseDraft,
             plugin = item.string("plugin").orEmpty(),
             options = item.map("plugin-opts") ?: emptyMap<String, Any?>(),
+        )
+    }
+
+    private fun buildClashShadowsocksRDraft(item: Map<*, *>): LocalNodeDraft? {
+        return ManualNodeFactory.applyProtocolDefaults(LocalNodeDraft(), LocalNodeProtocol.SHADOWSOCKSR).copy(
+            nodeName = item.string("name").orEmpty(),
+            address = item.string("server").orEmpty(),
+            port = item.intLike("port")?.toString().orEmpty(),
+            password = item.string("password").orEmpty(),
+            ssrMethod = item.string("cipher").orEmpty().ifBlank { "aes-256-cfb" },
+            ssrProtocol = item.string("protocol").orEmpty().ifBlank { "origin" },
+            ssrProtocolParam = item.string("protocol-param").orEmpty(),
+            ssrObfs = item.string("obfs").orEmpty().ifBlank { "plain" },
+            ssrObfsParam = item.string("obfs-param").orEmpty(),
+            ssrUdp = item.boolLike("udp") ?: true,
+            security = LocalNodeSecurity.NONE,
         )
     }
 

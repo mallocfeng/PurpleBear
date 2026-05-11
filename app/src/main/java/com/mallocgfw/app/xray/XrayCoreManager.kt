@@ -140,6 +140,7 @@ object XrayCoreManager {
                 val prepared = prepareRuntime(context)
                 val datDir = prepared.runtimeDir.absolutePath
                 val configJson = buildConfigJson()
+                SsrRuntimeManager.startIfNeeded(context, server).getOrElse { throw it }
                 _snapshot.value = _snapshot.value.copy(
                     status = XrayCoreStatus.Starting,
                     message = message,
@@ -156,6 +157,7 @@ object XrayCoreManager {
                 if (!response.success) {
                     val failureMessage = response.error ?: "Xray 启动失败。"
                     Log.e(TAG, "Unable to start Xray: $failureMessage")
+                    SsrRuntimeManager.stopNow()
                     _snapshot.value = _snapshot.value.copy(
                         status = XrayCoreStatus.Failed,
                         abi = prepared.assetAbi,
@@ -190,6 +192,7 @@ object XrayCoreManager {
                 throw error
             } catch (error: Throwable) {
                 Log.e(TAG, "Unable to start Xray", error)
+                SsrRuntimeManager.stopNow()
                 _snapshot.value = _snapshot.value.copy(
                     status = XrayCoreStatus.Failed,
                     message = error.message ?: "Xray 启动失败。",
@@ -210,6 +213,7 @@ object XrayCoreManager {
         synchronized(coreLock) {
             stopInternal()
         }
+        SsrRuntimeManager.stopNow()
         _snapshot.value = _snapshot.value.copy(
             status = if (_snapshot.value.version == null) XrayCoreStatus.Idle else XrayCoreStatus.Ready,
             message = "Xray 已停止",

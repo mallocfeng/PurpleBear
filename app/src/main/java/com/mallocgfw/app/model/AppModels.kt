@@ -20,6 +20,7 @@ enum class AppScreen {
     PerApp,
     Diagnostics,
     Settings,
+    OpenSourceLicenses,
     Update,
     MediaRouting,
     MediaRoutingNodePicker,
@@ -221,6 +222,22 @@ fun List<ServerNode>.mergedSubscriptionGroupNodes(targetGroupId: String): List<S
 fun ServerNode.isUnsupportedGrpcRealityNode(): Boolean {
     return security.equals("REALITY", ignoreCase = true) &&
         transport.equals("GRPC", ignoreCase = true)
+}
+
+fun ServerNode.ssrCompatibilityLabel(): String? {
+    if (!rawUri.trim().startsWith("ssr://", ignoreCase = true) &&
+        !protocol.equals("SSR", ignoreCase = true) &&
+        !protocol.equals("SHADOWSOCKSR", ignoreCase = true)
+    ) {
+        return null
+    }
+    return if (protocol.equals("SHADOWSOCKS", ignoreCase = true) &&
+        flow.startsWith("2022-blake3-", ignoreCase = true)
+    ) {
+        "SSR 链接 · Shadowsocks 2022"
+    } else {
+        "SSR 兼容模式"
+    }
 }
 
 data class SubscriptionItem(
