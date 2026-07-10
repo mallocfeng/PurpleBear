@@ -6,6 +6,7 @@ import java.io.EOFException
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.InetSocketAddress
+import java.net.Proxy
 import java.net.Socket
 import java.net.URL
 import java.nio.charset.StandardCharsets
@@ -26,6 +27,8 @@ object ResourceFetchClient {
     private const val MAX_REDIRECTS = 5
     private const val MAX_HEADER_BYTES = 64 * 1024
     private const val MAX_LINE_BYTES = 8 * 1024
+    private const val LOCAL_PROXY_HOST = "127.0.0.1"
+    private const val LOCAL_PROXY_PROBE_TIMEOUT_MS = 500
     // Subscription / rule payloads are tiny in practice (kB-MB). Cap below the
     // old 64MB so a hostile or misbehaving server can't pin tens of megabytes
     // of `ByteArrayOutputStream` in memory before we notice. Geo .dat files
@@ -224,9 +227,14 @@ object ResourceFetchClient {
         connectTimeoutMs: Int,
         readTimeoutMs: Int,
     ): SSLSocket {
-        val plainSocket = Socket()
+        val plainSocket = openTransportSocket(
+            host = host,
+            port = port,
+            connectTimeoutMs = connectTimeoutMs,
+            readTimeoutMs = readTimeoutMs,
+            proxyAddress = localHttpProxyAddressOrNull(),
+        )
         return try {
-            plainSocket.connect(InetSocketAddress(host, port), connectTimeoutMs)
             val sslSocket = (SSLSocketFactory.getDefault() as SSLSocketFactory)
                 .createSocket(plainSocket, host, port, true) as SSLSocket
             try {
@@ -241,6 +249,49 @@ object ResourceFetchClient {
         } catch (error: Throwable) {
             runCatching { plainSocket.close() }
             throw error
+        }
+    }
+
+    internal fun openTransportSocket(
+        host: String,
+        port: Int,
+        connectTimeoutMs: Int,
+        readTimeoutMs: Int,
+        proxyAddress: InetSocketAddress?,
+    ): Socket {
+        val socket = Socket()
+        return try {
+            socket.soTimeout = readTimeoutMs
+            socket.connect(proxyAddress ?: InetSocketAddress(host, port), connectTimeoutMs)
+            if (proxyAddress != null) {
+                establishHttpConnectTunnel(socket, host, port)
+            }
+            socket
+        } catch (error: Throwable) {
+            runCatching { socket.close() }
+            throw error
+        }
+    }
+
+    private fun establishHttpConnectTunnel(socket: Socket, host: String, port: Int) {
+        val authority = if (host.contains(':') && !host.startsWith('[')) "[$host]:$port" else "$host:$port"
+        val request = buildString {
+            append("CONNECT ").append(authority).append(" HTTP/1.1\r\n")
+            append("Host: ").append(authority).append("\r\n")
+            append("Proxy-Connection: Keep-Alive\r\n")
+            append("\r\n")
+        }
+        socket.outputStream.write(request.toByteArray(StandardCharsets.ISO_8859_1))
+        socket.outputStream.flush()
+
+        val responseHeader = String(readUntilHeaderSeparator(socket.inputStream), StandardCharsets.ISO_8859_1)
+        val statusLine = responseHeader.lineSequence().firstOrNull().orEmpty()
+        val statusCode = statusLine.substringAfter(' ', "")
+            .substringBefore(' ')
+            .toIntOrNull()
+            ?: error("本地 HTTP 代理返回了无法识别的 CONNECT 响应：$statusLine")
+        if (statusCode !in 200..299) {
+            error("本地 HTTP 代理 CONNECT 返回 HTTP $statusCode。")
         }
     }
 
@@ -337,7 +388,14 @@ object ResourceFetchClient {
         readTimeoutMs: Int,
         requestProfile: RequestProfile,
     ): HttpURLConnection {
-        return (URL(url).openConnection() as HttpURLConnection).apply {
+        val target = URL(url)
+        val localProxy = localHttpProxyOrNull()
+        val connection = if (localProxy != null) {
+            target.openConnection(localProxy)
+        } else {
+            target.openConnection()
+        }
+        return (connection as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = connectTimeoutMs
             readTimeout = readTimeoutMs
@@ -356,8 +414,39 @@ object ResourceFetchClient {
                     }
                 }
             }
-            // Intentionally do not protect these sockets. When the app VPN is active,
-            // resource refreshes should stay inside the current proxy/VPN path.
+            // PurpleBear is excluded from its own TUN in smart/global modes to avoid
+            // routing loops. When Xray's local HTTP inbound is alive, the explicit
+            // proxy above keeps subscription/rule/Geo traffic on the selected exit.
         }
+    }
+
+    internal fun isLocalHttpProxyAvailable(): Boolean {
+        return runCatching {
+            Socket().use { socket ->
+                socket.connect(localHttpProxyAddress(), LOCAL_PROXY_PROBE_TIMEOUT_MS)
+            }
+        }.isSuccess
+    }
+
+    internal fun localHttpProxyOrNull(
+        proxyAvailable: Boolean = isLocalHttpProxyAvailable(),
+        coreRunning: Boolean = XrayCoreManager.snapshot.value.status == XrayCoreStatus.Running,
+    ): Proxy? {
+        // Once the core is marked Running, never silently fall back to a direct
+        // physical-network request if the probe races with a proxy shutdown.
+        // Using the explicit proxy will fail closed instead of leaking the request.
+        return if (proxyAvailable || coreRunning) {
+            Proxy(Proxy.Type.HTTP, localHttpProxyAddress())
+        } else {
+            null
+        }
+    }
+
+    private fun localHttpProxyAddressOrNull(): InetSocketAddress? {
+        return localHttpProxyOrNull()?.address() as? InetSocketAddress
+    }
+
+    private fun localHttpProxyAddress(): InetSocketAddress {
+        return InetSocketAddress(LOCAL_PROXY_HOST, XrayConfigFactory.HTTP_PORT)
     }
 }

@@ -188,6 +188,18 @@ app/build/outputs/apk/release/app-release.apk
 
 ## 更新日志
 
+## 版本 0.6.13 更新
+
+1. 修复 Xray 未真正进入运行状态时 VPN 仍可能显示已连接的问题；现在会同时确认内核运行状态和本地 HTTP 入站可用性，失败时停止内核并关闭本次连接。
+
+2. 订阅、规则源、Geo 数据和流媒体规则刷新在本地 Xray 可用时统一通过 `127.0.0.1:10809` HTTP 代理访问，提升受限网络下的同步成功率。
+
+3. 为 Shadowrocket 兼容订阅的手写 HTTPS 路径增加 HTTP CONNECT 隧道；内核运行期间代理异常会直接失败，不再静默回退到物理网络直连。
+
+4. 新增本地代理选择、运行中 fail-closed、HTTP CONNECT 成功和拒绝响应测试。
+
+5. 更新版本号到 `0.6.13`，`versionCode` 更新为 `273`。
+
 ## 版本 0.6.12 更新
 
 1. 修复部分 Android / HyperOS 设备关闭 VPN 较慢、系统 VPN 图标延迟消失的问题。

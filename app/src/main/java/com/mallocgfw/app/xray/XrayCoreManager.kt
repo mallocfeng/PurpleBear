@@ -170,11 +170,29 @@ object XrayCoreManager {
 
                 // libXray.runXrayFromJSON returns once the boot routine has been kicked
                 // off; give it a brief settle window outside of coreLock and then verify
-                // the core is actually serving traffic.
+                // the core is actually running and its local HTTP inbound is accepting
+                // connections. The HTTP inbound is also the safe egress path for app-level
+                // resource refreshes while PurpleBear itself is excluded from the VPN.
                 val isRunning = waitForRunningState()
+                if (!isRunning) {
+                    val failureMessage = "Xray 启动后未进入运行状态，本地 HTTP 代理不可用。"
+                    Log.e(TAG, failureMessage)
+                    synchronized(coreLock) {
+                        stopInternal()
+                    }
+                    SsrRuntimeManager.stopNow()
+                    _snapshot.value = _snapshot.value.copy(
+                        status = XrayCoreStatus.Failed,
+                        abi = prepared.assetAbi,
+                        version = decodeStringResponse(LibXray.xrayVersion()) ?: "Xray",
+                        message = failureMessage,
+                        activeServerName = null,
+                    )
+                    return@withContext Result.failure(IllegalStateException(failureMessage))
+                }
 
                 val snapshot = XrayCoreSnapshot(
-                    status = if (isRunning) XrayCoreStatus.Running else XrayCoreStatus.Ready,
+                    status = XrayCoreStatus.Running,
                     abi = prepared.assetAbi,
                     version = decodeStringResponse(LibXray.xrayVersion()) ?: "Xray",
                     message = if (tunFd == null) {
@@ -263,10 +281,11 @@ object XrayCoreManager {
     ): Boolean {
         repeat(attempts) {
             val running = synchronized(coreLock) { LibXray.getXrayState() }
-            if (running) return true
+            if (running && ResourceFetchClient.isLocalHttpProxyAvailable()) return true
             delay(intervalMs)
         }
-        return synchronized(coreLock) { LibXray.getXrayState() }
+        val running = synchronized(coreLock) { LibXray.getXrayState() }
+        return running && ResourceFetchClient.isLocalHttpProxyAvailable()
     }
 
     private fun stopInternal() {
