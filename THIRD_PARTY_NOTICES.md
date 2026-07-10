@@ -30,7 +30,21 @@ above.
 ## Xray
 
 - Project: XTLS/Xray-core
+- Binding project: XTLS/libXray
+- libXray version: v26.3.27 (`38ae3cd8914d5bc2a7f81122fc6206efe3c07ad6`)
+- Xray-core baseline: v1.260327.0 (`d2758a02`)
+- Applied upstream fix: `6a1a13b797d55125bd2d2a9c535076a40cabfd7f`
+- libXray license: MIT
+- Xray-core license: Mozilla Public License 2.0
+- Binding source: https://github.com/XTLS/libXray/tree/v26.3.27
 - Source: https://github.com/XTLS/Xray-core
+- Fix source: https://github.com/XTLS/Xray-core/commit/6a1a13b797d55125bd2d2a9c535076a40cabfd7f
+- Packaged AAR path: `app/libs/libXray.aar`
+- Packaged AAR SHA-256: `2c430e6902adb3fd72d418c15e18dea59c1b4a8657e53a687d3fb9a3d5baed76`
 
 PurpleBear uses Xray as its main proxy core. See the upstream project for
-source code and license details.
+source code and license details. The packaged AAR keeps the current core
+baseline and applies the upstream TUN shutdown fix so that stopping an
+always-on inbound closes both the gVisor stack and the Android TUN interface.
+It was built with Go 1.26.0 and `golang.org/x/mobile` at
+`2cfb76559b7b`, with 16 KiB ELF load-segment alignment.

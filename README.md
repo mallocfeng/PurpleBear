@@ -188,6 +188,18 @@ app/build/outputs/apk/release/app-release.apk
 
 ## 更新日志
 
+## 版本 0.6.12 更新
+
+1. 修复部分 Android / HyperOS 设备关闭 VPN 较慢、系统 VPN 图标延迟消失的问题。
+
+2. 保持现有 Xray-core `v1.260327.0` 基线，并合入上游 TUN 关闭修复：停止 Always-On TUN 入站时会主动关闭 gVisor 网络栈和 Android TUN 接口，不再等待系统延迟回收。
+
+3. 改善断开阶段的系统状态同步，使 TUN 接口、系统 VPN 网络和应用内连接状态更快完成释放，降低应用显示已断开但系统 VPN 图标仍短暂保留的概率。
+
+4. 重建 `libXray.aar`，保持原有 Java API、四 ABI 输出和 16 KiB ELF 对齐兼容性，并记录内核基线、上游修复提交与构建校验信息。
+
+5. 更新版本号到 `0.6.12`，`versionCode` 更新为 `272`。
+
 ## 版本 0.6.11 更新
 
 1. 修复 Google Play 下载应用时长时间转圈的问题：补齐 Google Play、Google Play services、Google Services Framework 和系统 Download Manager 的分应用代理配置。
