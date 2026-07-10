@@ -20,8 +20,8 @@ android {
         applicationId = "com.mallocgfw.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 269
-        versionName = "0.6.9"
+        versionCode = 271
+        versionName = "0.6.11"
 
         ndk {
             abiFilters += "arm64-v8a"
@@ -76,6 +76,12 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+        }
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
         }
     }
 

@@ -6,13 +6,13 @@ PurpleBear 是一款 Android 网络代理与线路管理工具，基于系统 VP
 
 本仓库只包含 PurpleBear Android 应用本身的项目代码、资源、构建配置和必要的运行时依赖，不包含 Xray-core 的完整源码。
 
-SSR / ShadowsocksR 依赖独立的 mihomo sidecar。打包 SSR 功能时，需要将 arm64-v8a 的 mihomo 可执行文件放在：
+SSR / ShadowsocksR 依赖独立的 mihomo sidecar。打包 SSR 功能时，需要将 arm64-v8a 的 mihomo 可执行文件作为 native library 放在：
 
 ```text
-app/src/main/assets/mihomo/arm64-v8a/mihomo
+app/src/main/jniLibs/arm64-v8a/libmihomo.so
 ```
 
-连接 SSR 节点时，应用会先启动该 sidecar 并监听本机 SOCKS 端口，再由 Xray 通过本地 SOCKS outbound 转发到 SSR 节点。未打包该文件时，其它协议不受影响，SSR 连接会提示缺少 mihomo sidecar。
+连接 SSR 节点时，应用会从 Android native library 目录启动该 sidecar 并监听本机 SOCKS 端口，再由 Xray 通过本地 SOCKS outbound 转发到 SSR 节点。未打包该文件时，其它协议不受影响，SSR 连接会提示缺少 mihomo sidecar。
 
 mihomo 使用 GPL-3.0 许可证。PurpleBear 已在仓库和 APK assets 中包含 GPL-3.0 文本，并在 `THIRD_PARTY_NOTICES.md` 记录对应版本、源码地址、release 资产和校验值。
 
@@ -187,6 +187,26 @@ app/build/outputs/apk/release/app-release.apk
 ```
 
 ## 更新日志
+
+## 版本 0.6.11 更新
+
+1. 修复 Google Play 下载应用时长时间转圈的问题：补齐 Google Play、Google Play services、Google Services Framework 和系统 Download Manager 的分应用代理配置。
+
+2. Google Play 与 Google 下载 CDN 域名优先强制走代理；VPN 模式下禁用 UDP/443，使不稳定的 QUIC 下载可靠回退到 TCP。本地 SOCKS / HTTP 独立代理不受影响。
+
+3. 修复分应用代理所选应用均未安装时可能产生空 allow-list 的问题，现在会停止连接并提示重新选择，避免意外接管全部应用流量。
+
+4. 删除未使用的 `libxray.so`，保留实际运行所需的 `libgojni.so`，Release APK 减少约 13 MB。
+
+5. 更新版本号到 `0.6.11`，`versionCode` 更新为 `271`。
+
+## 版本 0.6.10 更新
+
+1. 修复部分 Android / MIUI 设备无法启动 SSR 的问题：mihomo sidecar 改为从 APK native library 目录执行，避免系统拒绝执行 app 私有可写目录中的二进制文件。
+
+2. 更新 mihomo sidecar 打包路径说明为 `app/src/main/jniLibs/arm64-v8a/libmihomo.so`，并保留 GPL-3.0 许可证和第三方 notice。
+
+3. 更新版本号到 `0.6.10`，`versionCode` 更新为 `270`。
 
 ## 版本 0.6.9 更新
 

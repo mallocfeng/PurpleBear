@@ -296,12 +296,17 @@ class XrayVpnService : VpnService() {
         if (state.proxyMode == ProxyMode.PerApp && !globalProxyEnabled) {
             val allowedPackages = state.protectedApps.filter { it.enabled }.map { it.id }.distinct()
             require(allowedPackages.isNotEmpty()) { "请先选择需要代理的应用。" }
+            var installedAllowedPackageCount = 0
             allowedPackages.forEach { pkg ->
                 try {
                     builder.addAllowedApplication(pkg)
+                    installedAllowedPackageCount += 1
                 } catch (_: PackageManager.NameNotFoundException) {
                     Log.w(TAG, "Allowed package not installed: $pkg")
                 }
+            }
+            require(installedAllowedPackageCount > 0) {
+                "所选代理应用均未安装，请重新选择后再连接。"
             }
         } else {
             // Smart mode and the global-proxy rule mode keep the app's own outbound traffic

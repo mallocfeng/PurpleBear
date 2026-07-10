@@ -11,7 +11,7 @@ under its own license.
 - Source: https://github.com/MetaCubeX/mihomo/tree/v1.19.24
 - Release asset: `mihomo-android-arm64-v8-v1.19.24.gz`
 - Release asset SHA-256: `e45a0b18ea3554cf7f322b59cf2dd21f3e4879dd2db657cbba6a557235e33115`
-- Packaged binary path: `app/src/main/assets/mihomo/arm64-v8a/mihomo`
+- Packaged binary path: `app/src/main/jniLibs/arm64-v8a/libmihomo.so`
 - Packaged binary SHA-256: `5915d69c8440267158d7b9fbcb4089d522a3d66e86482dd121200e614c1af68f`
 
 PurpleBear uses mihomo as an independent sidecar process for SSR /

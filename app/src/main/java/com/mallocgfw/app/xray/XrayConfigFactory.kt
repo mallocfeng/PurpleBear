@@ -21,6 +21,21 @@ object XrayConfigFactory {
     const val HTTP_PORT = 10809
     const val DEFAULT_VPN_MTU = DEFAULT_APP_VPN_MTU
     private const val SPEED_TEST_INBOUND_TAG = "speedtest-http-in"
+    private val GOOGLE_PLAY_DOWNLOAD_DOMAINS = listOf(
+        "android.clients.google.com",
+        "google.com",
+        "play.google.com",
+        "play.googleapis.com",
+        "googleapis.com",
+        "gvt1.com",
+        "gvt2.com",
+        "gvt3.com",
+        "ggpht.com",
+        "googleusercontent.com",
+        "googleusercontent.cn",
+        "dl.google.com",
+        "dl-ssl.google.com",
+    )
 
     fun build(
         node: ServerNode,
@@ -154,6 +169,7 @@ object XrayConfigFactory {
                         buildRoutingRules(
                             routingRules,
                             forceSpeedTestToProxy = true,
+                            forceUdp443Fallback = true,
                             globalProxyEnabled = globalProxyEnabled,
                             geoRoutingRegion = geoRoutingRegion,
                         ),
@@ -166,6 +182,7 @@ object XrayConfigFactory {
     private fun buildRoutingRules(
         routingRules: List<XrayRoutingRule>,
         forceSpeedTestToProxy: Boolean = false,
+        forceUdp443Fallback: Boolean = false,
         globalProxyEnabled: Boolean = false,
         geoRoutingRegion: AppGeoRoutingRegion = AppGeoRoutingRegion.defaultForLanguage(AppLanguage.System),
     ): JSONArray {
@@ -182,6 +199,11 @@ object XrayConfigFactory {
                 },
             )
         }
+
+        addGooglePlayDownloadRules(
+            rules = rules,
+            forceUdp443Fallback = forceUdp443Fallback,
+        )
 
         val effectiveRoutingRules = if (globalProxyEnabled) emptyList() else routingRules
 
@@ -274,6 +296,35 @@ object XrayConfigFactory {
         )
 
         return rules
+    }
+
+    private fun addGooglePlayDownloadRules(
+        rules: JSONArray,
+        forceUdp443Fallback: Boolean,
+    ) {
+        val domains = JSONArray().apply {
+            GOOGLE_PLAY_DOWNLOAD_DOMAINS.forEach { put("domain:$it") }
+        }
+        if (forceUdp443Fallback) {
+            // QUIC domain sniffing is best-effort. Blocking UDP/443 at the VPN
+            // layer makes Play downloads deterministically fall back to TCP
+            // even when the ClientHello domain cannot be extracted.
+            rules.put(
+                JSONObject().apply {
+                    put("type", "field")
+                    put("network", "udp")
+                    put("port", "443")
+                    put("outboundTag", "block")
+                },
+            )
+        }
+        rules.put(
+            JSONObject().apply {
+                put("type", "field")
+                put("domain", domains)
+                put("outboundTag", "proxy")
+            },
+        )
     }
 
     private fun socksInbound(): JSONObject {

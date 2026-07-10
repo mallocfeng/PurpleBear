@@ -7,13 +7,12 @@ import com.mallocgfw.app.model.ManualNodeFactory
 import com.mallocgfw.app.model.ServerNode
 import com.mallocgfw.app.model.SsrMihomoConfigFactory
 import java.io.File
-import java.io.FileNotFoundException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 object SsrRuntimeManager {
     private const val TAG = "SsrRuntimeManager"
-    private const val ASSET_NAME = "mihomo"
+    private const val NATIVE_LIBRARY_NAME = "libmihomo.so"
     private val runtimeLock = Any()
     private var process: Process? = null
     private var activeConfigKey: String? = null
@@ -34,7 +33,7 @@ object SsrRuntimeManager {
                 stopLocked()
                 runCatching {
                     val runtimeDir = File(context.filesDir, "mihomo-runtime").apply { mkdirs() }
-                    val binary = installBinary(context, runtimeDir)
+                    val binary = resolveNativeBinary(context)
                     val configFile = File(runtimeDir, "ssr.yaml").apply {
                         writeText(SsrMihomoConfigFactory.buildConfig(endpoint))
                     }
@@ -81,30 +80,22 @@ object SsrRuntimeManager {
         process = null
     }
 
-    private fun installBinary(context: Context, runtimeDir: File): File {
-        val abi = resolveAssetAbi()
-        val assetPath = "mihomo/$abi/$ASSET_NAME"
-        val target = File(runtimeDir, "$ASSET_NAME-$abi")
-        try {
-            context.assets.open(assetPath).use { input ->
-                target.outputStream().use { output -> input.copyTo(output) }
-            }
-        } catch (error: FileNotFoundException) {
-            throw IllegalStateException("SSR 需要打包 mihomo sidecar：请将可执行文件放到 assets/$assetPath。", error)
+    private fun resolveNativeBinary(context: Context): File {
+        requireArm64SidecarAbi()
+        val binary = File(context.applicationInfo.nativeLibraryDir, NATIVE_LIBRARY_NAME)
+        if (!binary.isFile) {
+            error("SSR 需要打包 mihomo sidecar：请将可执行文件放到 jniLibs/arm64-v8a/$NATIVE_LIBRARY_NAME。")
         }
-        if (!target.setExecutable(true, true)) {
-            error("无法设置 mihomo sidecar 可执行权限。")
+        if (!binary.canExecute()) {
+            error("mihomo sidecar 没有执行权限，请确认 native library 已解压安装。")
         }
-        return target
+        return binary
     }
 
-    private fun resolveAssetAbi(): String {
-        return Build.SUPPORTED_ABIS.firstNotNullOfOrNull { abi ->
-            when (abi) {
-                "arm64-v8a" -> "arm64-v8a"
-                else -> null
-            }
-        } ?: error("当前设备 ABI 暂未打包 mihomo sidecar。")
+    private fun requireArm64SidecarAbi() {
+        if ("arm64-v8a" !in Build.SUPPORTED_ABIS) {
+            error("当前设备 ABI 暂未打包 mihomo sidecar。")
+        }
     }
 
     private fun drainLogs(started: Process) {
