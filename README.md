@@ -1,4 +1,4 @@
-![PurpleBear 界面预览](assets/purplebear-hero.png)
+![PurpleBear 宣传图](assets/purplebear-banner.png)
 
 # PurpleBear
 
