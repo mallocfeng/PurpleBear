@@ -2,6 +2,7 @@ package com.mallocgfw.app.update
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -131,20 +132,6 @@ object AppUpdateManager {
         return null
     }
 
-    fun openReleaseDownload(context: Context, info: AppUpdateInfo): String? {
-        val targetUrl = info.apkDownloadUrl.ifBlank { info.htmlUrl }
-        if (targetUrl.isBlank()) return "GitHub Release 没有可打开的下载链接。"
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl)).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        return runCatching {
-            context.startActivity(intent)
-            null
-        }.getOrElse { error ->
-            error.message ?: "无法打开浏览器，请手动访问 ${info.htmlUrl.ifBlank { targetUrl }}。"
-        }
-    }
-
     suspend fun checkLatest(): AppUpdateInfo {
         val response = withContext(Dispatchers.IO) {
             val connection = openMetadataConnection(LATEST_RELEASE_URL)
@@ -165,13 +152,14 @@ object AppUpdateManager {
         onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit,
     ): File {
         return withContext(Dispatchers.IO) {
-            if (!isLocalProxyAvailable()) {
-                error("请先连接代理后再下载更新。")
-            }
             val updatesDir = File(context.cacheDir, "updates").apply { mkdirs() }
             val target = File(updatesDir, sanitizeFileName("${info.tagName}-${info.apkName}"))
             val partial = File(updatesDir, "${target.name}.download")
-            if (target.exists() && target.length() > 0L && verifyDownloadedApk(target, info)) {
+            if (target.exists() &&
+                target.length() > 0L &&
+                verifyDownloadedApk(target, info) &&
+                isPackageForCurrentApp(context, target)
+            ) {
                 withContext(Dispatchers.Main.immediate) {
                     onProgress(target.length(), target.length())
                 }
@@ -179,6 +167,7 @@ object AppUpdateManager {
             }
             partial.delete()
 
+            if (info.apkDownloadUrl.isBlank()) error("GitHub Release 没有 APK 下载链接。")
             val connection = openDownloadConnection(info.apkDownloadUrl)
             try {
                 val code = connection.responseCode
@@ -214,6 +203,9 @@ object AppUpdateManager {
                 if (!verifyDownloadedApk(partial, info)) {
                     error("安装包校验失败，请重新下载。")
                 }
+                if (!isPackageForCurrentApp(context, partial)) {
+                    error("下载的安装包不属于当前应用，请检查 GitHub Release 资源。")
+                }
                 if (target.exists()) target.delete()
                 if (!partial.renameTo(target)) {
                     partial.copyTo(target, overwrite = true)
@@ -244,7 +236,7 @@ object AppUpdateManager {
 
     private fun openDownloadConnection(url: String, redirectCount: Int = 0): HttpURLConnection {
         require(redirectCount <= MAX_REDIRECTS) { "安装包下载重定向次数过多。" }
-        val connection = (URL(url).openConnection(localProxy()) as HttpURLConnection).apply {
+        val connection = openConnection(url).apply {
             requestMethod = "GET"
             connectTimeout = CONNECT_TIMEOUT_MS
             readTimeout = DOWNLOAD_READ_TIMEOUT_MS
@@ -260,6 +252,15 @@ object AppUpdateManager {
             return openDownloadConnection(URL(URL(url), location).toString(), redirectCount + 1)
         }
         return connection
+    }
+
+    private fun openConnection(url: String): HttpURLConnection {
+        val target = URL(url)
+        return if (isLocalProxyAvailable()) {
+            target.openConnection(localProxy())
+        } else {
+            target.openConnection()
+        } as HttpURLConnection
     }
 
     private fun parseLatestRelease(rawJson: String): AppUpdateInfo {
@@ -316,6 +317,19 @@ object AppUpdateManager {
         }
         val actual = digest.digest().joinToString("") { "%02x".format(it) }
         return actual.equals(expectedHash, ignoreCase = true)
+    }
+
+    private fun isPackageForCurrentApp(context: Context, file: File): Boolean {
+        val archiveInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.packageManager.getPackageArchiveInfo(
+                file.absolutePath,
+                PackageManager.PackageInfoFlags.of(0),
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            context.packageManager.getPackageArchiveInfo(file.absolutePath, 0)
+        }
+        return archiveInfo?.packageName == context.packageName
     }
 
     private fun isLocalProxyAvailable(): Boolean {

@@ -1392,18 +1392,43 @@ fun MallocGfwApp(
 
     fun downloadUpdateApk() {
         val info = updateState.info ?: return
-        val message = AppUpdateManager.openReleaseDownload(context, info)
+        if (updateState.status == AppUpdateStatus.Downloading) return
+
         updateState = updateState.copy(
-            status = AppUpdateStatus.Available,
-            message = message ?: "已打开浏览器，请在 GitHub Release 页面下载 APK。",
+            status = AppUpdateStatus.Downloading,
+            message = "正在从 GitHub 下载 ${info.apkName}…",
             downloadedApkPath = null,
             downloadedBytes = 0L,
             totalBytes = info.apkSizeBytes,
         )
-        if (!message.isNullOrBlank() && info.htmlUrl.isNotBlank()) {
-            updateState = updateState.copy(
-                message = "$message\n下载页面：${info.htmlUrl}",
-            )
+        scope.launch {
+            runCatching {
+                AppUpdateManager.downloadApk(context, info) { downloadedBytes, totalBytes ->
+                    if (updateState.status == AppUpdateStatus.Downloading) {
+                        updateState = updateState.copy(
+                            downloadedBytes = downloadedBytes,
+                            totalBytes = totalBytes.takeIf { it > 0L } ?: info.apkSizeBytes,
+                        )
+                    }
+                }
+            }.onSuccess { file ->
+                updateState = AppUpdateUiState(
+                    status = AppUpdateStatus.Downloaded,
+                    info = info,
+                    message = "安装包下载完成，点击“安装”继续升级。",
+                    downloadedApkPath = file.absolutePath,
+                    downloadedBytes = file.length(),
+                    totalBytes = file.length(),
+                )
+            }.onFailure { error ->
+                updateState = AppUpdateUiState(
+                    status = AppUpdateStatus.Available,
+                    info = info,
+                    message = error.message ?: "安装包下载失败，请稍后重试。",
+                    totalBytes = info.apkSizeBytes,
+                )
+                AppLogManager.append(context, "UPDATE", "下载更新失败", error)
+            }
         }
     }
 

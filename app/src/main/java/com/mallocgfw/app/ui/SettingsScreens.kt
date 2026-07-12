@@ -799,7 +799,7 @@ private fun UpdateAction(
             onClick = {},
         )
         AppUpdateStatus.Available -> PrimaryActionButton(
-            text = "打开下载页",
+            text = "下载更新",
             onClick = onDownload,
         )
         AppUpdateStatus.Downloaded -> PrimaryActionButton(
