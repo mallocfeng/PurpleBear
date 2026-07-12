@@ -48,3 +48,22 @@ baseline and applies the upstream TUN shutdown fix so that stopping an
 always-on inbound closes both the gVisor stack and the Android TUN interface.
 It was built with Go 1.26.0 and `golang.org/x/mobile` at
 `2cfb76559b7b`, with 16 KiB ELF load-segment alignment.
+
+## Tailscale
+
+- Project: Tailscale
+- Version: v1.98.8
+- License: BSD 3-Clause
+- Source: https://github.com/tailscale/tailscale/tree/v1.98.8
+- Packaged bridge paths:
+  - `app/src/main/jniLibs/arm64-v8a/libtailscalebridge.so`
+  - `app/src/main/jniLibs/arm64-v8a/libtailscalebridgejni.so`
+- Local bridge source: `tailscale-bridge/`
+
+PurpleBear embeds a Tailscale userspace node and exposes its authenticated
+loopback SOCKS5 listener to Xray. It does not embed Tailscale's Android VPN
+service, so Xray remains the app's single Android `VpnService` and can coexist
+with Tailnet routing. The BSD 3-Clause license text is included in:
+
+- `LICENSES/Tailscale-BSD-3-Clause.txt`
+- `app/src/main/assets/licenses/Tailscale-BSD-3-Clause.txt`

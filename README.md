@@ -188,6 +188,18 @@ app/build/outputs/apk/release/app-release.apk
 
 ## 更新日志
 
+## 版本 0.7.0 更新
+
+1. 新增内嵌 Tailscale（beta）：可使用官方 Tailscale 控制服务连接 Tailnet，并与 PurpleBear 的现有代理 VPN 共存。
+
+2. 支持认证密钥、控制服务器 URL、始终使用 DERP、Tailnet 设备状态与 Tailscale IP 展示；支持选择或取消 Tailscale 出口节点。
+
+3. 支持子网路由：自动识别 Tailnet 已公布的私有网段，用户可选择检测到的路由或手动添加私有 CIDR。仅在用户选择且 Tailnet 已公布时激活，未设置时不会接管局域网流量。
+
+4. 优化 Tailscale 与 Xray VPN 的协作：Tailnet 与已选子网流量经 Tailscale 转发，常规代理流量继续由 PurpleBear 线路处理。
+
+5. Tailscale 入口和设置页标记为 `(beta)`；更新版本号到 `0.7.0`，`versionCode` 更新为 `274`。
+
 ## 版本 0.6.13 更新
 
 1. 修复 Xray 未真正进入运行状态时 VPN 仍可能显示已连接的问题；现在会同时确认内核运行状态和本地 HTTP 入站可用性，失败时停止内核并关闭本次连接。

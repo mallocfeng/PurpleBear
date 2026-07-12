@@ -184,7 +184,7 @@ internal fun screenMatchesTab(screen: AppScreen, tab: MainTab): Boolean {
         MainTab.Me -> screen == AppScreen.Me || screen == AppScreen.PerApp || screen == AppScreen.Diagnostics ||
             screen == AppScreen.Settings || screen == AppScreen.Permission || screen == AppScreen.MediaRouting ||
             screen == AppScreen.MediaRoutingNodePicker || screen == AppScreen.LogViewer || screen == AppScreen.Update ||
-            screen == AppScreen.OpenSourceLicenses
+            screen == AppScreen.OpenSourceLicenses || screen == AppScreen.Tailscale
     }
 }
 

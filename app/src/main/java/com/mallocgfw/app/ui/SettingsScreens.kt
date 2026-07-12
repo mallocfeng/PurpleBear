@@ -607,6 +607,27 @@ internal fun OpenSourceLicensesScreen(
                 }
             }
         }
+        item {
+            SettingsGroup(title = "Tailscale") {
+                SelectionContainer {
+                    Text(
+                        text = """
+                            Project: Tailscale
+                            Version: v1.98.8
+                            License: BSD 3-Clause
+                            Source: https://github.com/tailscale/tailscale/tree/v1.98.8
+                            PurpleBear 在进程内运行 Tailscale userspace 节点，
+                            并将其本地 SOCKS5 接口交给 Xray 做 Tailnet 分流。
+                            BSD 3-Clause 全文已随 APK 打包在
+                            assets/licenses/Tailscale-BSD-3-Clause.txt。
+                        """.trimIndent(),
+                        color = TextSecondary,
+                        fontSize = TypeScale.Body,
+                        lineHeight = TypeScale.BodyLine,
+                    )
+                }
+            }
+        }
     }
 }
 

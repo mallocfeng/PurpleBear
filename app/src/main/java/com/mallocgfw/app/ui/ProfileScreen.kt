@@ -18,6 +18,7 @@ import androidx.compose.material.icons.rounded.GppGood
 import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.DeviceHub
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -43,6 +44,7 @@ internal fun MeScreen(
     onOpenPerApp: () -> Unit,
     onOpenDiagnostics: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenTailscale: () -> Unit,
     onOpenMediaRouting: () -> Unit,
     onOpenPermission: () -> Unit,
 ) {
@@ -125,6 +127,7 @@ internal fun MeScreen(
                     ),
                     FeatureAction("系统诊断", "VPN / DNS / 握手", Icons.Rounded.GppGood, onOpenDiagnostics),
                     FeatureAction("设置", "连接与更新", Icons.Rounded.Settings, onOpenSettings),
+                    FeatureAction("Tailscale (beta)", "Tailnet 分流", Icons.Rounded.DeviceHub, onOpenTailscale),
                 ),
             )
         }

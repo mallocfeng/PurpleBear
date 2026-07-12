@@ -92,6 +92,7 @@ object XrayCoreManager {
                 accessLogPath = AppLogManager.xrayAccessLogFile(context).absolutePath,
                 globalProxyEnabled = settings.globalProxyEnabled,
                 geoRoutingRegion = settings.geoRoutingRegion,
+                tailscale = TailscaleRuntimeManager.snapshot.value.routing(settings),
             )
         }
     }
@@ -123,6 +124,7 @@ object XrayCoreManager {
                 vpnMtu = vpnMtu,
                 globalProxyEnabled = settings.globalProxyEnabled,
                 geoRoutingRegion = settings.geoRoutingRegion,
+                tailscale = TailscaleRuntimeManager.snapshot.value.routing(settings),
             )
         }
     }

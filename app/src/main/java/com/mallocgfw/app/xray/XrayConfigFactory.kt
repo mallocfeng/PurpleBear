@@ -47,6 +47,7 @@ object XrayConfigFactory {
         accessLogPath: String? = null,
         globalProxyEnabled: Boolean = false,
         geoRoutingRegion: AppGeoRoutingRegion = AppGeoRoutingRegion.defaultForLanguage(AppLanguage.System),
+        tailscale: TailscaleRouting? = null,
     ): String {
         return JSONObject().apply {
             put(
@@ -71,6 +72,7 @@ object XrayConfigFactory {
                     additionalOutbounds.forEach { outbound ->
                         buildOutboundChain(outbound.node, outbound.tag, availableServers).forEach(::put)
                     }
+                    tailscale?.let { put(tailscaleOutbound(it)) }
                     put(JSONObject().apply {
                         put("tag", "direct")
                         put("protocol", "freedom")
@@ -94,6 +96,7 @@ object XrayConfigFactory {
                             routingRules,
                             globalProxyEnabled = globalProxyEnabled,
                             geoRoutingRegion = geoRoutingRegion,
+                            tailscale = tailscale,
                         ),
                     )
                 },
@@ -112,6 +115,7 @@ object XrayConfigFactory {
         vpnMtu: Int = DEFAULT_VPN_MTU,
         globalProxyEnabled: Boolean = false,
         geoRoutingRegion: AppGeoRoutingRegion = AppGeoRoutingRegion.defaultForLanguage(AppLanguage.System),
+        tailscale: TailscaleRouting? = null,
     ): String {
         val normalizedMtu = normalizedAppVpnMtu(vpnMtu)
         return JSONObject().apply {
@@ -147,6 +151,7 @@ object XrayConfigFactory {
                     additionalOutbounds.forEach { outbound ->
                         buildOutboundChain(outbound.node, outbound.tag, availableServers).forEach(::put)
                     }
+                    tailscale?.let { put(tailscaleOutbound(it)) }
                     put(JSONObject().apply {
                         put("tag", "direct")
                         put("protocol", "freedom")
@@ -172,6 +177,7 @@ object XrayConfigFactory {
                             forceUdp443Fallback = true,
                             globalProxyEnabled = globalProxyEnabled,
                             geoRoutingRegion = geoRoutingRegion,
+                            tailscale = tailscale,
                         ),
                     )
                 },
@@ -185,6 +191,7 @@ object XrayConfigFactory {
         forceUdp443Fallback: Boolean = false,
         globalProxyEnabled: Boolean = false,
         geoRoutingRegion: AppGeoRoutingRegion = AppGeoRoutingRegion.defaultForLanguage(AppLanguage.System),
+        tailscale: TailscaleRouting? = null,
     ): JSONArray {
         val rules = JSONArray()
 
@@ -204,6 +211,33 @@ object XrayConfigFactory {
             rules = rules,
             forceUdp443Fallback = forceUdp443Fallback,
         )
+
+        tailscale?.let { config ->
+            // This must remain above user, geoip:private, and global fallback
+            // rules. It is the embedded equivalent of Shadowrocket's
+            // TAILSCALE policy target.
+            rules.put(
+                JSONObject().apply {
+                    put("type", "field")
+                    put("domain", JSONArray().put("domain:ts.net"))
+                    put("outboundTag", "tailscale")
+                },
+            )
+            rules.put(
+                JSONObject().apply {
+                    put("type", "field")
+                    put(
+                        "ip",
+                        JSONArray().apply {
+                            put("100.64.0.0/10")
+                            put("fd7a:115c:a1e0::/48")
+                            config.subnetRoutes.forEach(::put)
+                        },
+                    )
+                    put("outboundTag", "tailscale")
+                },
+            )
+        }
 
         val effectiveRoutingRules = if (globalProxyEnabled) emptyList() else routingRules
 
@@ -291,11 +325,45 @@ object XrayConfigFactory {
             JSONObject().apply {
                 put("type", "field")
                 put("network", "tcp,udp")
-                put("outboundTag", "proxy")
+                put("outboundTag", if (tailscale?.routeAllTraffic == true) "tailscale" else "proxy")
             },
         )
 
         return rules
+    }
+
+    private fun tailscaleOutbound(config: TailscaleRouting): JSONObject {
+        return JSONObject().apply {
+            put("tag", "tailscale")
+            put("protocol", "socks")
+            put(
+                "settings",
+                JSONObject().apply {
+                    put(
+                        "servers",
+                        JSONArray().apply {
+                            put(
+                                JSONObject().apply {
+                                    put("address", config.socksHost)
+                                    put("port", config.socksPort)
+                                    put(
+                                        "users",
+                                        JSONArray().apply {
+                                            put(
+                                                JSONObject().apply {
+                                                    put("user", config.socksUsername)
+                                                    put("pass", config.socksPassword)
+                                                },
+                                            )
+                                        },
+                                    )
+                                },
+                            )
+                        },
+                    )
+                },
+            )
+        }
     }
 
     private fun addGooglePlayDownloadRules(

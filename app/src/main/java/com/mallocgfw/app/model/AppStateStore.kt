@@ -29,6 +29,12 @@ object AppStateStore {
             streamingSelections = emptyList(),
             heartbeatIntervalMinutes = 5,
             vpnMtu = DEFAULT_APP_VPN_MTU,
+            tailscaleEnabled = false,
+            tailscaleAuthKey = "",
+            tailscaleControlUrl = DEFAULT_TAILSCALE_CONTROL_URL,
+            tailscaleSubnetRoutes = emptyList(),
+            tailscaleExitNodeId = "",
+            tailscaleAlwaysUseDerp = false,
         )
     }
 
@@ -220,6 +226,14 @@ object AppStateStore {
                     normalizedVisibleServers.any { it.id == id }
                 }.orEmpty(),
                 streamingSelections = normalizedStreamingSelections,
+                tailscaleAuthKey = settings.tailscaleAuthKey.trim(),
+                tailscaleControlUrl = settings.tailscaleControlUrl.trim()
+                    .ifBlank { DEFAULT_TAILSCALE_CONTROL_URL },
+                tailscaleSubnetRoutes = settings.tailscaleSubnetRoutes
+                    .map(String::trim)
+                    .filter(String::isNotBlank)
+                    .distinct(),
+                tailscaleExitNodeId = settings.tailscaleExitNodeId.trim(),
             ),
         )
     }
@@ -365,6 +379,12 @@ object AppStateStore {
                 put("streamingRoutingEnabled", state.settings.streamingRoutingEnabled)
                 put("heartbeatIntervalMinutes", state.settings.heartbeatIntervalMinutes)
                 put("vpnMtu", normalizedAppVpnMtu(state.settings.vpnMtu))
+                put("tailscaleEnabled", state.settings.tailscaleEnabled)
+                put("tailscaleAuthKey", state.settings.tailscaleAuthKey)
+                put("tailscaleControlUrl", state.settings.tailscaleControlUrl)
+                put("tailscaleSubnetRoutes", JSONArray(state.settings.tailscaleSubnetRoutes))
+                put("tailscaleExitNodeId", state.settings.tailscaleExitNodeId)
+                put("tailscaleAlwaysUseDerp", state.settings.tailscaleAlwaysUseDerp)
                 put("streamingSelections", JSONArray().apply {
                     state.settings.streamingSelections.forEach { selection ->
                         put(JSONObject().apply {
@@ -402,6 +422,12 @@ object AppStateStore {
             heartbeatIntervalMinutes = optInt("heartbeatIntervalMinutes", defaults.heartbeatIntervalMinutes)
                 .takeIf { it in setOf(2, 5, 10) } ?: defaults.heartbeatIntervalMinutes,
             vpnMtu = normalizedAppVpnMtu(optInt("vpnMtu", defaults.vpnMtu)),
+            tailscaleEnabled = optBoolean("tailscaleEnabled", defaults.tailscaleEnabled),
+            tailscaleAuthKey = optString("tailscaleAuthKey", defaults.tailscaleAuthKey),
+            tailscaleControlUrl = optString("tailscaleControlUrl", defaults.tailscaleControlUrl),
+            tailscaleSubnetRoutes = optJSONArray("tailscaleSubnetRoutes").toStrings(),
+            tailscaleExitNodeId = optString("tailscaleExitNodeId", defaults.tailscaleExitNodeId),
+            tailscaleAlwaysUseDerp = optBoolean("tailscaleAlwaysUseDerp", defaults.tailscaleAlwaysUseDerp),
         )
     }
 

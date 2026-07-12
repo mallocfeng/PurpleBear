@@ -258,6 +258,17 @@ class XrayVpnService : VpnService() {
         AppLogManager.trimAllLogs(applicationContext)
         val state = AppStateStore.load(applicationContext)
         AppLogManager.append(applicationContext, TAG, "连接启动，DNS 模式：${state.settings.dnsMode.name}")
+        if (state.settings.tailscaleEnabled) {
+            TailscaleRuntimeManager.ensureStarted(applicationContext, state.settings)
+                .onFailure { error ->
+                    AppLogManager.append(
+                        applicationContext,
+                        TAG,
+                        "Tailscale 未就绪，本次连接将不加载 Tailscale 分流：${error.message}",
+                    )
+                }
+        }
+        val tailscaleRouting = TailscaleRuntimeManager.snapshot.value.routing(state.settings)
         val dnsServer = resolveDnsAddress(applicationContext, state.settings)
         val dnsEndpoint = resolveDnsEndpoint(applicationContext, state.settings)
         val server = state.servers.firstOrNull { it.id == serverId }
@@ -290,7 +301,7 @@ class XrayVpnService : VpnService() {
             .addAddress("fd00:1:fd00:1::1", 126)
             .addRoute("0.0.0.0", 0)
             .addRoute("::", 0)
-            .applyLocalNetworkExclusions()
+            .applyLocalNetworkExclusions(tailscaleRouting?.subnetRoutes.orEmpty())
         dnsServer?.let(builder::addDnsServer)
 
         if (state.proxyMode == ProxyMode.PerApp && !globalProxyEnabled) {
@@ -743,17 +754,32 @@ class XrayVpnService : VpnService() {
         }
     }
 
-    private fun Builder.applyLocalNetworkExclusions(): Builder = apply {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return@apply
+    private fun Builder.applyLocalNetworkExclusions(tailscaleSubnetRoutes: List<String>): Builder = apply {
+        val includedPrefixes = tailscaleSubnetRoutes.mapNotNull { route ->
+            parseTailscaleSubnetPrefix(route)
+        }
 
-        // Xray still keeps private IPs on direct outbound, but LAN file transfer
-        // and service discovery break more easily if the packets enter the VPN
-        // tunnel first. Exclude them at the system VPN layer when supported.
-        LOCAL_EXCLUDED_ROUTES.forEach { (address, prefixLength) ->
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            // Exclude ordinary LAN ranges at the system layer, except when an
+            // entire range was explicitly selected as a Tailscale subnet.
+            LOCAL_EXCLUDED_ROUTES.forEach { (address, prefixLength) ->
+                val excludedPrefix = IpPrefix(InetAddress.getByName(address), prefixLength)
+                if (includedPrefixes.any { it == excludedPrefix }) return@forEach
+                runCatching {
+                    excludeRoute(excludedPrefix)
+                }.onFailure { error ->
+                    Log.w(TAG, "Unable to exclude local route $address/$prefixLength", error)
+                }
+            }
+        }
+
+        // A selected /24 (or other more-specific prefix) wins over the broad
+        // RFC1918 exclusion by longest-prefix matching and re-enters the VPN.
+        includedPrefixes.forEach { prefix ->
             runCatching {
-                excludeRoute(IpPrefix(InetAddress.getByName(address), prefixLength))
+                addRoute(prefix.address, prefix.prefixLength)
             }.onFailure { error ->
-                Log.w(TAG, "Unable to exclude local route $address/$prefixLength", error)
+                Log.w(TAG, "Unable to include Tailscale subnet $prefix", error)
             }
         }
     }
@@ -824,6 +850,9 @@ class XrayVpnService : VpnService() {
         context: Context,
         settings: com.mallocgfw.app.model.AppSettings,
     ): String? {
+        // Keep the user's existing VPN DNS path intact. Sending all Android
+        // DNS to Tailscale's 100.100.100.100 resolver makes ordinary domains
+        // depend on the userspace Tailnet path and breaks normal proxying.
         return when (settings.dnsMode) {
             AppDnsMode.System -> resolveSystemDns(context) ?: DEFAULT_REMOTE_DNS
             AppDnsMode.Remote -> DEFAULT_REMOTE_DNS

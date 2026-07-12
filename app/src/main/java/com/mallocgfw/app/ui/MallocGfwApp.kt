@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.graphics.drawable.Icon
 import android.net.VpnService
 import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -103,6 +104,8 @@ import com.mallocgfw.app.xray.GeoDataManager
 import com.mallocgfw.app.xray.GeoDataSnapshot
 import com.mallocgfw.app.xray.GeoDataStatus
 import com.mallocgfw.app.xray.NodeLatencyTester
+import com.mallocgfw.app.xray.TailscaleRuntimeManager
+import com.mallocgfw.app.xray.normalizePrivateTailscaleSubnet
 import com.mallocgfw.app.xray.VpnRuntimeStore
 import com.mallocgfw.app.xray.VpnServiceController
 import com.mallocgfw.app.xray.XrayCoreManager
@@ -127,6 +130,7 @@ fun MallocGfwApp(
     val initialLoad = remember { AppStateStore.loadWithStartupCleanup(context) }
     val initialState = initialLoad.state
     val xraySnapshot by XrayCoreManager.snapshot.collectAsState()
+    val tailscaleSnapshot by TailscaleRuntimeManager.snapshot.collectAsState()
     val vpnSnapshot by VpnRuntimeStore.snapshot.collectAsState()
     var screen by rememberSaveable { mutableStateOf(AppScreen.Launch) }
     var screenHistory by rememberSaveable { mutableStateOf(listOf<AppScreen>()) }
@@ -351,7 +355,8 @@ fun MallocGfwApp(
             AppScreen.Rules, AppScreen.RuleSourceDetail, AppScreen.AddRuleSource -> MainTab.Rules
             AppScreen.Import, AppScreen.ConfirmImport, AppScreen.Subscriptions -> MainTab.Import
             AppScreen.Me, AppScreen.PerApp, AppScreen.Diagnostics, AppScreen.Settings, AppScreen.Permission,
-            AppScreen.OpenSourceLicenses, AppScreen.MediaRouting, AppScreen.MediaRoutingNodePicker, AppScreen.LogViewer -> MainTab.Me
+            AppScreen.OpenSourceLicenses, AppScreen.MediaRouting, AppScreen.MediaRoutingNodePicker, AppScreen.LogViewer,
+            AppScreen.Tailscale -> MainTab.Me
             else -> mainTab
         }
     }
@@ -380,7 +385,8 @@ fun MallocGfwApp(
             AppScreen.Rules, AppScreen.RuleSourceDetail, AppScreen.AddRuleSource -> MainTab.Rules
             AppScreen.Import, AppScreen.ConfirmImport, AppScreen.Subscriptions -> MainTab.Import
             AppScreen.Me, AppScreen.PerApp, AppScreen.Diagnostics, AppScreen.Settings, AppScreen.Permission,
-            AppScreen.OpenSourceLicenses, AppScreen.MediaRouting, AppScreen.MediaRoutingNodePicker, AppScreen.LogViewer -> MainTab.Me
+            AppScreen.OpenSourceLicenses, AppScreen.MediaRouting, AppScreen.MediaRoutingNodePicker, AppScreen.LogViewer,
+            AppScreen.Tailscale -> MainTab.Me
             else -> MainTab.Home
         }
         screenHistory = screenHistory + screen
@@ -433,6 +439,41 @@ fun MallocGfwApp(
         return candidateIds.firstNotNullOfOrNull { candidateId ->
             servers.firstOrNull { it.id == candidateId }
         } ?: servers.firstOrNull()
+    }
+
+    fun reconnectForTailscaleChange(message: String) {
+        if (connectionStatus == ConnectionStatus.Connected || VpnServiceController.isRunning()) {
+            resolveServerForSettingsReconnect()?.let { reconnectVpnForSettingsChange(it, message) }
+        }
+    }
+
+    fun connectTailscale(authKey: String) {
+        val nextSettings = appSettings.copy(tailscaleEnabled = true)
+        appSettings = nextSettings
+        scope.launch {
+            TailscaleRuntimeManager.restart(context, nextSettings, authKey)
+                .onSuccess {
+                    runtimeMessage = "Tailscale 已连接，Tailnet 分流已准备就绪。"
+                    reconnectForTailscaleChange("Tailscale 已连接，正在重新加载分流…")
+                }
+                .onFailure { error ->
+                    runtimeMessage = error.message ?: "Tailscale 连接失败。"
+                }
+        }
+    }
+
+    fun restartTailscaleForSettings(nextSettings: com.mallocgfw.app.model.AppSettings, message: String) {
+        appSettings = nextSettings
+        scope.launch {
+            TailscaleRuntimeManager.restart(context, nextSettings)
+                .onSuccess {
+                    runtimeMessage = message
+                    reconnectForTailscaleChange("Tailscale 设置已变更，正在重新加载分流…")
+                }
+                .onFailure { error ->
+                    runtimeMessage = error.message ?: "Tailscale 设置未能应用。"
+                }
+        }
     }
 
     val vpnPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -2459,6 +2500,123 @@ fun MallocGfwApp(
                         onOpenLicenses = { navigateSecondary(AppScreen.OpenSourceLicenses) },
                     )
 
+                    AppScreen.Tailscale -> TailscaleScreen(
+                        padding = padding,
+                        settings = appSettings,
+                        snapshot = tailscaleSnapshot,
+                        onBack = ::onBack,
+                        onEnabledChange = { enabled ->
+                            val next = appSettings.copy(
+                                tailscaleEnabled = enabled,
+                                tailscaleExitNodeId = if (enabled) appSettings.tailscaleExitNodeId else "",
+                            )
+                            if (!enabled) {
+                                appSettings = next
+                                scope.launch {
+                                    TailscaleRuntimeManager.stopNow(context)
+                                    runtimeMessage = "Tailscale 已关闭。"
+                                    reconnectForTailscaleChange("Tailscale 已关闭，正在重新加载分流…")
+                                }
+                            } else {
+                                appSettings = next
+                                connectTailscale(next.tailscaleAuthKey)
+                            }
+                        },
+                        onAuthKeyChange = { authKey ->
+                            appSettings = appSettings.copy(tailscaleAuthKey = authKey)
+                        },
+                        onControlUrlChange = { url ->
+                            appSettings = appSettings.copy(tailscaleControlUrl = url)
+                        },
+                        onAlwaysDerpChange = { enabled ->
+                            restartTailscaleForSettings(
+                                appSettings.copy(tailscaleAlwaysUseDerp = enabled),
+                                if (enabled) "已启用始终使用 DERP。" else "已允许 Tailscale 尝试直连 UDP。",
+                            )
+                        },
+                        onConnect = ::connectTailscale,
+                        onRefresh = {
+                            scope.launch {
+                                TailscaleRuntimeManager.refresh(context)
+                                    .onFailure { error -> runtimeMessage = error.message ?: "无法刷新 Tailscale 状态。" }
+                            }
+                        },
+                        onSubnetRoutesChange = { routes ->
+                            val normalizedRoutes = routes
+                                .mapNotNull(::normalizePrivateTailscaleSubnet)
+                                .distinct()
+                            val advertisedRoutes = tailscaleSnapshot.peers
+                                .flatMap { it.routes }
+                                .mapNotNull(::normalizePrivateTailscaleSubnet)
+                                .toSet()
+                            val previousEffectiveRoutes = appSettings.tailscaleSubnetRoutes
+                                .mapNotNull(::normalizePrivateTailscaleSubnet)
+                                .filter { it in advertisedRoutes }
+                                .toSet()
+                            val nextEffectiveRoutes = normalizedRoutes
+                                .filter { it in advertisedRoutes }
+                                .toSet()
+                            appSettings = appSettings.copy(tailscaleSubnetRoutes = normalizedRoutes)
+                            val message = when {
+                                normalizedRoutes.isEmpty() -> "已关闭 Tailscale 子网访问。"
+                                nextEffectiveRoutes.isEmpty() -> "子网设置已保存，当前 Tailnet 尚未公布对应路由。"
+                                else -> "已启用子网：${nextEffectiveRoutes.joinToString()}"
+                            }
+                            runtimeMessage = message
+                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                            if (previousEffectiveRoutes != nextEffectiveRoutes) {
+                                reconnectForTailscaleChange("Tailscale 子网设置已变更，正在重新加载分流…")
+                            }
+                        },
+                        onExitNodeChange = { nodeId ->
+                            val previousNodeId = appSettings.tailscaleExitNodeId
+                            val targetNodeName = tailscaleSnapshot.peers
+                                .firstOrNull { it.id == nodeId }
+                                ?.let { peer -> peer.name.ifBlank { peer.dnsName } }
+                            appSettings = appSettings.copy(tailscaleExitNodeId = nodeId)
+                            scope.launch {
+                                TailscaleRuntimeManager.setExitNode(context, nodeId)
+                                    .onSuccess {
+                                        val successMessage = if (nodeId.isBlank()) {
+                                            "已取消 Tailscale 出口节点。"
+                                        } else {
+                                            "已切换出口节点：${targetNodeName ?: "所选设备"}"
+                                        }
+                                        runtimeMessage = successMessage
+                                        Toast.makeText(context, successMessage, Toast.LENGTH_SHORT).show()
+                                        // Xray only needs a config reload when
+                                        // the fallback changes between normal
+                                        // proxy and Tailscale. Switching from
+                                        // one exit node to another is handled
+                                        // entirely inside the live bridge.
+                                        if (previousNodeId.isBlank() != nodeId.isBlank()) {
+                                            reconnectForTailscaleChange("出口路由模式已变更，正在重新加载分流…")
+                                        }
+                                    }
+                                    .onFailure { error ->
+                                        appSettings = appSettings.copy(tailscaleExitNodeId = previousNodeId)
+                                        val failureMessage = error.message ?: "无法切换 Tailscale 出口节点。"
+                                        runtimeMessage = failureMessage
+                                        Toast.makeText(context, failureMessage, Toast.LENGTH_SHORT).show()
+                                    }
+                            }
+                        },
+                        onLogout = {
+                            scope.launch {
+                                TailscaleRuntimeManager.logout(context)
+                                    .onSuccess {
+                                        appSettings = appSettings.copy(
+                                            tailscaleEnabled = false,
+                                            tailscaleExitNodeId = "",
+                                        )
+                                        runtimeMessage = "已从 Tailscale 退出并移除此设备。"
+                                        reconnectForTailscaleChange("Tailscale 已退出，正在重新加载分流…")
+                                    }
+                                    .onFailure { error -> runtimeMessage = error.message ?: "退出 Tailscale 失败。" }
+                            }
+                        },
+                    )
+
                     AppScreen.OpenSourceLicenses -> OpenSourceLicensesScreen(
                         padding = padding,
                         onBack = ::onBack,
@@ -2517,6 +2675,7 @@ fun MallocGfwApp(
                         onOpenPerApp = { navigateSecondary(AppScreen.PerApp) },
                         onOpenDiagnostics = { navigateSecondary(AppScreen.Diagnostics) },
                         onOpenSettings = { navigateSecondary(AppScreen.Settings) },
+                        onOpenTailscale = { navigateSecondary(AppScreen.Tailscale) },
                         onOpenMediaRouting = { navigateSecondary(AppScreen.MediaRouting) },
                         onOpenPermission = { navigateSecondary(AppScreen.Permission) },
                     )

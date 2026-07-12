@@ -62,6 +62,13 @@
             </intent-filter>
         </service>
 
+        <!-- Tailscale and libXray both embed Go runtimes. Keep their native
+             code in separate processes while Xray remains the sole VPN. -->
+        <service
+            android:name=".tailscale.TailscaleBridgeService"
+            android:exported="false"
+            android:process=":tailscale" />
+
         <service
             android:name=".quicksettings.VpnQuickSettingsTileService"
             android:exported="true"

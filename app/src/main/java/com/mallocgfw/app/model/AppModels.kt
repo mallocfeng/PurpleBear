@@ -20,6 +20,7 @@ enum class AppScreen {
     PerApp,
     Diagnostics,
     Settings,
+    Tailscale,
     OpenSourceLicenses,
     Update,
     MediaRouting,
@@ -331,6 +332,7 @@ data class StreamingRouteSelection(
 )
 
 const val DEFAULT_APP_VPN_MTU = 1400
+const val DEFAULT_TAILSCALE_CONTROL_URL = "https://controlplane.tailscale.com"
 val AppVpnMtuOptions = listOf(1400, 1420, 1460, 1500)
 
 fun normalizedAppVpnMtu(value: Int): Int {
@@ -356,4 +358,10 @@ data class AppSettings(
     val streamingSelections: List<StreamingRouteSelection>,
     val heartbeatIntervalMinutes: Int,
     val vpnMtu: Int,
+    val tailscaleEnabled: Boolean,
+    val tailscaleAuthKey: String,
+    val tailscaleControlUrl: String,
+    val tailscaleSubnetRoutes: List<String>,
+    val tailscaleExitNodeId: String,
+    val tailscaleAlwaysUseDerp: Boolean,
 )
