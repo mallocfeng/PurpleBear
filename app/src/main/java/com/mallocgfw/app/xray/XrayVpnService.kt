@@ -343,7 +343,7 @@ class XrayVpnService : VpnService() {
         vpnInterface?.close()
         vpnInterface = builder.establish() ?: error("无法建立系统 VPN 接口。")
         val tunFd = vpnInterface?.fd ?: error("无法获取 TUN fd。")
-        dnsEndpoint?.let { LibXray.initDns(dialerController, it) }
+        dnsEndpoint?.let(::installProcessDns)
 
         XrayCoreManager.startVpn(
             context = applicationContext,
@@ -383,7 +383,7 @@ class XrayVpnService : VpnService() {
                 servers = state.servers,
             )
         }
-        dnsEndpoint?.let { LibXray.initDns(dialerController, it) }
+        dnsEndpoint?.let(::installProcessDns)
         XrayCoreManager.startVpn(
             context = applicationContext,
             server = server,
@@ -432,7 +432,7 @@ class XrayVpnService : VpnService() {
             .onFailure { Log.w(TAG, "Unable to stop Xray cleanly", it) }
         Log.d(TAG, "disconnectNow stopXray phase took ${System.currentTimeMillis() - stopXrayStartedAt} ms")
         val resetDnsStartedAt = System.currentTimeMillis()
-        runCatching { LibXray.resetDns() }
+        runCatching { LibXray.resetDNS() }
             .onFailure { Log.w(TAG, "Unable to reset libXray DNS state", it) }
         Log.d(TAG, "disconnectNow resetDns phase took ${System.currentTimeMillis() - resetDnsStartedAt} ms")
         val closeTunStartedAt = System.currentTimeMillis()
@@ -832,10 +832,10 @@ class XrayVpnService : VpnService() {
     }
 
     private fun speedTestProxy(): Proxy {
-        return Proxy(
-            Proxy.Type.HTTP,
-            InetSocketAddress("127.0.0.1", XrayConfigFactory.HTTP_PORT),
-        )
+        // Authenticated SOCKS inbound of this run (forced to the proxy outbound);
+        // LocalProxyRuntime's scoped Authenticator supplies the credentials.
+        return LocalProxyRuntime.current()?.socks?.socksProxy()
+            ?: error("本地测速入口尚未就绪。")
     }
 
     private inline fun <T> HttpsURLConnection.useAndDisconnect(block: HttpsURLConnection.() -> T): T {
@@ -865,12 +865,33 @@ class XrayVpnService : VpnService() {
         settings: com.mallocgfw.app.model.AppSettings,
     ): String? {
         return when (settings.dnsMode) {
-            AppDnsMode.System -> resolveSystemDns(context)?.let { "$it:53" } ?: "$DEFAULT_REMOTE_DNS:53"
-            AppDnsMode.Remote -> "$DEFAULT_REMOTE_DNS:53"
-            AppDnsMode.Custom -> settings.customDnsValue.trim().takeIf { it.isNotBlank() }?.let { value ->
-                if (":" in value) value else "$value:53"
-            }
+            AppDnsMode.System -> dnsEndpointOf(resolveSystemDns(context) ?: DEFAULT_REMOTE_DNS)
+            AppDnsMode.Remote -> dnsEndpointOf(DEFAULT_REMOTE_DNS)
+            AppDnsMode.Custom -> settings.customDnsValue.trim().takeIf { it.isNotBlank() }?.let(::dnsEndpointOf)
         }
+    }
+
+    /**
+     * libXray's SetDNS only accepts IP endpoints such as `8.8.8.8:53` or
+     * `[2001:4860:4860::8888]:53`, so bare IPv6 literals need brackets.
+     */
+    private fun dnsEndpointOf(value: String): String {
+        val trimmed = value.trim()
+        return when {
+            trimmed.startsWith("[") -> if ("]:" in trimmed) trimmed else "$trimmed:53"
+            trimmed.count { it == ':' } > 1 -> "[$trimmed]:53"
+            ":" in trimmed -> trimmed
+            else -> "$trimmed:53"
+        }
+    }
+
+    private fun installProcessDns(endpoint: String) {
+        // DNS for app-level Go lookups is best-effort: a bad custom value must
+        // not abort the tunnel, Xray itself still resolves through its outbounds.
+        runCatching { LibXray.setDNS(dialerController, endpoint) }
+            .onFailure { error ->
+                AppLogManager.append(applicationContext, TAG, "进程 DNS 设置失败（$endpoint）：${error.message}")
+            }
     }
 
     private suspend fun resolveSystemDns(context: Context): String? {

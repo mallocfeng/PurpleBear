@@ -6,13 +6,13 @@ under its own license.
 ## mihomo
 
 - Project: MetaCubeX/mihomo
-- Version: v1.19.24
+- Version: v1.19.34
 - License: GNU General Public License v3.0 only
-- Source: https://github.com/MetaCubeX/mihomo/tree/v1.19.24
-- Release asset: `mihomo-android-arm64-v8-v1.19.24.gz`
-- Release asset SHA-256: `e45a0b18ea3554cf7f322b59cf2dd21f3e4879dd2db657cbba6a557235e33115`
+- Source: https://github.com/MetaCubeX/mihomo/tree/v1.19.34
+- Release asset: `mihomo-android-arm64-v8-v1.19.34.gz`
+- Release asset SHA-256: `48a71fc6a68e2909587176e0ab7185d8f2fac298fa96ccdacf30ea86ab2359b5`
 - Packaged binary path: `app/src/main/jniLibs/arm64-v8a/libmihomo.so`
-- Packaged binary SHA-256: `5915d69c8440267158d7b9fbcb4089d522a3d66e86482dd121200e614c1af68f`
+- Packaged binary SHA-256: `1369bebba2b7a6fe971fe6ece0cb5aa18c81e49c89dd8340f43e5e7583d3da36`
 
 PurpleBear uses mihomo as an independent sidecar process for SSR /
 ShadowsocksR compatibility. PurpleBear communicates with it through a local
@@ -31,30 +31,27 @@ above.
 
 - Project: XTLS/Xray-core
 - Binding project: XTLS/libXray
-- libXray version: v26.3.27 (`38ae3cd8914d5bc2a7f81122fc6206efe3c07ad6`)
-- Xray-core baseline: v1.260327.0 (`d2758a02`)
-- Applied upstream fix: `6a1a13b797d55125bd2d2a9c535076a40cabfd7f`
+- libXray version: v26.11.9 (`5a0f7d8d1c28b34afb5727b04b26a10f6dbac7e3`)
+- Xray-core version: v26.11.9 (`676eaf66f8f0`)
 - libXray license: MIT
 - Xray-core license: Mozilla Public License 2.0
-- Binding source: https://github.com/XTLS/libXray/tree/v26.3.27
-- Source: https://github.com/XTLS/Xray-core
-- Fix source: https://github.com/XTLS/Xray-core/commit/6a1a13b797d55125bd2d2a9c535076a40cabfd7f
+- Binding source: https://github.com/XTLS/libXray/tree/v26.11.9
+- Source: https://github.com/XTLS/Xray-core/tree/v26.11.9
 - Packaged AAR path: `app/libs/libXray.aar`
-- Packaged AAR SHA-256: `2c430e6902adb3fd72d418c15e18dea59c1b4a8657e53a687d3fb9a3d5baed76`
+- Packaged AAR SHA-256: `97e41cf2e829a779b992d9fa3a14e161c1c6b027c171e8ccfe3c29fb2cfc8520`
 
 PurpleBear uses Xray as its main proxy core. See the upstream project for
-source code and license details. The packaged AAR keeps the current core
-baseline and applies the upstream TUN shutdown fix so that stopping an
-always-on inbound closes both the gVisor stack and the Android TUN interface.
-It was built with Go 1.26.0 and `golang.org/x/mobile` at
-`2cfb76559b7b`, with 16 KiB ELF load-segment alignment.
+source code and license details. The packaged AAR is an unmodified upstream
+build (arm64-v8a only, Android API 26). It was built with Go 1.27.4 and
+`golang.org/x/mobile` at `197770444867` via `gomobile bind -trimpath`,
+with 16 KiB ELF load-segment alignment.
 
 ## Tailscale
 
 - Project: Tailscale
-- Version: v1.98.8
+- Version: v1.104.7
 - License: BSD 3-Clause
-- Source: https://github.com/tailscale/tailscale/tree/v1.98.8
+- Source: https://github.com/tailscale/tailscale/tree/v1.104.7
 - Packaged bridge paths:
   - `app/src/main/jniLibs/arm64-v8a/libtailscalebridge.so`
   - `app/src/main/jniLibs/arm64-v8a/libtailscalebridgejni.so`
@@ -67,3 +64,11 @@ with Tailnet routing. The BSD 3-Clause license text is included in:
 
 - `LICENSES/Tailscale-BSD-3-Clause.txt`
 - `app/src/main/assets/licenses/Tailscale-BSD-3-Clause.txt`
+
+## Geo data
+
+- geoip.dat: v2fly/geoip `202611080027`
+  (SHA-256 `eedb24b3b9fcba27e06b92c0428dab90d9496083091ae4cf39e11387fd99d0e2`)
+- geosite.dat: v2fly/domain-list-community `20261118141523` (`dlc.dat`)
+  (SHA-256 `a033da583af17f15c9743f0b29aa5c073e9c1b8018a99ab4e69bc9ed5248a086`)
+- Packaged path: `app/src/main/assets/xray/arm64-v8a/`

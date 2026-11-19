@@ -13,24 +13,40 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ResourceFetchClientTest {
+    private val endpoint = LocalProxyEndpoint(port = 43_210, username = "user", password = "secret")
+
     @Test
     fun localProxyIsSelectedOnlyWhenItsInboundIsAvailable() {
-        assertNull(ResourceFetchClient.localHttpProxyOrNull(proxyAvailable = false, coreRunning = false))
+        assertNull(ResourceFetchClient.localHttpProxyOrNull(endpoint, proxyAvailable = false, coreRunning = false))
 
-        val proxy = ResourceFetchClient.localHttpProxyOrNull(proxyAvailable = true, coreRunning = false)
+        val proxy = ResourceFetchClient.localHttpProxyOrNull(endpoint, proxyAvailable = true, coreRunning = false)
         assertNotNull(proxy)
         assertEquals(Proxy.Type.HTTP, proxy?.type())
         val address = proxy?.address() as InetSocketAddress
         assertEquals("127.0.0.1", address.hostString)
-        assertEquals(XrayConfigFactory.HTTP_PORT, address.port)
+        assertEquals(endpoint.port, address.port)
     }
 
     @Test
     fun runningCoreFailsClosedThroughLocalProxyWhenProbeRaces() {
-        val proxy = ResourceFetchClient.localHttpProxyOrNull(proxyAvailable = false, coreRunning = true)
+        val proxy = ResourceFetchClient.localHttpProxyOrNull(endpoint, proxyAvailable = false, coreRunning = true)
 
         assertNotNull(proxy)
         assertEquals(Proxy.Type.HTTP, proxy?.type())
+    }
+
+    @Test
+    fun appRequestsUseTheAuthenticatedSocksInbound() {
+        val proxy = ResourceFetchClient.localAppProxyOrNull(endpoint, proxyAvailable = true, coreRunning = false)
+
+        assertEquals(Proxy.Type.SOCKS, proxy?.type())
+        assertEquals(endpoint.port, (proxy?.address() as InetSocketAddress).port)
+        assertNull(ResourceFetchClient.localAppProxyOrNull(endpoint, proxyAvailable = false, coreRunning = false))
+    }
+
+    @Test
+    fun noAllocatedProxyMeansDirectConnection() {
+        assertNull(ResourceFetchClient.localHttpProxyOrNull(endpoint = null, proxyAvailable = true, coreRunning = true))
     }
 
     @Test
@@ -41,13 +57,15 @@ class ResourceFetchClientTest {
                 port = 443,
                 connectTimeoutMs = 2_000,
                 readTimeoutMs = 2_000,
-                proxyAddress = proxyAddress,
+                proxy = endpoint.copy(port = proxyAddress.port),
             ).use { socket ->
                 assertTrue(socket.isConnected)
             }
 
             assertEquals("CONNECT subscription.example:443 HTTP/1.1", request.get()?.firstOrNull())
             assertTrue(request.get().orEmpty().contains("Host: subscription.example:443"))
+            // Basic base64("user:secret")
+            assertTrue(request.get().orEmpty().contains("Proxy-Authorization: Basic dXNlcjpzZWNyZXQ="))
         }
     }
 
@@ -60,7 +78,7 @@ class ResourceFetchClientTest {
                     port = 443,
                     connectTimeoutMs = 2_000,
                     readTimeoutMs = 2_000,
-                    proxyAddress = proxyAddress,
+                    proxy = endpoint.copy(port = proxyAddress.port),
                 )
             }.exceptionOrNull()
 

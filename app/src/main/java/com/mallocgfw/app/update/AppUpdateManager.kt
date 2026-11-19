@@ -7,12 +7,9 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
-import com.mallocgfw.app.xray.XrayConfigFactory
+import com.mallocgfw.app.xray.ResourceFetchClient
 import java.io.File
 import java.net.HttpURLConnection
-import java.net.InetSocketAddress
-import java.net.Proxy
-import java.net.Socket
 import java.net.URL
 import java.security.MessageDigest
 import java.time.LocalDate
@@ -219,11 +216,7 @@ object AppUpdateManager {
     }
 
     private fun openMetadataConnection(url: String): HttpURLConnection {
-        val connection = if (isLocalProxyAvailable()) {
-            URL(url).openConnection(localProxy())
-        } else {
-            URL(url).openConnection()
-        } as HttpURLConnection
+        val connection = openConnection(url)
         return connection.apply {
             requestMethod = "GET"
             connectTimeout = CONNECT_TIMEOUT_MS
@@ -256,8 +249,11 @@ object AppUpdateManager {
 
     private fun openConnection(url: String): HttpURLConnection {
         val target = URL(url)
-        return if (isLocalProxyAvailable()) {
-            target.openConnection(localProxy())
+        // Reuse the running core's authenticated local proxy when it is up;
+        // otherwise connect directly.
+        val localProxy = ResourceFetchClient.localAppProxyOrNull(coreRunning = false)
+        return if (localProxy != null) {
+            target.openConnection(localProxy)
         } else {
             target.openConnection()
         } as HttpURLConnection
@@ -330,24 +326,6 @@ object AppUpdateManager {
             context.packageManager.getPackageArchiveInfo(file.absolutePath, 0)
         }
         return archiveInfo?.packageName == context.packageName
-    }
-
-    private fun isLocalProxyAvailable(): Boolean {
-        return runCatching {
-            Socket().use { socket ->
-                socket.connect(
-                    InetSocketAddress("127.0.0.1", XrayConfigFactory.HTTP_PORT),
-                    500,
-                )
-            }
-        }.isSuccess
-    }
-
-    private fun localProxy(): Proxy {
-        return Proxy(
-            Proxy.Type.HTTP,
-            InetSocketAddress("127.0.0.1", XrayConfigFactory.HTTP_PORT),
-        )
     }
 
     private fun sanitizeFileName(name: String): String {

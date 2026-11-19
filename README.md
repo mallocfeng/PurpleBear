@@ -200,6 +200,14 @@ app/build/outputs/apk/release/app-release.apk
 
 5. Tailscale 入口和设置页标记为 `(beta)`；更新版本号到 `0.7.0`，`versionCode` 更新为 `274`。
 
+6. 应用更新改为在应用内下载 GitHub Release 的 APK：优先复用本地代理，未运行代理时自动直连；下载完成后交给系统安装器完成升级。
+
+7. 升级开源组件：Xray-core / libXray 升级到 `v26.11.9`（含 2026-10 根证书与 MPTCP 安全修复），mihomo 升级到 `v1.19.34`，Tailscale 升级到 `v1.104.7`，并更新内置 geoip / geosite 数据；构建工具升级到 AGP 9.5.1、Gradle 9.9.1、Kotlin 2.4.21、Compose BOM 2026.11.01。
+
+8. 适配新版 Xray：内核已移除 `allowInsecure`（跳过证书校验），旧节点会自动去掉该字段并改为正常校验证书；自签证书节点可在节点编辑中填写证书 SHA-256 指纹（`pcs`）或按名称校验证书（`vcn`），分享链接中的 `pcs` / `vcn` / Hysteria2 `pinSHA256` 与 Clash `fingerprint` 会自动导入。WebSocket 的 Host 改用独立 `host` 字段；Shadowsocks UoT 已被内核移除，相关选项不再显示。
+
+9. 本地代理端口改为每次启动随机分配并强制认证：Xray 的 SOCKS / HTTP 入站和 SSR 使用的 mihomo 端口不再固定在 `10808` / `10809` / `17891`，每次连接都会生成新的端口和随机账号密码，其他应用无法再借用本地代理绕过分应用设置或探测出口 IP。应用自身的订阅、规则、Geo、测速和更新请求会自动带上认证。
+
 ## 版本 0.6.13 更新
 
 1. 修复 Xray 未真正进入运行状态时 VPN 仍可能显示已连接的问题；现在会同时确认内核运行状态和本地 HTTP 入站可用性，失败时停止内核并关闭本次连接。

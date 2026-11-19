@@ -23,6 +23,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedButton
@@ -251,23 +252,6 @@ internal fun LocalNodeBuilderScreen(
                             onValueChange = { onDraftChange(draft.copy(password = it)) },
                             placeholder = "例如 super-secret-key",
                         )
-                        if (advancedExpanded) {
-                            Spacer(modifier = Modifier.height(12.dp))
-                            BooleanSettingRow(
-                                title = "UDP over TCP",
-                                subtitle = "旧机场或特殊链路需要时再打开。默认关闭。",
-                                checked = draft.shadowsocksUot,
-                                onCheckedChange = { onDraftChange(draft.copy(shadowsocksUot = it)) },
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            BuilderTextField(
-                                label = "UoT 版本",
-                                value = draft.shadowsocksUotVersion,
-                                onValueChange = { onDraftChange(draft.copy(shadowsocksUotVersion = it)) },
-                                placeholder = "默认 2",
-                                helper = "可留空。通常保持 2。",
-                            )
-                        }
                     }
 
                     LocalNodeProtocol.SHADOWSOCKSR -> {
@@ -508,11 +492,24 @@ internal fun LocalNodeBuilderScreen(
                             helper = "可留空。多个值用逗号分隔。",
                         )
                         Spacer(modifier = Modifier.height(12.dp))
-                        BooleanSettingRow(
-                            title = "跳过证书校验",
-                            subtitle = "不推荐。只有你确认上游证书异常但仍可信时再打开。",
-                            checked = draft.allowInsecure,
-                            onCheckedChange = { onDraftChange(draft.copy(allowInsecure = it)) },
+                        BuilderTextField(
+                            label = "证书 SHA-256 指纹",
+                            value = draft.pinnedPeerCertSha256,
+                            onValueChange = { onDraftChange(draft.copy(pinnedPeerCertSha256 = it, allowInsecure = false)) },
+                            placeholder = "64 位十六进制，多个用逗号分隔",
+                            helper = if (draft.allowInsecure && draft.pinnedPeerCertSha256.isBlank()) {
+                                "该节点原本设置了“跳过证书校验”，新版内核已不再支持，现在会正常校验证书。自签证书请填写证书指纹。"
+                            } else {
+                                "可留空。自签证书节点填写服务器证书指纹后即可连接（替代旧的“跳过证书校验”）。"
+                            },
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        BuilderTextField(
+                            label = "按名称校验证书",
+                            value = draft.verifyPeerCertByName,
+                            onValueChange = { onDraftChange(draft.copy(verifyPeerCertByName = it)) },
+                            placeholder = "例如 cdn.example.com",
+                            helper = "可留空。证书域名与 SNI 不同时填写，多个用逗号分隔。",
                         )
                     }
                 }
@@ -711,7 +708,7 @@ internal fun <T> BuilderDropdownField(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 52.dp)
-                .menuAnchor(),
+                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
             shape = RoundedCornerShape(14.dp),
             colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = SurfaceHigh,

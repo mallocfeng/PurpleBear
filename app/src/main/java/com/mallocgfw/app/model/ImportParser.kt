@@ -244,6 +244,17 @@ object ImportParser {
         return !(hasSignature && hasExpiry)
     }
 
+    /**
+     * Clash/mihomo `fingerprint` pins the server certificate by SHA-256,
+     * which maps to Xray's pinnedPeerCertSha256. Ignore values that are not
+     * a SHA-256 hex digest (some configs misuse it for uTLS fingerprints).
+     */
+    private fun Map<*, *>.clashCertificatePin(): String {
+        val value = string("fingerprint")?.trim().orEmpty().replace(":", "")
+        return value.takeIf { it.length == 64 && it.all { ch -> ch.isDigit() || ch.lowercaseChar() in 'a'..'f' } }
+            .orEmpty()
+    }
+
     private fun selectSubscriptionRequestProfile(sourceUrl: String): ResourceFetchClient.RequestProfile {
         val uri = runCatching { URI(sourceUrl) }.getOrNull() ?: return ResourceFetchClient.RequestProfile.DEFAULT
         val query = parseQuery(uri.rawQuery)
@@ -650,6 +661,7 @@ object ImportParser {
             fingerprint = item.string("client-fingerprint").orEmpty(),
             alpn = item.csv("alpn"),
             allowInsecure = item.boolLike("skip-cert-verify") == true,
+            pinnedPeerCertSha256 = item.clashCertificatePin(),
             realityPublicKey = reality?.string("public-key").orEmpty(),
             realityShortId = reality?.string("short-id").orEmpty(),
         )
@@ -679,6 +691,7 @@ object ImportParser {
             fingerprint = item.string("client-fingerprint").orEmpty(),
             alpn = item.csv("alpn"),
             allowInsecure = item.boolLike("skip-cert-verify") == true,
+            pinnedPeerCertSha256 = item.clashCertificatePin(),
             realityPublicKey = reality?.string("public-key").orEmpty(),
             realityShortId = reality?.string("short-id").orEmpty(),
         )
@@ -701,6 +714,7 @@ object ImportParser {
             fingerprint = item.string("client-fingerprint").orEmpty(),
             alpn = item.csv("alpn"),
             allowInsecure = item.boolLike("skip-cert-verify") == true,
+            pinnedPeerCertSha256 = item.clashCertificatePin(),
         )
     }
 
@@ -724,6 +738,7 @@ object ImportParser {
             security = if (tls || item.boolLike("tls") == true) LocalNodeSecurity.TLS else LocalNodeSecurity.NONE,
             serverName = item.string("servername").orEmpty(),
             allowInsecure = item.boolLike("skip-cert-verify") == true,
+            pinnedPeerCertSha256 = item.clashCertificatePin(),
         )
     }
 
@@ -736,6 +751,7 @@ object ImportParser {
             serverName = item.string("sni").orEmpty(),
             alpn = item.csv("alpn"),
             allowInsecure = item.boolLike("skip-cert-verify") == true,
+            pinnedPeerCertSha256 = item.clashCertificatePin(),
         )
     }
 

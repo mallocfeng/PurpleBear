@@ -75,10 +75,12 @@ object NodeLatencyTester {
             error("当前已连接 VPN，这类节点请先断开当前连接后再检测。")
         }
         val startedAt = System.nanoTime()
-        val snapshot = XrayCoreManager.start(context, node).getOrElse { throw it }
-        val socksPort = snapshot.localSocksPort ?: XrayConfigFactory.SOCKS_PORT
+        XrayCoreManager.start(context, node).getOrElse { throw it }
         return try {
-            val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", socksPort))
+            // Authenticated SOCKS inbound of the temporary core; the JDK SOCKS
+            // client gets credentials from LocalProxyRuntime's scoped Authenticator.
+            val proxy = LocalProxyRuntime.current()?.socks?.socksProxy()
+                ?: error("临时 Xray 的本地代理未就绪。")
             val connection = (URL(PROXY_PROBE_URL).openConnection(proxy) as HttpsURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = CONNECT_TIMEOUT_MS

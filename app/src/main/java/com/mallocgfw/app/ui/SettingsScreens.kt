@@ -27,7 +27,7 @@ import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Sync
-import androidx.compose.material.ripple.rememberRipple
+import androidx.compose.material3.ripple
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
@@ -1022,7 +1022,7 @@ internal fun MediaRoutingGroupCard(
                     .clip(headerShape)
                     .indication(
                         interactionSource = interactionSource,
-                        indication = rememberRipple(bounded = true),
+                        indication = ripple(bounded = true),
                     ),
             )
             Row(

@@ -1,9 +1,12 @@
 package com.mallocgfw.app.model
 
+import com.mallocgfw.app.xray.LocalProxyEndpoint
+import com.mallocgfw.app.xray.LocalProxyRuntime
 import java.net.URLDecoder
 import java.util.Base64
 import org.json.JSONObject
 
+/** Placeholder port for SSR outbound previews; real runs use a random port. */
 const val SSR_LOCAL_SOCKS_PORT = 17891
 
 data class SsrEndpoint(
@@ -103,11 +106,16 @@ object SsrLinkCodec {
 }
 
 object SsrMihomoConfigFactory {
-    fun buildConfig(endpoint: SsrEndpoint, socksPort: Int = SSR_LOCAL_SOCKS_PORT): String {
+    fun buildConfig(endpoint: SsrEndpoint, listener: LocalProxyEndpoint): String {
         return buildString {
-            appendLine("mixed-port: $socksPort")
+            appendLine("mixed-port: ${listener.port}")
             appendLine("allow-lan: false")
-            appendLine("bind-address: 127.0.0.1")
+            appendLine("bind-address: ${yamlQuote(listener.host)}")
+            // Require credentials from every client, loopback included, so other
+            // apps on the device cannot reuse the SSR sidecar.
+            appendLine("authentication:")
+            appendLine("  - ${yamlQuote("${listener.username}:${listener.password}")}")
+            appendLine("skip-auth-prefixes: []")
             appendLine("mode: global")
             appendLine("log-level: warning")
             appendLine("ipv6: true")
@@ -137,14 +145,22 @@ object SsrMihomoConfigFactory {
         }
     }
 
-    fun localSocksOutbound(): JSONObject {
+    /**
+     * With [listener] null this is the credential-free placeholder stored in
+     * the node; XrayConfigFactory swaps in the run's authenticated listener.
+     */
+    fun localSocksOutbound(listener: LocalProxyEndpoint? = null): JSONObject {
         return JSONObject().apply {
             put("protocol", "socks")
             put(
                 "settings",
                 JSONObject().apply {
-                    put("address", "127.0.0.1")
-                    put("port", SSR_LOCAL_SOCKS_PORT)
+                    put("address", listener?.host ?: LocalProxyRuntime.LOOPBACK_HOST)
+                    put("port", listener?.port ?: SSR_LOCAL_SOCKS_PORT)
+                    if (listener != null) {
+                        put("user", listener.username)
+                        put("pass", listener.password)
+                    }
                 },
             )
         }

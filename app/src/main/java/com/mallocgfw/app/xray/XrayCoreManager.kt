@@ -2,7 +2,6 @@ package com.mallocgfw.app.xray
 
 import android.content.Context
 import android.os.Build
-import android.util.Base64
 import android.util.Log
 import com.mallocgfw.app.model.AppStateStore
 import com.mallocgfw.app.model.ServerNode
@@ -40,6 +39,9 @@ data class XrayCoreSnapshot(
 
 object XrayCoreManager {
     private const val TAG = "XrayCoreManager"
+    private const val LIBXRAY_API_VERSION = 3
+    private const val ENV_ASSET_LOCATION = "xray.location.asset"
+    private const val ENV_TUN_FD = "xray.tun.fd"
     private val coreLock = Any()
     private val _snapshot = MutableStateFlow(XrayCoreSnapshot())
     val snapshot: StateFlow<XrayCoreSnapshot> = _snapshot.asStateFlow()
@@ -48,14 +50,12 @@ object XrayCoreManager {
         withContext(Dispatchers.IO) {
             XrayNativeLoader.ensureLoaded()
             val prepared = prepareRuntime(context)
-            val version = decodeStringResponse(LibXray.xrayVersion()) ?: "Xray"
+            val version = xrayVersion()
             _snapshot.value = XrayCoreSnapshot(
                 status = XrayCoreStatus.Ready,
                 abi = prepared.assetAbi,
                 version = version,
                 message = "官方 Xray 内核已就绪",
-                localSocksPort = XrayConfigFactory.SOCKS_PORT,
-                localHttpPort = XrayConfigFactory.HTTP_PORT,
             )
         }
     }
@@ -79,7 +79,7 @@ object XrayCoreManager {
             server = server,
             message = "正在启动 Xray 内核…",
             tunFd = null,
-        ) {
+        ) { localProxy ->
             val state = AppStateStore.load(context)
             val settings = state.settings
             XrayConfigFactory.build(
@@ -93,6 +93,7 @@ object XrayCoreManager {
                 globalProxyEnabled = settings.globalProxyEnabled,
                 geoRoutingRegion = settings.geoRoutingRegion,
                 tailscale = TailscaleRuntimeManager.snapshot.value.routing(settings),
+                localProxy = localProxy,
             )
         }
     }
@@ -110,7 +111,7 @@ object XrayCoreManager {
             server = server,
             message = "正在建立系统 VPN 隧道…",
             tunFd = tunFd,
-        ) {
+        ) { localProxy ->
             val state = AppStateStore.load(context)
             val settings = state.settings
             XrayConfigFactory.buildVpn(
@@ -125,6 +126,7 @@ object XrayCoreManager {
                 globalProxyEnabled = settings.globalProxyEnabled,
                 geoRoutingRegion = settings.geoRoutingRegion,
                 tailscale = TailscaleRuntimeManager.snapshot.value.routing(settings),
+                localProxy = localProxy,
             )
         }
     }
@@ -134,46 +136,48 @@ object XrayCoreManager {
         server: ServerNode,
         message: String,
         tunFd: Int?,
-        buildConfigJson: () -> String,
+        buildConfigJson: (LocalProxyAllocation) -> String,
     ): Result<XrayCoreSnapshot> {
         return withContext(Dispatchers.IO) {
             try {
                 XrayNativeLoader.ensureLoaded()
                 val prepared = prepareRuntime(context)
                 val datDir = prepared.runtimeDir.absolutePath
-                val configJson = buildConfigJson()
-                SsrRuntimeManager.startIfNeeded(context, server).getOrElse { throw it }
+                // Fresh random ports and credentials for every run; see LocalProxyRuntime.
+                val localProxy = LocalProxyRuntime.allocate(::freePortsFromCore)
+                val configJson = buildConfigJson(localProxy)
+                SsrRuntimeManager.startIfNeeded(context, server, localProxy.ssr).getOrElse { throw it }
                 _snapshot.value = _snapshot.value.copy(
                     status = XrayCoreStatus.Starting,
                     message = message,
                     activeServerName = server.name,
                 )
+                val runtimeConfigJson = withRuntimeEnv(configJson, datDir, tunFd)
                 val response = synchronized(coreLock) {
                     stopInternal()
-                    if (tunFd != null) {
-                        LibXray.setTunFd(tunFd)
-                    }
-                    val request = LibXray.newXrayRunFromJSONRequest(datDir, "", configJson)
-                    decodeResponse(LibXray.runXrayFromJSON(request))
+                    invoke(
+                        method = "runXray",
+                        payload = JSONObject().put("xrayJson", runtimeConfigJson),
+                    )
                 }
                 if (!response.success) {
                     val failureMessage = response.error ?: "Xray 启动失败。"
                     Log.e(TAG, "Unable to start Xray: $failureMessage")
                     SsrRuntimeManager.stopNow()
+                    LocalProxyRuntime.clear()
                     _snapshot.value = _snapshot.value.copy(
                         status = XrayCoreStatus.Failed,
                         abi = prepared.assetAbi,
-                        version = decodeStringResponse(LibXray.xrayVersion()) ?: "Xray",
+                        version = xrayVersion(),
                         message = failureMessage,
                         activeServerName = null,
                     )
                     return@withContext Result.failure(IllegalStateException(failureMessage))
                 }
 
-                // libXray.runXrayFromJSON returns once the boot routine has been kicked
-                // off; give it a brief settle window outside of coreLock and then verify
-                // the core is actually running and its local HTTP inbound is accepting
-                // connections. The HTTP inbound is also the safe egress path for app-level
+                // libXray's runXray returns after core.Start(); still verify outside
+                // of coreLock that the core reports running and its local HTTP inbound
+                // is accepting connections. The HTTP inbound is also the safe egress path for app-level
                 // resource refreshes while PurpleBear itself is excluded from the VPN.
                 val isRunning = waitForRunningState()
                 if (!isRunning) {
@@ -183,10 +187,11 @@ object XrayCoreManager {
                         stopInternal()
                     }
                     SsrRuntimeManager.stopNow()
+                    LocalProxyRuntime.clear()
                     _snapshot.value = _snapshot.value.copy(
                         status = XrayCoreStatus.Failed,
                         abi = prepared.assetAbi,
-                        version = decodeStringResponse(LibXray.xrayVersion()) ?: "Xray",
+                        version = xrayVersion(),
                         message = failureMessage,
                         activeServerName = null,
                     )
@@ -196,14 +201,14 @@ object XrayCoreManager {
                 val snapshot = XrayCoreSnapshot(
                     status = XrayCoreStatus.Running,
                     abi = prepared.assetAbi,
-                    version = decodeStringResponse(LibXray.xrayVersion()) ?: "Xray",
+                    version = xrayVersion(),
                     message = if (tunFd == null) {
-                        "Xray 已启动，本地 SOCKS ${XrayConfigFactory.SOCKS_PORT} / HTTP ${XrayConfigFactory.HTTP_PORT}"
+                        "Xray 已启动，本地 SOCKS ${localProxy.socks.port} / HTTP ${localProxy.http.port}（需认证）"
                     } else {
                         "系统 VPN 已建立，Xray 正在运行"
                     },
-                    localSocksPort = XrayConfigFactory.SOCKS_PORT,
-                    localHttpPort = XrayConfigFactory.HTTP_PORT,
+                    localSocksPort = localProxy.socks.port,
+                    localHttpPort = localProxy.http.port,
                     activeServerName = server.name,
                 )
                 _snapshot.value = snapshot
@@ -213,6 +218,7 @@ object XrayCoreManager {
             } catch (error: Throwable) {
                 Log.e(TAG, "Unable to start Xray", error)
                 SsrRuntimeManager.stopNow()
+                LocalProxyRuntime.clear()
                 _snapshot.value = _snapshot.value.copy(
                     status = XrayCoreStatus.Failed,
                     message = error.message ?: "Xray 启动失败。",
@@ -234,6 +240,7 @@ object XrayCoreManager {
             stopInternal()
         }
         SsrRuntimeManager.stopNow()
+        LocalProxyRuntime.clear()
         _snapshot.value = _snapshot.value.copy(
             status = if (_snapshot.value.version == null) XrayCoreStatus.Idle else XrayCoreStatus.Ready,
             message = "Xray 已停止",
@@ -282,34 +289,80 @@ object XrayCoreManager {
         intervalMs: Long = 60L,
     ): Boolean {
         repeat(attempts) {
-            val running = synchronized(coreLock) { LibXray.getXrayState() }
+            val running = synchronized(coreLock) { isXrayRunning() }
             if (running && ResourceFetchClient.isLocalHttpProxyAvailable()) return true
             delay(intervalMs)
         }
-        val running = synchronized(coreLock) { LibXray.getXrayState() }
+        val running = synchronized(coreLock) { isXrayRunning() }
         return running && ResourceFetchClient.isLocalHttpProxyAvailable()
     }
 
     private fun stopInternal() {
         val startedAt = System.currentTimeMillis()
-        val response = decodeResponse(LibXray.stopXray())
-        Log.d(TAG, "LibXray.stopXray() finished in ${System.currentTimeMillis() - startedAt} ms")
+        val response = invoke("stopXray")
+        Log.d(TAG, "libXray stopXray finished in ${System.currentTimeMillis() - startedAt} ms")
         if (!response.success && !response.error.isNullOrBlank()) {
             Log.w(TAG, "StopXray returned error: ${response.error}")
         }
     }
 
-    private fun decodeStringResponse(encoded: String): String? {
-        return decodeResponse(encoded).data?.takeIf { it.isNotBlank() }
+    /** libXray API v3 getFreePorts, falling back to a JVM probe if it fails. */
+    private fun freePortsFromCore(count: Int, excluded: List<Int>): List<Int> {
+        val response = invoke(
+            method = "getFreePorts",
+            payload = JSONObject().apply {
+                put("count", count)
+                put("excludePorts", org.json.JSONArray(excluded))
+            },
+        )
+        val ports = response.data?.optJSONArray("ports")
+            ?.let { array -> List(array.length()) { array.optInt(it) } }
+            .orEmpty()
+        if (response.success && ports.size == count) return ports
+        Log.w(TAG, "getFreePorts failed (${response.error}); using JVM port probe")
+        return LocalProxyRuntime.pickFreePorts(count, excluded)
     }
 
-    private fun decodeResponse(encoded: String): LibXrayCallResponse {
+    private fun isXrayRunning(): Boolean {
+        return invoke("getXrayState").data?.optBoolean("running", false) == true
+    }
+
+    private fun xrayVersion(): String {
+        return invoke("xrayVersion").data
+            ?.optString("version")
+            ?.takeIf { it.isNotBlank() }
+            ?.let { "Xray $it" }
+            ?: "Xray"
+    }
+
+    /**
+     * libXray (API v3) no longer takes datDir / TUN fd as call arguments.
+     * Xray-core applies the top-level `env` map before building inbounds, so
+     * the geo asset directory and the Android TUN descriptor travel inside
+     * the config itself.
+     */
+    internal fun withRuntimeEnv(configJson: String, datDir: String, tunFd: Int?): String {
+        val config = JSONObject(configJson)
+        val env = config.optJSONObject("env") ?: JSONObject()
+        env.put(ENV_ASSET_LOCATION, datDir)
+        if (tunFd != null) {
+            env.put(ENV_TUN_FD, tunFd.toString())
+        }
+        config.put("env", env)
+        return config.toString()
+    }
+
+    private fun invoke(method: String, payload: JSONObject? = null): LibXrayCallResponse {
+        val request = JSONObject().apply {
+            put("apiVersion", LIBXRAY_API_VERSION)
+            put("method", method)
+            payload?.let { put("payload", it) }
+        }
         return runCatching {
-            val decoded = String(Base64.decode(encoded, Base64.DEFAULT))
-            val json = JSONObject(decoded)
+            val json = JSONObject(LibXray.invoke(request.toString()))
             LibXrayCallResponse(
                 success = json.optBoolean("success", false),
-                data = json.optString("data").takeIf { it.isNotBlank() },
+                data = json.optJSONObject("data"),
                 error = json.optString("error").takeIf { it.isNotBlank() },
             )
         }.getOrElse { error ->
@@ -324,7 +377,7 @@ object XrayCoreManager {
 
     private data class LibXrayCallResponse(
         val success: Boolean,
-        val data: String? = null,
+        val data: JSONObject? = null,
         val error: String? = null,
     )
 }

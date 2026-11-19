@@ -17,14 +17,19 @@ object SsrRuntimeManager {
     private var process: Process? = null
     private var activeConfigKey: String? = null
 
-    suspend fun startIfNeeded(context: Context, server: ServerNode): Result<Unit> {
+    suspend fun startIfNeeded(
+        context: Context,
+        server: ServerNode,
+        listener: LocalProxyEndpoint,
+    ): Result<Unit> {
         return withContext(Dispatchers.IO) {
             val endpoint = ManualNodeFactory.ssrEndpointFromServer(server)
             if (endpoint == null) {
                 stopNow()
                 return@withContext Result.success(Unit)
             }
-            val configKey = endpoint.toString()
+            // Restart the sidecar whenever this run's port or credentials change.
+            val configKey = "$endpoint|${listener.port}|${listener.username}|${listener.password.hashCode()}"
             synchronized(runtimeLock) {
                 val currentProcess = process
                 if (activeConfigKey == configKey && currentProcess?.isAlive == true) {
@@ -35,7 +40,7 @@ object SsrRuntimeManager {
                     val runtimeDir = File(context.filesDir, "mihomo-runtime").apply { mkdirs() }
                     val binary = resolveNativeBinary(context)
                     val configFile = File(runtimeDir, "ssr.yaml").apply {
-                        writeText(SsrMihomoConfigFactory.buildConfig(endpoint))
+                        writeText(SsrMihomoConfigFactory.buildConfig(endpoint, listener))
                     }
                     val started = ProcessBuilder(
                         binary.absolutePath,

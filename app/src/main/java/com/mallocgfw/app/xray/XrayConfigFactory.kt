@@ -1,6 +1,7 @@
 package com.mallocgfw.app.xray
 
 import com.mallocgfw.app.model.ManualNodeFactory
+import com.mallocgfw.app.model.SsrMihomoConfigFactory
 import com.mallocgfw.app.model.AppGeoRoutingRegion
 import com.mallocgfw.app.model.AppLanguage
 import com.mallocgfw.app.model.RuleTargetPolicy
@@ -17,10 +18,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 object XrayConfigFactory {
-    const val SOCKS_PORT = 10808
-    const val HTTP_PORT = 10809
     const val DEFAULT_VPN_MTU = DEFAULT_APP_VPN_MTU
     private const val SPEED_TEST_INBOUND_TAG = "speedtest-http-in"
+    private const val APP_SOCKS_INBOUND_TAG = "app-socks-in"
     private val GOOGLE_PLAY_DOWNLOAD_DOMAINS = listOf(
         "android.clients.google.com",
         "google.com",
@@ -48,6 +48,7 @@ object XrayConfigFactory {
         globalProxyEnabled: Boolean = false,
         geoRoutingRegion: AppGeoRoutingRegion = AppGeoRoutingRegion.defaultForLanguage(AppLanguage.System),
         tailscale: TailscaleRouting? = null,
+        localProxy: LocalProxyAllocation = LocalProxyRuntime.current() ?: LocalProxyAllocation.ephemeral(),
     ): String {
         return JSONObject().apply {
             put(
@@ -61,16 +62,16 @@ object XrayConfigFactory {
             put(
                 "inbounds",
                 JSONArray().apply {
-                    put(socksInbound())
-                    put(httpInbound())
+                    put(socksInbound(localProxy.socks))
+                    put(httpInbound(localProxy.http))
                 },
             )
             put(
                 "outbounds",
                 JSONArray().apply {
-                    buildOutboundChain(node, "proxy", availableServers).forEach(::put)
+                    buildOutboundChain(node, "proxy", availableServers, localProxy).forEach(::put)
                     additionalOutbounds.forEach { outbound ->
-                        buildOutboundChain(outbound.node, outbound.tag, availableServers).forEach(::put)
+                        buildOutboundChain(outbound.node, outbound.tag, availableServers, localProxy).forEach(::put)
                     }
                     tailscale?.let { put(tailscaleOutbound(it)) }
                     put(JSONObject().apply {
@@ -116,6 +117,7 @@ object XrayConfigFactory {
         globalProxyEnabled: Boolean = false,
         geoRoutingRegion: AppGeoRoutingRegion = AppGeoRoutingRegion.defaultForLanguage(AppLanguage.System),
         tailscale: TailscaleRouting? = null,
+        localProxy: LocalProxyAllocation = LocalProxyRuntime.current() ?: LocalProxyAllocation.ephemeral(),
     ): String {
         val normalizedMtu = normalizedAppVpnMtu(vpnMtu)
         return JSONObject().apply {
@@ -141,15 +143,16 @@ object XrayConfigFactory {
                             put("sniffing", sniffing())
                         },
                     )
-                    put(httpInbound(SPEED_TEST_INBOUND_TAG))
+                    put(httpInbound(localProxy.http, SPEED_TEST_INBOUND_TAG))
+                    put(socksInbound(localProxy.socks, APP_SOCKS_INBOUND_TAG))
                 },
             )
             put(
                 "outbounds",
                 JSONArray().apply {
-                    buildOutboundChain(node, "proxy", availableServers).forEach(::put)
+                    buildOutboundChain(node, "proxy", availableServers, localProxy).forEach(::put)
                     additionalOutbounds.forEach { outbound ->
-                        buildOutboundChain(outbound.node, outbound.tag, availableServers).forEach(::put)
+                        buildOutboundChain(outbound.node, outbound.tag, availableServers, localProxy).forEach(::put)
                     }
                     tailscale?.let { put(tailscaleOutbound(it)) }
                     put(JSONObject().apply {
@@ -201,6 +204,7 @@ object XrayConfigFactory {
                     put("type", "field")
                     put("inboundTag", JSONArray().apply {
                         put(SPEED_TEST_INBOUND_TAG)
+                        put(APP_SOCKS_INBOUND_TAG)
                     })
                     put("outboundTag", "proxy")
                 },
@@ -395,16 +399,17 @@ object XrayConfigFactory {
         )
     }
 
-    private fun socksInbound(): JSONObject {
+    private fun socksInbound(endpoint: LocalProxyEndpoint, tag: String = "socks-in"): JSONObject {
         return JSONObject().apply {
-            put("tag", "socks-in")
-            put("listen", "127.0.0.1")
-            put("port", SOCKS_PORT)
+            put("tag", tag)
+            put("listen", endpoint.host)
+            put("port", endpoint.port)
             put("protocol", "socks")
             put(
                 "settings",
                 JSONObject().apply {
-                    put("auth", "noauth")
+                    put("auth", "password")
+                    put("accounts", JSONArray().put(endpoint.account()))
                     put("udp", true)
                 },
             )
@@ -412,12 +417,18 @@ object XrayConfigFactory {
         }
     }
 
-    private fun httpInbound(tag: String = "http-in"): JSONObject {
+    private fun httpInbound(endpoint: LocalProxyEndpoint, tag: String = "http-in"): JSONObject {
         return JSONObject().apply {
             put("tag", tag)
-            put("listen", "127.0.0.1")
-            put("port", HTTP_PORT)
+            put("listen", endpoint.host)
+            put("port", endpoint.port)
             put("protocol", "http")
+            put(
+                "settings",
+                JSONObject().apply {
+                    put("accounts", JSONArray().put(endpoint.account()))
+                },
+            )
             put("sniffing", sniffing())
         }
     }
@@ -433,8 +444,22 @@ object XrayConfigFactory {
         }
     }
 
-    private fun proxyOutbound(node: ServerNode, tag: String): JSONObject {
-        return ManualNodeFactory.buildOutboundConfig(node)?.apply {
+    private fun LocalProxyEndpoint.account(): JSONObject {
+        return JSONObject().apply {
+            put("user", username)
+            put("pass", password)
+        }
+    }
+
+    private fun proxyOutbound(node: ServerNode, tag: String, localProxy: LocalProxyAllocation): JSONObject {
+        // SSR runs in the mihomo sidecar; point the outbound at this run's
+        // authenticated loopback listener rather than a fixed port.
+        val outbound = if (ManualNodeFactory.isSsrNode(node)) {
+            SsrMihomoConfigFactory.localSocksOutbound(localProxy.ssr)
+        } else {
+            ManualNodeFactory.buildOutboundConfig(node)
+        }
+        return outbound?.apply {
             put("tag", tag)
         } ?: error("当前节点缺少可用的 Xray 出站配置。")
     }
@@ -443,9 +468,10 @@ object XrayConfigFactory {
         node: ServerNode,
         tag: String,
         availableServers: List<ServerNode>,
+        localProxy: LocalProxyAllocation,
         visitedNodeIds: Set<String> = emptySet(),
     ): List<JSONObject> {
-        val outbound = proxyOutbound(node, tag)
+        val outbound = proxyOutbound(node, tag, localProxy)
         val nextVisited = visitedNodeIds + node.id
         val preProxyNode = resolvePreProxyNode(
             node = node,
@@ -456,7 +482,7 @@ object XrayConfigFactory {
         attachDialerProxy(outbound, preProxyTag)
         return buildList {
             add(outbound)
-            addAll(buildOutboundChain(preProxyNode, preProxyTag, availableServers, nextVisited))
+            addAll(buildOutboundChain(preProxyNode, preProxyTag, availableServers, localProxy, nextVisited))
         }
     }
 

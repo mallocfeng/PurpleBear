@@ -27,7 +27,6 @@ object ResourceFetchClient {
     private const val MAX_REDIRECTS = 5
     private const val MAX_HEADER_BYTES = 64 * 1024
     private const val MAX_LINE_BYTES = 8 * 1024
-    private const val LOCAL_PROXY_HOST = "127.0.0.1"
     private const val LOCAL_PROXY_PROBE_TIMEOUT_MS = 500
     // Subscription / rule payloads are tiny in practice (kB-MB). Cap below the
     // old 64MB so a hostile or misbehaving server can't pin tens of megabytes
@@ -232,7 +231,7 @@ object ResourceFetchClient {
             port = port,
             connectTimeoutMs = connectTimeoutMs,
             readTimeoutMs = readTimeoutMs,
-            proxyAddress = localHttpProxyAddressOrNull(),
+            proxy = localHttpProxyEndpointOrNull(),
         )
         return try {
             val sslSocket = (SSLSocketFactory.getDefault() as SSLSocketFactory)
@@ -257,14 +256,14 @@ object ResourceFetchClient {
         port: Int,
         connectTimeoutMs: Int,
         readTimeoutMs: Int,
-        proxyAddress: InetSocketAddress?,
+        proxy: LocalProxyEndpoint?,
     ): Socket {
         val socket = Socket()
         return try {
             socket.soTimeout = readTimeoutMs
-            socket.connect(proxyAddress ?: InetSocketAddress(host, port), connectTimeoutMs)
-            if (proxyAddress != null) {
-                establishHttpConnectTunnel(socket, host, port)
+            socket.connect(proxy?.socketAddress() ?: InetSocketAddress(host, port), connectTimeoutMs)
+            if (proxy != null) {
+                establishHttpConnectTunnel(socket, host, port, proxy)
             }
             socket
         } catch (error: Throwable) {
@@ -273,11 +272,13 @@ object ResourceFetchClient {
         }
     }
 
-    private fun establishHttpConnectTunnel(socket: Socket, host: String, port: Int) {
+    private fun establishHttpConnectTunnel(socket: Socket, host: String, port: Int, proxy: LocalProxyEndpoint) {
         val authority = if (host.contains(':') && !host.startsWith('[')) "[$host]:$port" else "$host:$port"
         val request = buildString {
             append("CONNECT ").append(authority).append(" HTTP/1.1\r\n")
             append("Host: ").append(authority).append("\r\n")
+            // Only sent to our own loopback proxy inside CONNECT, never to the origin.
+            append("Proxy-Authorization: ").append(proxy.basicProxyAuthorization()).append("\r\n")
             append("Proxy-Connection: Keep-Alive\r\n")
             append("\r\n")
         }
@@ -389,7 +390,7 @@ object ResourceFetchClient {
         requestProfile: RequestProfile,
     ): HttpURLConnection {
         val target = URL(url)
-        val localProxy = localHttpProxyOrNull()
+        val localProxy = localAppProxyOrNull()
         val connection = if (localProxy != null) {
             target.openConnection(localProxy)
         } else {
@@ -420,33 +421,59 @@ object ResourceFetchClient {
         }
     }
 
-    internal fun isLocalHttpProxyAvailable(): Boolean {
+    internal fun isLocalHttpProxyAvailable(
+        endpoint: LocalProxyEndpoint? = LocalProxyRuntime.current()?.http,
+    ): Boolean = isListening(endpoint)
+
+    private fun isListening(endpoint: LocalProxyEndpoint?): Boolean {
+        endpoint ?: return false
         return runCatching {
             Socket().use { socket ->
-                socket.connect(localHttpProxyAddress(), LOCAL_PROXY_PROBE_TIMEOUT_MS)
+                socket.connect(endpoint.socketAddress(), LOCAL_PROXY_PROBE_TIMEOUT_MS)
             }
         }.isSuccess
     }
 
-    internal fun localHttpProxyOrNull(
-        proxyAvailable: Boolean = isLocalHttpProxyAvailable(),
+    /**
+     * Proxy for app-level HttpURLConnection requests: the run's authenticated
+     * SOCKS inbound (see LocalProxyRuntime for why not the HTTP inbound).
+     * Hostnames stay unresolved, so DNS still happens on the proxy side.
+     */
+    internal fun localAppProxyOrNull(
+        endpoint: LocalProxyEndpoint? = LocalProxyRuntime.current()?.socks,
+        proxyAvailable: Boolean = isListening(endpoint),
         coreRunning: Boolean = XrayCoreManager.snapshot.value.status == XrayCoreStatus.Running,
     ): Proxy? {
+        return selectLocalEndpoint(endpoint, proxyAvailable, coreRunning)?.socksProxy()
+    }
+
+    internal fun localHttpProxyOrNull(
+        endpoint: LocalProxyEndpoint? = LocalProxyRuntime.current()?.http,
+        proxyAvailable: Boolean = isLocalHttpProxyAvailable(endpoint),
+        coreRunning: Boolean = XrayCoreManager.snapshot.value.status == XrayCoreStatus.Running,
+    ): Proxy? {
+        return selectLocalEndpoint(endpoint, proxyAvailable, coreRunning)?.httpProxy()
+    }
+
+    /** HTTP inbound for the hand-rolled CONNECT path, which sends auth up front. */
+    private fun localHttpProxyEndpointOrNull(): LocalProxyEndpoint? {
+        val endpoint = LocalProxyRuntime.current()?.http
+        return selectLocalEndpoint(
+            endpoint = endpoint,
+            proxyAvailable = isListening(endpoint),
+            coreRunning = XrayCoreManager.snapshot.value.status == XrayCoreStatus.Running,
+        )
+    }
+
+    private fun selectLocalEndpoint(
+        endpoint: LocalProxyEndpoint?,
+        proxyAvailable: Boolean,
+        coreRunning: Boolean,
+    ): LocalProxyEndpoint? {
+        endpoint ?: return null
         // Once the core is marked Running, never silently fall back to a direct
         // physical-network request if the probe races with a proxy shutdown.
         // Using the explicit proxy will fail closed instead of leaking the request.
-        return if (proxyAvailable || coreRunning) {
-            Proxy(Proxy.Type.HTTP, localHttpProxyAddress())
-        } else {
-            null
-        }
-    }
-
-    private fun localHttpProxyAddressOrNull(): InetSocketAddress? {
-        return localHttpProxyOrNull()?.address() as? InetSocketAddress
-    }
-
-    private fun localHttpProxyAddress(): InetSocketAddress {
-        return InetSocketAddress(LOCAL_PROXY_HOST, XrayConfigFactory.HTTP_PORT)
+        return endpoint.takeIf { proxyAvailable || coreRunning }
     }
 }
