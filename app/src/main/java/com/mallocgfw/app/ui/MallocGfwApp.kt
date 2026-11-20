@@ -53,6 +53,7 @@ import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -125,6 +126,7 @@ fun MallocGfwApp(
     onLaunchRequestConsumed: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    val quickTileLabel = stringResource(R.string.qs_tile_label)
     val scope = rememberCoroutineScope()
     val screenStateHolder = rememberSaveableStateHolder()
     val initialLoad = remember { AppStateStore.loadWithStartupCleanup(context) }
@@ -552,7 +554,7 @@ fun MallocGfwApp(
         }
         statusBarManager.requestAddTileService(
             ComponentName(context, VpnQuickSettingsTileService::class.java),
-            context.getString(R.string.qs_tile_label),
+            quickTileLabel,
             Icon.createWithResource(context, R.drawable.ic_vpn_tile),
             ContextCompat.getMainExecutor(context),
         ) { result ->

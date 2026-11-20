@@ -754,10 +754,10 @@ class XrayVpnService : VpnService() {
             // Exclude ordinary LAN ranges at the system layer, except when an
             // entire range was explicitly selected as a Tailscale subnet.
             LOCAL_EXCLUDED_ROUTES.forEach { (address, prefixLength) ->
-                val excludedPrefix = IpPrefix(InetAddress.getByName(address), prefixLength)
-                if (includedPrefixes.any { it == excludedPrefix }) return@forEach
+                val excludedAddress = InetAddress.getByName(address)
+                if (includedPrefixes.any { it == SubnetPrefix.of(excludedAddress, prefixLength) }) return@forEach
                 runCatching {
-                    excludeRoute(excludedPrefix)
+                    excludeRoute(IpPrefix(excludedAddress, prefixLength))
                 }.onFailure { error ->
                     Log.w(TAG, "Unable to exclude local route $address/$prefixLength", error)
                 }

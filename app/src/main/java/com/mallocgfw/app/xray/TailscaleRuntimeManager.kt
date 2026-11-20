@@ -1,6 +1,7 @@
 package com.mallocgfw.app.xray
 
 import android.content.Context
+import android.os.Build
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.util.Log
@@ -235,7 +236,9 @@ object TailscaleRuntimeManager {
                 if (!seenNames.add(name)) return@forEach
                 put(JSONObject().apply {
                     put("name", name)
-                    put("mtu", properties.mtu.takeIf { it > 0 } ?: 1500)
+                    // LinkProperties#getMtu is API 29+; older systems report the default.
+                    val mtu = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) properties.mtu else 0
+                    put("mtu", mtu.takeIf { it > 0 } ?: 1500)
                     put("addresses", JSONArray().apply {
                         properties.linkAddresses.forEach addressLoop@ { linkAddress ->
                             val host = linkAddress.address.hostAddress
