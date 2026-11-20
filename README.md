@@ -1,5 +1,3 @@
-![PurpleBear 宣传图](assets/purplebear-banner.png)
-
 <p align="center">
   <a href="https://github.com/mallocfeng/PurpleBear/releases/download/v0.8.1/PurpleBear-0.8-promo.mp4">
     <img src="assets/purplebear-promo-preview.webp" alt="PurpleBear 0.8 宣传片预览" width="100%">
