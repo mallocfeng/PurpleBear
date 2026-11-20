@@ -228,7 +228,54 @@ object ManualNodeFactory {
     }
 
     fun buildOutboundConfig(server: ServerNode): JSONObject? {
-        return buildRawOutboundConfig(server)?.let(::migrateOutboundForCurrentCore)
+        val raw = buildRawOutboundConfig(server) ?: return null
+        // Nodes imported before the marker below existed only remember
+        // "skip verification" in their share link.
+        if (shareLinkRequestsInsecureTls(server)) {
+            raw.optJSONObject("streamSettings")?.optJSONObject("tlsSettings")?.put("allowInsecure", true)
+        }
+        return migrateOutboundForCurrentCore(raw)
+    }
+
+    /**
+     * The endpoint whose certificate must be pinned before [server] can
+     * connect, or null when the node verifies TLS normally (or already pins).
+     * QUIC-based transports are skipped: their certificate can't be fetched
+     * over TCP.
+     */
+    fun insecureTlsTarget(server: ServerNode): TlsPinTarget? {
+        if (server.hiddenUnsupported || isSsrNode(server)) return null
+        val raw = buildRawOutboundConfig(server) ?: return null
+        val stream = raw.optJSONObject("streamSettings") ?: return null
+        if (stream.optString("security") != "tls") return null
+        val network = stream.optString("network").lowercase(Locale.ROOT)
+        if (network in setOf("hysteria", "kcp", "mkcp", "quic") || raw.optString("protocol") == "hysteria") return null
+        val tls = stream.optJSONObject("tlsSettings") ?: return null
+        val insecure = tls.optBoolean("allowInsecure") || shareLinkRequestsInsecureTls(server)
+        if (!insecure) return null
+        if (tls.optString("pinnedPeerCertSha256").isNotBlank() || tls.optString("verifyPeerCertByName").isNotBlank()) {
+            return null
+        }
+        return tlsPinTarget(raw, tls)
+    }
+
+    private fun shareLinkRequestsInsecureTls(server: ServerNode): Boolean {
+        val rawUri = server.rawUri.trim()
+        if (rawUri.isBlank() || SsrLinkCodec.isSsrShareLink(rawUri) || !supportsShareLink(rawUri)) return false
+        return runCatching { prefillFromShareLink(rawUri).allowInsecure }.getOrDefault(false)
+    }
+
+    private fun tlsPinTarget(outbound: JSONObject, tls: JSONObject): TlsPinTarget? {
+        val settings = outbound.optJSONObject("settings") ?: return null
+        val endpoint = settings.takeIf { it.has("address") }
+            ?: settings.optJSONArray("vnext")?.optJSONObject(0)
+            ?: settings.optJSONArray("servers")?.optJSONObject(0)
+            ?: return null
+        val host = endpoint.optString("address").trim().trim('[', ']')
+        val port = endpoint.optInt("port", -1)
+        if (host.isBlank() || port !in 1..65535) return null
+        val serverName = tls.optString("serverName").trim().ifBlank { host }
+        return TlsPinTarget(host = host, port = port, serverName = serverName)
     }
 
     /**
@@ -240,7 +287,20 @@ object ManualNodeFactory {
      */
     internal fun migrateOutboundForCurrentCore(outbound: JSONObject): JSONObject {
         outbound.optJSONObject("streamSettings")?.let { stream ->
-            stream.optJSONObject("tlsSettings")?.remove("allowInsecure")
+            stream.optJSONObject("tlsSettings")?.let { tls ->
+                val insecure = tls.optBoolean("allowInsecure")
+                tls.remove("allowInsecure")
+                // Replace "skip verification" with the certificate fetched for
+                // this endpoint, if any (see TlsPinCache).
+                if (insecure &&
+                    tls.optString("pinnedPeerCertSha256").isBlank() &&
+                    tls.optString("verifyPeerCertByName").isBlank()
+                ) {
+                    tlsPinTarget(outbound, tls)?.let(TlsPinCache::get)?.let { pin ->
+                        tls.put("pinnedPeerCertSha256", pin)
+                    }
+                }
+            }
             stream.optJSONObject("wsSettings")?.let { ws ->
                 val headers = ws.optJSONObject("headers")
                 val headerHostKey = headers?.keys()?.asSequence()?.firstOrNull { it.equals("host", ignoreCase = true) }
@@ -269,6 +329,12 @@ object ManualNodeFactory {
             }
         }
         return outbound
+    }
+
+    private fun Map<String, String>.requestsInsecureTls(): Boolean {
+        return listOf("allowInsecure", "insecure", "skip-cert-verify", "skipCertVerify").any { key ->
+            this[key]?.trim()?.lowercase(Locale.ROOT) in setOf("1", "true", "yes")
+        }
     }
 
     private fun normalizeCertSha256List(raw: String): String? {
@@ -1123,6 +1189,7 @@ object ManualNodeFactory {
                             alpn = draft.alpn,
                             pinnedPeerCertSha256 = draft.pinnedPeerCertSha256,
                             verifyPeerCertByName = draft.verifyPeerCertByName,
+                            allowInsecure = draft.allowInsecure,
                         ),
                     )
                     put(
@@ -1205,6 +1272,7 @@ object ManualNodeFactory {
                         alpn = draft.alpn,
                         pinnedPeerCertSha256 = draft.pinnedPeerCertSha256,
                         verifyPeerCertByName = draft.verifyPeerCertByName,
+                        allowInsecure = draft.allowInsecure,
                         defaultAlpn = if (draft.transport == LocalNodeTransport.GRPC) "h2,http/1.1" else null,
                     ),
                 )
@@ -1248,6 +1316,7 @@ object ManualNodeFactory {
                     alpn = draft.alpn,
                     pinnedPeerCertSha256 = draft.pinnedPeerCertSha256,
                     verifyPeerCertByName = draft.verifyPeerCertByName,
+                    allowInsecure = draft.allowInsecure,
                 ),
             )
         }
@@ -1259,13 +1328,19 @@ object ManualNodeFactory {
         alpn: String,
         pinnedPeerCertSha256: String,
         verifyPeerCertByName: String,
+        allowInsecure: Boolean = false,
         defaultAlpn: String? = null,
     ): JSONObject {
         return JSONObject().apply {
             serverName.trim().takeIf { it.isNotBlank() }?.let { put("serverName", it) }
             fingerprint.trim().takeIf { it.isNotBlank() }?.let { put("fingerprint", it) }
-            normalizeCertSha256List(pinnedPeerCertSha256)?.let { put("pinnedPeerCertSha256", it) }
-            normalizeCsv(verifyPeerCertByName)?.let { put("verifyPeerCertByName", it) }
+            val pin = normalizeCertSha256List(pinnedPeerCertSha256)
+            val names = normalizeCsv(verifyPeerCertByName)
+            pin?.let { put("pinnedPeerCertSha256", it) }
+            names?.let { put("verifyPeerCertByName", it) }
+            // Stored only as a marker: migrateOutboundForCurrentCore swaps it
+            // for a pinned certificate because Xray no longer accepts it.
+            if (allowInsecure && pin == null && names == null) put("allowInsecure", true)
             val effectiveAlpn = alpn.takeIf { it.isNotBlank() } ?: defaultAlpn.orEmpty()
             val values = effectiveAlpn.split(",").map(String::trim).filter(String::isNotBlank)
             if (values.isNotEmpty()) {
@@ -1311,7 +1386,7 @@ object ManualNodeFactory {
             serverName = query["sni"].orEmpty(),
             fingerprint = query["fp"].orEmpty(),
             alpn = query["alpn"].orEmpty(),
-            allowInsecure = query["allowInsecure"] == "1" || query["allowInsecure"] == "true",
+            allowInsecure = query.requestsInsecureTls(),
             pinnedPeerCertSha256 = query["pcs"].orEmpty(),
             verifyPeerCertByName = query["vcn"].orEmpty(),
             realityPublicKey = query["pbk"].orEmpty(),
@@ -1347,6 +1422,9 @@ object ManualNodeFactory {
                 serverName = json.optString("sni"),
                 fingerprint = json.optString("fp"),
                 alpn = json.optString("alpn"),
+                allowInsecure = listOf("allowInsecure", "insecure", "skip-cert-verify").any { key ->
+                    json.optString(key).trim().lowercase(Locale.ROOT) in setOf("1", "true")
+                },
             )
         }
 
@@ -1376,6 +1454,7 @@ object ManualNodeFactory {
             serverName = query["peer"] ?: query["sni"].orEmpty(),
             fingerprint = query["fp"].orEmpty(),
             alpn = query["alpn"].orEmpty(),
+            allowInsecure = query.requestsInsecureTls(),
         )
     }
 
@@ -1395,7 +1474,7 @@ object ManualNodeFactory {
             serverName = query["sni"] ?: query["peer"] ?: query["servername"] ?: query["serverName"].orEmpty(),
             fingerprint = query["fp"] ?: query["fingerprint"].orEmpty(),
             alpn = query["alpn"].orEmpty(),
-            allowInsecure = query["allowInsecure"] == "1" || query["allowInsecure"] == "true",
+            allowInsecure = query.requestsInsecureTls(),
             pinnedPeerCertSha256 = query["pcs"].orEmpty(),
             verifyPeerCertByName = query["vcn"].orEmpty(),
         )

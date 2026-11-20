@@ -79,6 +79,7 @@ object XrayCoreManager {
             server = server,
             message = "正在启动 Xray 内核…",
             tunFd = null,
+            additionalOutbounds = additionalOutbounds,
         ) { localProxy ->
             val state = AppStateStore.load(context)
             val settings = state.settings
@@ -111,6 +112,7 @@ object XrayCoreManager {
             server = server,
             message = "正在建立系统 VPN 隧道…",
             tunFd = tunFd,
+            additionalOutbounds = additionalOutbounds,
         ) { localProxy ->
             val state = AppStateStore.load(context)
             val settings = state.settings
@@ -131,16 +133,40 @@ object XrayCoreManager {
         }
     }
 
+    /** The node, its pre-proxy chain and any extra routed outbounds. */
+    private fun pinCandidates(
+        context: Context,
+        server: ServerNode,
+        additionalOutbounds: List<XrayNamedOutbound>,
+    ): List<ServerNode> {
+        val servers = runCatching { AppStateStore.load(context).servers }.getOrDefault(emptyList())
+        val chain = mutableListOf(server)
+        var current = server
+        while (chain.size < 8) {
+            val nextId = current.preProxyNodeId.trim()
+            if (nextId.isBlank()) break
+            val next = servers.firstOrNull { it.id == nextId } ?: break
+            if (chain.any { it.id == next.id }) break
+            chain += next
+            current = next
+        }
+        return chain + additionalOutbounds.map { it.node }
+    }
+
     private suspend fun startWithConfig(
         context: Context,
         server: ServerNode,
         message: String,
         tunFd: Int?,
+        additionalOutbounds: List<XrayNamedOutbound> = emptyList(),
         buildConfigJson: (LocalProxyAllocation) -> String,
     ): Result<XrayCoreSnapshot> {
         return withContext(Dispatchers.IO) {
             try {
                 XrayNativeLoader.ensureLoaded()
+                // Nodes that skip certificate verification need a pinned
+                // certificate before the config is built (Xray rejects allowInsecure).
+                InsecureTlsPinner.refresh(context, pinCandidates(context, server, additionalOutbounds))
                 val prepared = prepareRuntime(context)
                 val datDir = prepared.runtimeDir.absolutePath
                 // Fresh random ports and credentials for every run; see LocalProxyRuntime.

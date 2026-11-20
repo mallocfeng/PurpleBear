@@ -68,9 +68,6 @@ class XrayVpnService : VpnService() {
     private var publishDisconnectedOnDestroy = false
     private var cleanupCompleted = false
     private var destroyMessage = "VPN 已断开"
-    private val dialerController = object : DialerController {
-        override fun protectFd(fd: Long): Boolean = protect(fd.toInt())
-    }
 
     override fun onCreate() {
         super.onCreate()
@@ -222,11 +219,6 @@ class XrayVpnService : VpnService() {
             updateRuntime = publishDisconnectedOnDestroy,
             message = destroyMessage,
         )
-        // Replace the libXray dialer/listener registration with a no-op stub so
-        // any future calls (e.g. NodeLatencyTester spinning up a temporary
-        // Xray) don't end up invoking protect() on this destroyed service.
-        runCatching { LibXray.registerDialerController(NOOP_DIALER_CONTROLLER) }
-        runCatching { LibXray.registerListenerController(NOOP_DIALER_CONTROLLER) }
         VpnQuickSettingsTileHelper.requestRefresh(applicationContext)
         super.onDestroy()
     }
@@ -245,8 +237,7 @@ class XrayVpnService : VpnService() {
     }
 
     private suspend fun connect(serverId: String) {
-        LibXray.registerDialerController(dialerController)
-        LibXray.registerListenerController(dialerController)
+        ensureSocketProtectorRegistered()
         statsJob?.cancel()
         statsJob = null
         logMaintenanceJob?.cancel()
@@ -888,7 +879,7 @@ class XrayVpnService : VpnService() {
     private fun installProcessDns(endpoint: String) {
         // DNS for app-level Go lookups is best-effort: a bad custom value must
         // not abort the tunnel, Xray itself still resolves through its outbounds.
-        runCatching { LibXray.setDNS(dialerController, endpoint) }
+        runCatching { LibXray.setDNS(SocketProtector, endpoint) }
             .onFailure { error ->
                 AppLogManager.append(applicationContext, TAG, "进程 DNS 设置失败（$endpoint）：${error.message}")
             }
@@ -1009,8 +1000,31 @@ class XrayVpnService : VpnService() {
         @Volatile
         private var runningInstance: XrayVpnService? = null
 
-        private val NOOP_DIALER_CONTROLLER = object : DialerController {
-            override fun protectFd(fd: Long): Boolean = false
+        /**
+         * Xray-core keeps every registered dialer/listener controller in a
+         * list and fails a dial if any of them fails; registering again only
+         * appends. So register one controller per process that forwards to
+         * whichever service is running now. Registering per connect (and a
+         * "return false" stub on destroy) made every connection after the
+         * first fail with "protect Android VPN socket failed".
+         */
+        private object SocketProtector : DialerController {
+            // No VPN (e.g. NodeLatencyTester's temporary core): nothing to
+            // route around, so the socket is fine as it is.
+            override fun protectFd(fd: Long): Boolean = runningInstance?.protect(fd.toInt()) ?: true
+        }
+
+        @Volatile
+        private var socketProtectorRegistered = false
+
+        private fun ensureSocketProtectorRegistered() {
+            if (socketProtectorRegistered) return
+            synchronized(SocketProtector) {
+                if (socketProtectorRegistered) return
+                LibXray.registerDialerController(SocketProtector)
+                LibXray.registerListenerController(SocketProtector)
+                socketProtectorRegistered = true
+            }
         }
 
         fun isRunning(): Boolean = runningInstance != null
