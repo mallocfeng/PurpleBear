@@ -1,5 +1,15 @@
 ![PurpleBear 宣传图](assets/purplebear-banner.png)
 
+<p align="center">
+  <a href="https://github.com/mallocfeng/PurpleBear/releases/download/v0.8.1/PurpleBear-0.8-promo.mp4">
+    <img src="assets/purplebear-promo-preview.webp" alt="PurpleBear 0.8 宣传片预览" width="100%">
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/mallocfeng/PurpleBear/releases/download/v0.8.1/PurpleBear-0.8-promo.mp4"><b>▶ 观看完整宣传片（63 秒，含配音）</b></a>
+</p>
+
 # PurpleBear
 
 PurpleBear 是一款 Android 网络代理与线路管理工具，基于系统 VPN 能力接入 Xray 内核，面向需要管理订阅节点、手动节点、分流规则、分应用代理和流媒体独立出口的用户。
