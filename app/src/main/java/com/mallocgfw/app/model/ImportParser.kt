@@ -974,9 +974,16 @@ object ImportParser {
 
         val params = parseQuery(queryPart)
         val decodedJson = decodedAuth.trim()
+        // v2rayN-style links keep the name in the JSON "ps" field.
+        val jsonName = if (decodedJson.startsWith("{")) {
+            runCatching { org.json.JSONObject(decodedJson).optString("ps") }.getOrNull()
+        } else {
+            null
+        }
         val name = params["remark"]?.ifBlank { null }
             ?: params["remarks"]?.ifBlank { null }
             ?: params["ps"]?.ifBlank { null }
+            ?: jsonName?.trim()?.ifBlank { null }
             ?: "$sourceLabel #$index"
 
         return if (decodedJson.startsWith("{")) {

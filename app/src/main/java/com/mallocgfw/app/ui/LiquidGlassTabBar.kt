@@ -124,7 +124,6 @@ internal fun LiquidGlassTabBar(
     }
     val contentColor = TextPrimary
     val accentColor = Primary
-    val currentSelected by rememberUpdatedState(selectedIndex)
     val currentOnSelect by rememberUpdatedState(onSelect)
     val tabsBackdrop = rememberLayerBackdrop()
 
@@ -155,7 +154,10 @@ internal fun LiquidGlassTabBar(
                     val target = targetValue.fastRoundToInt().fastCoerceIn(0, tabsCount - 1)
                     animateToValue(target.toFloat())
                     animationScope.launch { offsetAnimation.animateTo(0f, spring(1f, 300f, 0.5f)) }
-                    if (target != currentSelected) currentOnSelect(target)
+                    // Report even an unchanged tab: the lens sits on top of the
+                    // selected tab, so this is also how a tap on it arrives (e.g.
+                    // back to the Nodes list from a node's detail page).
+                    currentOnSelect(target)
                 },
                 onDrag = { dragAmount ->
                     updateValue((targetValue + dragAmount.x / tabWidth).fastCoerceIn(0f, (tabsCount - 1).toFloat()))
