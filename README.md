@@ -8,400 +8,196 @@
   <a href="https://github.com/mallocfeng/PurpleBear/releases/download/v0.8.1/PurpleBear-0.8-promo.mp4"><b>▶ 观看完整宣传片（63 秒，含配音）</b></a>
 </p>
 
-# PurpleBear
+<h1 align="center">PurpleBear</h1>
 
-PurpleBear 是一款 Android 网络代理与线路管理工具，基于系统 VPN 能力接入 Xray 内核，面向需要管理订阅节点、手动节点、分流规则、分应用代理和流媒体独立出口的用户。
+<p align="center">
+  好看又好用的 Android 代理客户端，基于 Xray 内核。
+</p>
 
-本仓库只包含 PurpleBear Android 应用本身的项目代码、资源、构建配置和必要的运行时依赖，不包含 Xray-core 的完整源码。
+<p align="center">
+  <a href="https://github.com/mallocfeng/PurpleBear/releases/latest"><img src="https://img.shields.io/github/v/release/mallocfeng/PurpleBear?label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC&color=6B4CF6" alt="最新版本"></a>
+  <img src="https://img.shields.io/badge/Android-8.0%2B-34A853" alt="Android 8.0+">
+  <img src="https://img.shields.io/badge/ABI-arm64--v8a-555" alt="arm64-v8a">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT"></a>
+</p>
 
-SSR / ShadowsocksR 依赖独立的 mihomo sidecar。打包 SSR 功能时，需要将 arm64-v8a 的 mihomo 可执行文件作为 native library 放在：
+<p align="center">
+  <a href="https://github.com/mallocfeng/PurpleBear/releases/latest"><b>下载最新版</b></a> ·
+  <a href="CHANGELOG.md">更新日志</a> ·
+  <a href="privacy-policy.html">隐私政策</a>
+</p>
 
-```text
-app/src/main/jniLibs/arm64-v8a/libmihomo.so
-```
+PurpleBear 通过 Android 系统 VPN 接入 Xray 内核，把订阅管理、节点测速、分流规则、分应用代理、流媒体出口和 Tailscale 组网放进一个干净、顺手的界面里。应用不内置任何服务器或机场，所有节点都由你自己导入。
 
-连接 SSR 节点时，应用会从 Android native library 目录启动该 sidecar 并监听本机 SOCKS 端口，再由 Xray 通过本地 SOCKS outbound 转发到 SSR 节点。未打包该文件时，其它协议不受影响，SSR 连接会提示缺少 mihomo sidecar。
+## 亮点
 
-mihomo 使用 GPL-3.0 许可证。PurpleBear 已在仓库和 APK assets 中包含 GPL-3.0 文本，并在 `THIRD_PARTY_NOTICES.md` 记录对应版本、源码地址、release 资产和校验值。
+- **全新界面**：分组列表式设计，信息清楚，操作少，支持浅色、深色两种主题。
+- **液态玻璃导航**：底部导航栏是真正的液态玻璃，内容在下面滚过时会被模糊折射；选中指示可以用手指拖动，按住时透镜放大图标，松手自动吸附。
+- **一键连接**：首页一个按钮，连接状态、时长和速度一目了然。
+- **一秒导入**：订阅链接、分享链接、二维码、文件都能导入，主流协议都支持。
+- **分流随心**：规则分流和全局代理一键切换，国内直连、海外走代理；还可以按应用、按流媒体服务单独指定线路。
+- **更安全**：本地代理端口每次随机分配并强制认证，自签证书节点会自动固定证书指纹。
 
-## 主要功能
+## 功能
 
-### 系统 VPN 连接
+### 连接
 
-- 使用 Android `VpnService` 建立系统级 VPN 隧道。
-- 支持一键连接、断开、切换线路。
-- 支持显示当前连接状态、当前线路、运行时长、上下行速率和流量样本。
-- 支持在连接中切换节点，应用会处理重连与状态同步。
-- 支持系统通知栏展示 VPN 运行状态。
-- 支持 Android 快捷设置磁贴，从系统下拉菜单快速连接或断开。
+- 基于 Android `VpnService` 建立系统级 VPN，一键连接、断开、切换线路。
+- 首页显示连接状态、当前节点、运行时长和上下行速率；当前节点卡片可以直接测速、看详情、切换。
+- 支持系统通知栏状态和下拉菜单快捷开关（Quick Settings 磁贴）。
+- 支持打开应用时自动连接、断线自动重连。
 
-### 节点与订阅管理
+### 节点与订阅
 
-- 支持导入 `http` / `https` 节点订阅。
-- 支持导入本地单节点链接。
-- 支持扫码导入订阅或节点。
-- 支持从文件导入订阅内容。
-- 支持订阅分组和 Local 本地分组。
-- 支持订阅刷新、手动同步、每日自动更新。
-- 支持同来源节点去重与覆盖更新。
-- 支持节点收藏。
-- 支持节点删除、订阅组删除。
-- 支持查看节点详情，包括协议、传输层、安全层、地址、端口和原始链接信息。
-- 支持节点延迟测试，并在列表中展示延迟和稳定状态。
-- 支持隐藏当前暂不支持的节点类型，避免用户误选。
+- 导入 `http` / `https` 订阅、单节点分享链接、二维码（相机或相册）和本地文件。
+- 订阅分组和 Local 本地分组，可折叠；支持收藏置顶、搜索和按地区、低延迟筛选。
+- 一键测速整组节点，延迟按快慢显示绿、黄、红。
+- 订阅手动刷新，或在非计费网络下每日自动更新；同来源节点自动去重和覆盖。
+- 节点详情展示协议、安全层、传输层、地址和全部参数（默认折叠）。
+- 在应用内手动新建节点，支持 TLS / REALITY、WebSocket、gRPC、mKCP、HTTP Upgrade 等参数，也可以用分享链接预填。
 
-### 支持的节点类型
+### 支持的协议
 
-PurpleBear 的导入解析器目前支持以下常见分享格式：
+| 协议 | 说明 |
+| --- | --- |
+| VLESS | 支持 TLS、REALITY、Vision 等 |
+| VMess | 支持 TCP、WebSocket、gRPC 等 |
+| Trojan | 支持 TLS 及各类传输 |
+| Shadowsocks | 支持 2022 与 AEAD 加密 |
+| Hysteria2 | 基于 QUIC |
+| SOCKS / HTTP | 现成的 SOCKS5 或 HTTP 代理 |
+| SSR / ShadowsocksR | 通过内置的 mihomo sidecar 桥接 |
 
-- VLESS
-- VMess
-- Trojan
-- Shadowsocks
-- SSR / ShadowsocksR（通过本地 mihomo sidecar 桥接）
-- SOCKS
-- HTTP
-- Hysteria2
+实际可用性取决于节点参数、服务端配置和网络环境。
 
-实际可用性取决于当前内核能力、节点参数、服务端配置和设备网络环境。
+### 线路组合
 
-### 手动创建本地节点
-
-- 支持在应用内新建 Local 节点。
-- 支持编辑节点名称、地址、端口、协议、安全层和传输参数。
-- 支持配置 TLS / REALITY 等安全层字段。
-- 支持 WebSocket、gRPC、mKCP、HTTP Upgrade 等传输相关参数。
-- 支持保存为本地节点并直接用于连接。
-
-### 备用节点与自动恢复
-
-- 支持为节点配置备用节点。
-- 主节点连接失败后，可自动切换到备用节点。
-- 备用节点运行期间，服务层会持续检测主节点。
-- 主节点连续恢复稳定后，可自动切回主节点。
-- 备用节点逻辑运行在 VPN 服务层，不依赖应用界面常驻前台。
-- 支持断线自动重连，降低临时网络波动对连接的影响。
-
-### 前置节点
-
-- 支持为节点配置前置节点。
-- 可用于需要链式出口或特殊入口线路的场景。
-- 节点列表会标记前置 / 备用配置，便于快速识别。
+- **前置代理**：让节点先经另一个节点中转再出站，适合链式出口。
+- **备用节点**：主节点检测失败时自动切换到备用节点，主节点恢复稳定后自动切回；检测在 VPN 服务里运行，不依赖界面在前台。
 
 ### 分流规则
 
-- 内置 Geo 数据资源状态展示。
-- 支持更新 `geoip.dat` 和 `geosite.dat`。
-- 支持系统默认规则源。
-- 支持添加自定义规则源。
-- 支持 Shadowrocket / Surge 文本规则。
-- 支持规则源启用 / 禁用。
-- 支持规则源更新状态、转换数量、跳过数量和错误信息展示。
-- 支持规则详情查看，便于确认规则来源和转换结果。
-- 支持智能分流、全局代理、分应用代理三种模式。
+- **代理模式**：在“规则分流”和“全局代理”之间一键切换。全局代理下，除局域网外所有流量都走代理，规则暂不生效。
+- **直连地区**：可选中国、美国或俄罗斯，对应的网站和 IP 直连（基于 geosite / geoip）。
+- **规则源**：内置 Shadowrocket / Surge 默认规则，支持添加文本规则或规则 URL，可单独启用、禁用和刷新。
+- **Geo 数据**：内置 `geoip.dat` 与 `geosite.dat`，可在应用内更新。
 
 ### 分应用代理
 
-- 支持选择哪些应用进入 VPN。
-- 支持搜索应用名称或分类。
-- 支持在智能分流和仅代理选中应用之间切换。
-- 应用名单变更后会触发连接配置更新。
+- 只让选中的应用进入 VPN，其他应用保持直连。
+- 支持按应用名称或分类搜索；修改名单后自动重连生效。
 
 ### 流媒体分流
 
-- 支持为常见流媒体服务单独指定出口节点。
-- 支持一键刷新流媒体规则。
-- 支持按服务选择默认线路或独立节点。
-- 已内置 Netflix、Disney+、YouTube、YouTube Music、Prime Video、Hulu、Max、HBO、Spotify、Apple TV、Apple Music、Bahamut、AbemaTV、BiliBili、ViuTV、DAZN、Paramount+、Peacock 等服务规则入口。
-- 流媒体规则会被转换为 Xray 路由规则，并在连接配置中生效。
+- 为 Netflix、Disney+、YouTube、Prime Video、Hulu、Max、Spotify、Apple TV、Bahamut、AbemaTV、BiliBili、DAZN 等服务单独指定出口节点。
+- 未指定的服务走默认线路；流媒体规则会转换成 Xray 路由规则生效。
 
-### DNS 与高级设置
+### Tailscale
 
-- 支持系统 DNS、远程 DNS、自定义 DNS 模式。
-- 支持设置日志级别：error、warning、info、debug。
-- 支持核心资产状态查看。
-- 支持启动后自动连接。
-- 支持恢复上次连接线路。
-- 支持断线自动重连。
-- 支持备用节点心跳间隔设置。
-- 支持浅色 / 深色主题。
+- 内置 Tailscale 节点，使用认证密钥加入你的 Tailnet，可与代理 VPN 同时运行。
+- 支持自定义控制服务器（如 Headscale）、始终使用 DERP、选择出口节点。
+- 支持子网路由：自动识别 Tailnet 已公布的私有网段，也可手动添加，仅在你选择后才接管对应流量。
 
-### 诊断与日志
+### 安全
 
-- 支持系统诊断，检查配置、内核、VPN、DNS 和握手状态。
-- 支持复制诊断摘要。
-- 支持查看最新运行日志。
-- 支持 Xray 错误日志和访问日志。
-- 日志写入和裁剪在后台执行，减少连接阶段卡顿。
+- **本地代理认证**：Xray 的 SOCKS / HTTP 入站和 SSR 用的 mihomo 端口每次连接都随机分配，并带随机账号密码，其他应用无法借用本地代理绕过分应用设置或探测出口 IP。
+- **证书固定**：新版 Xray 已移除 `allowInsecure`。节点链接中标记跳过证书校验时（`allowInsecure` / `insecure` / `skip-cert-verify`），应用会在连接前获取服务器证书并固定其 SHA-256 指纹；也可以在节点中手动填写证书指纹（`pcs`）或按名称校验（`vcn`）。
 
-### 订阅与资源同步
+### 诊断与设置
 
-- 支持节点订阅与规则资源统一同步。
-- 支持非计费网络下每日自动更新。
-- 支持同步完成通知。
-- 支持对一次性快照订阅做静态导入处理，避免后续刷新失败造成误判。
+- **系统诊断**：一键检查配置解析、规则资源、Xray 内核、VPN、DNS、节点连通性和代理出口，并可复制诊断摘要。
+- **日志**：应用内查看运行日志、Xray 错误日志和访问日志；日志级别可选 error、warning、info、debug。
+- **DNS**：系统 DNS、远程 DNS、自定义 DNS 三种模式。
+- **其他**：中文、英文、俄文界面；浅色、深色主题；VPN MTU 设置；备用节点心跳间隔设置。
+- **应用内更新**：每天自动检查 GitHub Release，可在应用内直接下载 APK 并交给系统安装。
 
-### 界面体验
+## 下载与安装
 
-- 使用 Jetpack Compose 构建原生 Android 界面。
-- 首页展示连接状态、速率、时长、当前线路和常用入口。
-- 线路页面按分组展示节点，支持收藏、测速、详情、删除和快速切换。
-- 线路列表采用更扁平、清爽的节点展示方式，减少多层卡片嵌套。
-- 支持浅色模式下更清晰的未选中 / 选中节点区分。
+1. 在 [GitHub Releases](https://github.com/mallocfeng/PurpleBear/releases/latest) 下载 `app-release.apk`。
+2. 需要 Android 8.0 及以上的 64 位 ARM 设备（`arm64-v8a`）。
+3. 首次连接时按系统提示授予 VPN 权限。
+
+之后有新版本时，应用会自动提示升级，也可以在“我的 → 设置 → 检查更新”中手动检查。
 
 ## 隐私与数据
 
-- PurpleBear 不内置任何订阅账号、机场服务或代理服务器。
-- 用户导入的订阅、节点、规则和偏好设置保存在本机。
-- 应用会在用户主动同步订阅、规则或 Geo 数据时访问对应 URL。
-- VPN 功能需要 Android 系统 VPN 授权。
-- 分应用代理需要读取本机应用列表用于选择代理范围。
-- 隐私政策页面位于 `privacy-policy.html`，GitHub Pages 开启后可通过项目 Pages 地址访问。
+- PurpleBear 不内置任何订阅、机场或代理服务器。
+- 导入的订阅、节点、规则和设置只保存在本机。
+- 只有在你同步订阅、规则、Geo 数据或检查更新时，应用才会访问对应地址。
+- VPN 功能需要系统 VPN 授权；分应用代理需要读取本机应用列表。
+- 详见 [隐私政策](privacy-policy.html)。
 
-## 项目结构
+## 从源码构建
 
-- `app/`：Android 应用模块，包含 Kotlin 源码、Compose UI、资源、Manifest、预编译运行依赖和 Geo 数据。
-- `gradle/`：Gradle Wrapper 文件。
-- `build.gradle.kts`、`settings.gradle.kts`、`gradle.properties`：顶层 Gradle 配置。
-- `gradlew`、`gradlew.bat`：命令行构建入口。
-- `index.html`、`privacy-policy.html`：GitHub Pages 使用的项目页面与隐私政策。
+### 环境
 
-不再跟踪的内容包括外部内核源码、第三方示例工程、UI 原型草稿、临时构建目录、签名文件、本地配置和未使用的大体积库文件。
-
-## 构建环境
-
-- Android Studio Hedgehog 或更新版本
 - JDK 17
-- Android SDK 35
-- Gradle Wrapper 已包含在仓库中
-- 当前发布包仅面向 `arm64-v8a`
+- Android SDK：compileSdk 37.1，targetSdk 35，minSdk 26
+- 仓库内置 Gradle Wrapper（Gradle 9.9.1，AGP 9.5.1，Kotlin 2.4.21）
+- 发布包只面向 `arm64-v8a`
 
-命令行构建：
-
-```bash
-./gradlew :app:assembleRelease
-```
-
-生成的 APK 位于：
-
-```text
-app/build/outputs/apk/release/app-release.apk
-```
-
-如果本地没有发布签名配置，Release 构建可能无法签名。开发调试可使用：
+### 构建
 
 ```bash
 ./gradlew :app:assembleDebug
 ```
 
+```bash
+./gradlew :app:testDebugUnitTest :app:assembleRelease
+```
+
+Release 包输出在 `app/build/outputs/apk/release/app-release.apk`。签名读取仓库根目录的 `keystore.properties`（不纳入版本控制），没有配置时请使用 Debug 构建。
+
+### 内置的原生组件
+
+| 组件 | 位置 | 说明 |
+| --- | --- | --- |
+| Xray-core / libXray | `app/libs/libXray.aar` | 代理核心，用 gomobile 构建 |
+| mihomo | `app/src/main/jniLibs/arm64-v8a/libmihomo.so` | SSR 桥接 sidecar，GPL-3.0；缺失时其它协议不受影响 |
+| Tailscale bridge | `app/src/main/jniLibs/arm64-v8a/libtailscalebridge*.so` | 由 `tailscale-bridge/build-android.sh` 构建 |
+
+各组件的版本、源码地址和校验值记录在 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+## 项目结构
+
+| 路径 | 内容 |
+| --- | --- |
+| `app/` | Android 应用：Kotlin 源码、Compose 界面、资源、预编译内核与 Geo 数据 |
+| `tailscale-bridge/` | Tailscale 用户态节点的 Go 桥接源码与构建脚本 |
+| `assets/` | README 与宣传用图片 |
+| `LICENSES/` | 第三方许可证全文 |
+| `index.html`、`privacy-policy.html` | GitHub Pages 项目页与隐私政策 |
+
 ## 更新日志
 
-## 版本 0.8.1 更新
+### 0.8.1
 
-1. 修复液态玻璃导航的回归问题：在节点详情、添加节点、订阅管理等子页面点击当前高亮的标签，现在会正常回到该标签的主页面。
+- 修复在子页面点击当前高亮的导航标签时无法返回主页面的问题。
+- 修复订阅中 v2rayN 格式的 VMess 节点名称丢失的问题。
 
-2. 修复订阅中 v2rayN 格式的 VMess 节点名称丢失：节点名现在会从链接内 JSON 的 `ps` 字段读取（含 `\u` 转义的中文名），不再显示为“订阅名 #序号”。
+### 0.8.0
 
-3. 更新版本号到 `0.8.1`，`versionCode` 更新为 `276`。
+- 全新界面设计，底部导航改为液态玻璃效果；新增“代理模式”切换、三页启动引导和更清晰的首页。
+- Xray-core / libXray 升级到 v26.11.9，mihomo 升级到 v1.19.34，Tailscale 升级到 v1.104.7。
+- 本地代理端口随机分配并强制认证；跳过证书校验的节点改为自动固定证书指纹。
+- 修复重新连接后无法上网的问题；应用更新改为在应用内下载 APK。
+- Tailscale 结束 beta。
 
-## 版本 0.8.0 更新
+完整记录见 [CHANGELOG.md](CHANGELOG.md)。
 
-1. 界面全新设计：浅灰背景配白色圆角卡片的分组列表风格，单一紫色强调色；顶部改为大标题加情境按钮，底部导航精简为“首页 / 节点 / 规则 / 我的”，导入入口移到“节点”页右上角的“+”。各页面精简说明文字，节点详情的“全部参数”默认折叠。
+## 参与贡献
 
-2. 底部导航改为液态玻璃效果：内容在导航栏下方滚动时呈毛玻璃，选中指示可用手指拖动跟随，按住时透镜放大图标并折射背景，松手后吸附到最近的标签（Android 13 及以上完整效果，旧系统自动降级为半透明底色）。
+欢迎提交 Issue 和 Pull Request，参见 [CONTRIBUTING.md](CONTRIBUTING.md)。安全问题请按 [SECURITY.md](SECURITY.md) 私下报告。
 
-3. 首页改为大号连接按钮，当前节点卡片提供测速 / 详情 / 切换快捷操作；节点列表加入首字母头像、按延迟着色和可折叠分组。
+## 致谢
 
-4. 规则页新增“代理模式”分段切换（规则分流 / 全局代理），说明当前模式的流量走向；全局模式下隐藏直连地区并标注规则暂不生效。
+- [Xray-core](https://github.com/XTLS/Xray-core) 与 [libXray](https://github.com/XTLS/libXray)：代理核心
+- [mihomo](https://github.com/MetaCubeX/mihomo)：SSR 桥接（GPL-3.0）
+- [Tailscale](https://github.com/tailscale/tailscale)：Tailnet 组网（BSD-3-Clause）
+- [AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass)：液态玻璃效果（Apache-2.0）
+- [v2fly geoip](https://github.com/v2fly/geoip) 与 [domain-list-community](https://github.com/v2fly/domain-list-community)：Geo 数据
+- [blackmatrix7/ios_rule_script](https://github.com/blackmatrix7/ios_rule_script)：默认分流规则
 
-5. 启动页和首次引导重新设计：三页可滑动引导配插画与页码指示；冷启动背景与系统启动画面统一，不再闪灰。
+## 许可证
 
-6. Tailscale 结束 beta，入口和设置页不再标注 `(beta)`。
-
-7. 应用更新改为在应用内下载 GitHub Release 的 APK：优先复用本地代理，未运行代理时自动直连；下载完成后交给系统安装器完成升级。
-
-8. 升级开源组件：Xray-core / libXray 升级到 `v26.11.9`（含 2026-10 根证书与 MPTCP 安全修复），mihomo 升级到 `v1.19.34`，Tailscale 升级到 `v1.104.7`，并更新内置 geoip / geosite 数据；构建工具升级到 AGP 9.5.1、Gradle 9.9.1、Kotlin 2.4.21、Compose BOM 2026.11.01。
-
-9. 适配新版 Xray：内核已移除 `allowInsecure`（跳过证书校验）。带 `allowInsecure` / `insecure` / `skip-cert-verify` 的节点会在连接前自动获取服务器证书并固定其 SHA-256 指纹，自签证书节点无需手动处理即可连接；也可在节点编辑中填写证书指纹（`pcs`）或按名称校验证书（`vcn`），分享链接中的 `pcs` / `vcn` / Hysteria2 `pinSHA256` 与 Clash `fingerprint` 会自动导入。WebSocket 的 Host 改用独立 `host` 字段；Shadowsocks UoT 已被内核移除，相关选项不再显示。
-
-10. 本地代理端口改为每次启动随机分配并强制认证：Xray 的 SOCKS / HTTP 入站和 SSR 使用的 mihomo 端口不再固定在 `10808` / `10809` / `17891`，每次连接都会生成新的端口和随机账号密码，其他应用无法再借用本地代理绕过分应用设置或探测出口 IP。应用自身的订阅、规则、Geo、测速和更新请求会自动带上认证。
-
-11. 修复重新连接后无法上网的问题：切换全局 / 规则模式、修改设置或手动断开再连接后，Xray 的 VPN 套接字保护回调会累积失效，导致所有连接失败；现在整个进程只注册一次并转交给当前运行的 VPN 服务。
-
-12. 更新版本号到 `0.8.0`，`versionCode` 更新为 `275`。
-
-## 版本 0.7.0 更新
-
-1. 新增内嵌 Tailscale（beta）：可使用官方 Tailscale 控制服务连接 Tailnet，并与 PurpleBear 的现有代理 VPN 共存。
-
-2. 支持认证密钥、控制服务器 URL、始终使用 DERP、Tailnet 设备状态与 Tailscale IP 展示；支持选择或取消 Tailscale 出口节点。
-
-3. 支持子网路由：自动识别 Tailnet 已公布的私有网段，用户可选择检测到的路由或手动添加私有 CIDR。仅在用户选择且 Tailnet 已公布时激活，未设置时不会接管局域网流量。
-
-4. 优化 Tailscale 与 Xray VPN 的协作：Tailnet 与已选子网流量经 Tailscale 转发，常规代理流量继续由 PurpleBear 线路处理。
-
-5. Tailscale 入口和设置页标记为 `(beta)`；更新版本号到 `0.7.0`，`versionCode` 更新为 `274`。
-
-## 版本 0.6.13 更新
-
-1. 修复 Xray 未真正进入运行状态时 VPN 仍可能显示已连接的问题；现在会同时确认内核运行状态和本地 HTTP 入站可用性，失败时停止内核并关闭本次连接。
-
-2. 订阅、规则源、Geo 数据和流媒体规则刷新在本地 Xray 可用时统一通过 `127.0.0.1:10809` HTTP 代理访问，提升受限网络下的同步成功率。
-
-3. 为 Shadowrocket 兼容订阅的手写 HTTPS 路径增加 HTTP CONNECT 隧道；内核运行期间代理异常会直接失败，不再静默回退到物理网络直连。
-
-4. 新增本地代理选择、运行中 fail-closed、HTTP CONNECT 成功和拒绝响应测试。
-
-5. 更新版本号到 `0.6.13`，`versionCode` 更新为 `273`。
-
-## 版本 0.6.12 更新
-
-1. 修复部分 Android / HyperOS 设备关闭 VPN 较慢、系统 VPN 图标延迟消失的问题。
-
-2. 保持现有 Xray-core `v1.260327.0` 基线，并合入上游 TUN 关闭修复：停止 Always-On TUN 入站时会主动关闭 gVisor 网络栈和 Android TUN 接口，不再等待系统延迟回收。
-
-3. 改善断开阶段的系统状态同步，使 TUN 接口、系统 VPN 网络和应用内连接状态更快完成释放，降低应用显示已断开但系统 VPN 图标仍短暂保留的概率。
-
-4. 重建 `libXray.aar`，保持原有 Java API、四 ABI 输出和 16 KiB ELF 对齐兼容性，并记录内核基线、上游修复提交与构建校验信息。
-
-5. 更新版本号到 `0.6.12`，`versionCode` 更新为 `272`。
-
-## 版本 0.6.11 更新
-
-1. 修复 Google Play 下载应用时长时间转圈的问题：补齐 Google Play、Google Play services、Google Services Framework 和系统 Download Manager 的分应用代理配置。
-
-2. Google Play 与 Google 下载 CDN 域名优先强制走代理；VPN 模式下禁用 UDP/443，使不稳定的 QUIC 下载可靠回退到 TCP。本地 SOCKS / HTTP 独立代理不受影响。
-
-3. 修复分应用代理所选应用均未安装时可能产生空 allow-list 的问题，现在会停止连接并提示重新选择，避免意外接管全部应用流量。
-
-4. 删除未使用的 `libxray.so`，保留实际运行所需的 `libgojni.so`，Release APK 减少约 13 MB。
-
-5. 更新版本号到 `0.6.11`，`versionCode` 更新为 `271`。
-
-## 版本 0.6.10 更新
-
-1. 修复部分 Android / MIUI 设备无法启动 SSR 的问题：mihomo sidecar 改为从 APK native library 目录执行，避免系统拒绝执行 app 私有可写目录中的二进制文件。
-
-2. 更新 mihomo sidecar 打包路径说明为 `app/src/main/jniLibs/arm64-v8a/libmihomo.so`，并保留 GPL-3.0 许可证和第三方 notice。
-
-3. 更新版本号到 `0.6.10`，`versionCode` 更新为 `270`。
-
-## 版本 0.6.9 更新
-
-1. 新增 SSR / ShadowsocksR 节点支持，应用会通过本地 mihomo sidecar 桥接到 Xray，普通 Xray 支持的节点不受影响。
-
-2. 兼容部分以 `ssr://` 包装的 Shadowsocks 2022 节点，导入后会优先按原生 Shadowsocks 2022 连接，避免错误进入 SSR sidecar。
-
-3. 新增 SSR 本地节点创建字段，包括加密方法、协议、混淆、协议参数、混淆参数和 UDP 开关。
-
-4. 状态总览会提示当前使用 SSR 兼容模式；SSR 链路下首页测速超时时改为“测速超时”，并提示连接可用时可忽略。
-
-5. 首页测速样本调整为更轻量的下载 256KiB、上传 64KiB，并放宽总测速窗口，减少 SSR / IEPL 链路可用但测速超时的误判。
-
-6. 检查更新流程改为打开 GitHub Release 下载页，让用户在浏览器中手动下载最新 APK。
-
-7. 仓库和 APK assets 中加入 mihomo 对应的 GPL-3.0 许可证文本与第三方 notice，README 补充 SSR sidecar 打包说明。
-
-8. 更新版本号到 `0.6.9`，`versionCode` 更新为 `269`。
-
-## 版本 0.6.8 更新
-
-1. 新增俄语界面语言，设置页可在中文、English、Русский 和跟随系统之间切换。
-
-2. 补齐规则管理、检查更新、分应用代理、前置代理、流媒体分流、日志与诊断等页面的俄语文案。
-
-3. 语言选择栏支持横向滑动，避免俄语等较长语言名称在小屏幕上显示不全。
-
-4. Geo 数据仍保留全量资源，新增 Geo 分流国家下拉选择，可在中国、英语区域和俄罗斯之间切换默认直连规则。
-
-5. Geo 分流国家会根据界面语言选择默认值：中文默认中国，英文默认英语区域，俄语默认俄罗斯；手动选择后不会被语言切换覆盖。
-
-6. 修复规则页“内置资源”等 Geo 数据状态文案，以及 VPN MTU 等动态设置描述在俄语模式下仍显示中文的问题。
-
-7. 更新版本号到 `0.6.8`，`versionCode` 更新为 `268`。
-
-## 版本 0.6.7 更新
-
-1. 新增应用内检查更新功能，可从“我的”进入设置页，再打开“检查更新”查看 GitHub Release 最新版本。
-
-2. 打开应用后每天最多自动检查一次新版本；发现新版本时会提示用户，手动检查且已是最新版时会弹窗反馈。
-
-3. 检查更新详情页会展示 GitHub Release 中填写的版本说明：当前已是最新版时显示“当前版本描述”，有新版本时显示“更新版本描述”。
-
-4. 支持通过代理下载最新 APK，下载完成后可在应用内调用 Android 系统安装器继续升级。
-
-5. 扫码导入支持从本地相册选择二维码图片，适合保存了订阅二维码或节点二维码截图的场景。
-
-6. 优化二维码导入确认流程：识别后先进入导入确认页；单节点导入只显示当前节点的协议、地址、端口、传输、安全和目标分组，订阅导入继续显示订阅节点数量。
-
-7. 应用内版本显示改为读取构建版本，避免界面版本号和 APK 实际版本不一致。
-
-8. 更新版本号到 `0.6.7`，`versionCode` 更新为 `267`。
-
-## 版本 0.6.6 更新
-
-1. 新增中文 / English 双语界面，默认跟随 Android 系统语言，也可在设置中手动切换。
-
-2. 英文模式补齐首页、线路、规则、导入、我的、设置、首次启动介绍页和 VPN 权限介绍页等主要界面文案。
-
-3. 补齐动态数据的英文显示，包括 `Just now`、订阅组来源、节点地区、规则源状态、Geo 数据更新、端口标签和核心资产状态等。
-
-4. 优化浅色模式下 Android 状态栏和导航栏图标颜色，避免时间、信号、电量等系统信息不可见。
-
-5. 更新版本号到 `0.6.6`，同步应用内版本标识、构建版本和 release 包版本。
-
-6. 保留 0.6.5 的全局代理能力：全局代理开启后局域网/私网仍直连，其余正常上网流量走当前节点。
-
-## 版本 0.6.5 更新
-
-1. 新增自定义文本规则，可手动编写 Shadowrocket / Surge 规则。
-
-2. 支持规则按策略分流，可指定直连、代理、拒绝，或选择指定节点。
-
-3. 新增节点选择弹窗，支持搜索节点；订阅刷新后节点名称变化也会尽量自动匹配。
-
-4. 优化规则校验，保存时会提示格式错误，并在文本框中标红错误行。
-
-5. 新增规则输入自动补全，减少手动输入成本。
-
-6. 优化自定义规则界面，文本规则和 URL 规则分开展示。
-
-7. 提升自定义规则优先级，用户规则会优先生效。
-
-8. 兼容 `no-resolve`、`GEOIP`、`URL-REGEX` 等更多规则写法。
-
-9. 修复添加规则菜单定位异常、版本显示不一致等问题。
-
-10. 优化规则解析与节点匹配稳定性，降低订阅更新后的失效概率。
-
-## 版本 0.6.4 更新
-
-1. 优化线路页面视觉层级，节点组和节点列表更清爽，减少多层圆角卡片嵌套感。
-
-2. 调整节点展示样式，移除大面积渐变和铺色背景，亮色模式下未选中节点使用接近白色的平底，选中节点使用轻微强调色，更容易识别当前线路。
-
-3. 优化备用节点机制：主节点连接失败后可自动切换到备用节点；主节点恢复稳定后，可自动回到主节点。
-
-4. 将备用节点检测逻辑下移到 VPN 服务层，应用退到后台或界面被回收后，备用节点切换仍能继续工作。
-
-5. 修复自动重连与备用节点切换可能同时触发的问题，降低连接状态混乱的概率。
-
-6. 修复启动时自动连接状态判断过早结束的问题，提升首次启动、引导流程后的自动连接可靠性。
-
-7. 优化节点心跳与延迟显示逻辑，避免心跳刷新频繁打乱节点列表展示。
-
-8. 优化快捷开关响应速度，减少节点较多时点击系统快捷开关可能卡顿的问题。
-
-9. 修复 Android 14+ 前台服务类型处理问题，提升真机和上架测试稳定性。
-
-10. 优化连接初始化流程，降低快速重连、备用节点切换时出现保护失败的概率。
-
-11. 优化日志写入与裁剪流程，减少连接阶段高频日志对性能的影响。
-
-## 内核与鸣谢
-
-PurpleBear 使用 Xray 作为代理核心能力来源。Xray-core 是一个独立开源项目，完整源码请访问：
-
-https://github.com/XTLS/Xray-core
-
-感谢 Xray-core 项目及其贡献者提供核心网络代理能力；感谢 v2fly GeoIP / GeoSite 数据、blackmatrix7 规则项目以及 Android、Kotlin、Jetpack Compose 生态为本项目提供基础能力。
+PurpleBear 以 [MIT 许可证](LICENSE) 开源。第三方组件保留各自的许可证，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
