@@ -16,7 +16,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AddCircle
+import androidx.compose.material.icons.rounded.Place
+import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -36,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import com.mallocgfw.app.model.AppGeoRoutingRegion
 import com.mallocgfw.app.model.RuleSourceItem
 import com.mallocgfw.app.model.RuleSourceKind
+import com.mallocgfw.app.model.RuleSourceStatus
 import com.mallocgfw.app.ui.theme.Error
 import com.mallocgfw.app.ui.theme.Primary
 import com.mallocgfw.app.ui.theme.PrimaryStrong
@@ -82,222 +88,156 @@ internal fun RuleSourceCard(
     onToggleEnabled: () -> Unit,
     onRefresh: () -> Unit,
 ) {
-    SurfaceCard(
-        compact = true,
-        modifier = Modifier.clickable(onClick = onClick),
-        border = if (selected) BorderStroke(1.dp, Secondary.copy(alpha = 0.35f)) else null,
-        background = Brush.verticalGradient(
-            colors = if (selected) listOf(SurfaceHigh, SurfaceLow) else listOf(SurfaceLow, SurfaceTone),
-        ),
+    val remote = source.sourceKind != RuleSourceKind.LocalText
+    val problem = source.status == RuleSourceStatus.FetchFailed || source.status == RuleSourceStatus.ParseFailed
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(start = 16.dp, end = 12.dp, top = 11.dp, bottom = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    StatusPill(
-                        text = if (source.systemDefault) "系统内置" else "用户添加",
-                        color = if (source.systemDefault) Primary else Secondary,
-                        background = if (source.systemDefault) Primary.copy(alpha = 0.14f) else Secondary.copy(alpha = 0.14f),
-                        compact = true,
-                    )
-                    OutlinedActionChip(
-                        if (source.sourceKind == RuleSourceKind.LocalText) "本地文本" else source.type.displayName(),
-                        compact = true,
-                    )
-                }
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = uiText(source.name),
-                    fontSize = TypeScale.Body,
-                    lineHeight = TypeScale.BodyLine,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = uiText(if (source.sourceKind == RuleSourceKind.LocalText) {
-                        "手动输入 Shadowrocket / Surge 文本规则"
-                    } else {
-                        source.url
-                    }),
-                    color = TextSecondary,
-                    modifier = Modifier.padding(top = 3.dp),
-                    fontSize = TypeScale.Meta,
-                    lineHeight = TypeScale.MetaLine,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (source.sourceKind != RuleSourceKind.LocalText) {
-                    Text(
-                        text = uiText("最近更新时间：${source.updatedAt}"),
-                        color = TextSecondary,
-                        modifier = Modifier.padding(top = 2.dp),
-                        fontSize = TypeScale.Tiny,
-                        lineHeight = TypeScale.TinyLine,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-            Column(horizontalAlignment = Alignment.End) {
-                StatusPill(
-                    text = if (updating) "更新中" else source.status.displayName(),
-                    color = if (updating) Primary else source.status.accent(),
-                    background = if (updating) Primary.copy(alpha = 0.14f) else source.status.accent().copy(alpha = 0.14f),
-                    compact = true,
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-                TogglePill(checked = source.enabled, onClick = onToggleEnabled)
-            }
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
+        Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = uiText(
-                    "共 ${source.totalRules} 条 · 已转换 ${source.convertedRules} 条 · 跳过 ${source.skippedRules} 条",
-                    "${source.totalRules} rules · ${source.convertedRules} converted · ${source.skippedRules} skipped",
-                ),
+                text = uiText(source.name),
+                color = TextPrimary,
+                fontSize = TypeScale.ListTitle,
+                lineHeight = TypeScale.ListTitleLine,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = buildList {
+                    add(uiText("${source.convertedRules} 条规则", "${source.convertedRules} rules"))
+                    if (remote) add(uiText(source.updatedAt)) else add(uiText("本地文本"))
+                }.joinToString(" · "),
                 color = TextSecondary,
                 fontSize = TypeScale.Tiny,
                 lineHeight = TypeScale.TinyLine,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 1.dp),
             )
-            if (source.sourceKind != RuleSourceKind.LocalText) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
+        }
+        if (updating || problem) {
+            StatusPill(
+                text = if (updating) "更新中" else source.status.displayName(),
+                color = if (updating) Primary else source.status.accent(),
+                background = (if (updating) Primary else source.status.accent()).copy(alpha = 0.12f),
+                compact = true,
+            )
+        }
+        if (remote) {
+            CompactIconAction(
+                icon = Icons.Rounded.Refresh,
+                tint = if (updating) Primary else TextSecondary,
+                onClick = onRefresh,
+            )
+        }
+        TogglePill(checked = source.enabled, onClick = onToggleEnabled)
+    }
+}
+
+/** Global proxy, Geo region and Geo data folded into one compact card. */
+@Composable
+internal fun RoutingOverviewCard(
+    globalProxyEnabled: Boolean,
+    onGlobalProxyChange: (Boolean) -> Unit,
+    geoDataSnapshot: GeoDataSnapshot,
+    geoDataUpdating: Boolean,
+    geoRoutingRegion: AppGeoRoutingRegion,
+    onGeoRoutingRegionChange: (AppGeoRoutingRegion) -> Unit,
+    onRefreshGeoData: () -> Unit,
+) {
+    var regionMenu by remember { mutableStateOf(false) }
+    GroupedCard {
+        Column(
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = uiText("代理模式"),
+                color = TextPrimary,
+                fontSize = TypeScale.ListTitle,
+                lineHeight = TypeScale.ListTitleLine,
+                fontWeight = FontWeight.SemiBold,
+            )
+            SegmentedControl(
+                options = listOf(
+                    false to uiText("规则分流"),
+                    true to uiText("全局代理"),
+                ),
+                selected = globalProxyEnabled,
+                onSelect = onGlobalProxyChange,
+            )
+            Text(
+                text = if (globalProxyEnabled) {
+                    uiText("除局域网外，所有流量都走代理。下方规则暂不生效。")
+                } else {
+                    geoRoutingModeDescription(geoRoutingRegion)
+                },
+                color = TextSecondary,
+                fontSize = TypeScale.Meta,
+                lineHeight = TypeScale.MetaLine,
+            )
+        }
+        if (!globalProxyEnabled) {
+            GroupDivider()
+            Box {
+                ListRow(
+                    title = "直连地区",
+                    value = geoRoutingRegionLabel(geoRoutingRegion),
+                    icon = Icons.Rounded.Place,
+                    onClick = { regionMenu = true },
                 )
-                {
-                    Text(
-                        text = uiText(if (updating) "处理中…" else "立即更新"),
-                        color = Primary,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = TypeScale.Meta,
-                        lineHeight = TypeScale.MetaLine,
-                        modifier = Modifier.clickable(onClick = onRefresh),
-                    )
+                DropdownMenu(expanded = regionMenu, onDismissRequest = { regionMenu = false }) {
+                    AppGeoRoutingRegion.entries.forEach { region ->
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(geoRoutingRegionLabel(region), color = TextPrimary, fontWeight = FontWeight.Medium)
+                                    Text(
+                                        geoRoutingRegionSubtitle(region),
+                                        color = TextSecondary,
+                                        fontSize = TypeScale.Tiny,
+                                        lineHeight = TypeScale.TinyLine,
+                                    )
+                                }
+                            },
+                            onClick = {
+                                regionMenu = false
+                                onGeoRoutingRegionChange(region)
+                            },
+                        )
+                    }
                 }
             }
         }
+        GroupDivider(startIndent = 58.dp)
+        ListRow(
+            title = "Geo 数据",
+            subtitle = geoDataSnapshot.lastError?.takeIf { it.isNotBlank() }
+                ?: "geoip ${formatBytes(geoDataSnapshot.geoipBytes)} · geosite ${formatBytes(geoDataSnapshot.geositeBytes)}",
+            icon = Icons.Rounded.Storage,
+            trailing = {
+                TextAction(
+                    text = if (geoDataUpdating) "更新中…" else "更新",
+                    enabled = !geoDataUpdating,
+                    onClick = onRefreshGeoData,
+                )
+            },
+        )
     }
 }
 
 @Composable
-internal fun GeoDataCard(
-    snapshot: GeoDataSnapshot,
-    updating: Boolean,
-    selectedRegion: AppGeoRoutingRegion,
-    onRegionChange: (AppGeoRoutingRegion) -> Unit,
-    onRefresh: () -> Unit,
-) {
-    SurfaceCard(
-        background = Brush.verticalGradient(listOf(SurfaceHigh, SurfaceLow)),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    StatusPill(
-                        text = uiText("基础资源"),
-                        color = Primary,
-                        background = Primary.copy(alpha = 0.14f),
-                    )
-                    OutlinedActionChip("geoip.dat + geosite.dat", compact = true)
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = uiText("Geo 数据更新"),
-                    fontSize = TypeScale.CardTitle,
-                    lineHeight = TypeScale.CardTitleLine,
-                    fontWeight = FontWeight.ExtraBold,
-                )
-                Text(
-                    text = uiText("当前来源：${snapshot.sourceLabel}"),
-                    color = TextSecondary,
-                    fontSize = TypeScale.Body,
-                    lineHeight = TypeScale.BodyLine,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-                Text(
-                    text = uiText("最近更新时间：${snapshot.updatedAt}"),
-                    color = TextSecondary,
-                    fontSize = TypeScale.Body,
-                    lineHeight = TypeScale.BodyLine,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
-            }
-            StatusPill(
-                text = when {
-                    updating -> uiText("更新中")
-                    snapshot.status == GeoDataStatus.Ready -> uiText("已就绪")
-                    snapshot.status == GeoDataStatus.Failed -> uiText("失败")
-                    else -> uiText("内置")
-                },
-                color = when {
-                    updating -> Primary
-                    snapshot.status == GeoDataStatus.Ready -> Success
-                    snapshot.status == GeoDataStatus.Failed -> Error
-                    else -> Secondary
-                },
-                background = when {
-                    updating -> Primary.copy(alpha = 0.14f)
-                    snapshot.status == GeoDataStatus.Ready -> Success.copy(alpha = 0.14f)
-                    snapshot.status == GeoDataStatus.Failed -> Error.copy(alpha = 0.14f)
-                    else -> Secondary.copy(alpha = 0.14f)
-                },
-            )
-        }
-        Spacer(modifier = Modifier.height(14.dp))
-        Text(
-            text = "geoip.dat ${formatBytes(snapshot.geoipBytes)} · geosite.dat ${formatBytes(snapshot.geositeBytes)}",
-            color = TextSecondary,
-            fontSize = TypeScale.Meta,
-            lineHeight = TypeScale.MetaLine,
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        GeoRoutingRegionDropdown(
-            selectedRegion = selectedRegion,
-            onRegionChange = onRegionChange,
-        )
-        if (!snapshot.lastError.isNullOrBlank()) {
-            Text(
-                text = snapshot.lastError,
-                color = Error,
-                fontSize = TypeScale.Meta,
-                lineHeight = TypeScale.MetaLine,
-                modifier = Modifier.padding(top = 8.dp),
-            )
-        }
-        Spacer(modifier = Modifier.height(12.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
-        ) {
-            Text(
-                text = if (updating) uiText("处理中…") else uiText("更新资源"),
-                color = Primary,
-                fontWeight = FontWeight.Bold,
-                fontSize = TypeScale.Body,
-                lineHeight = TypeScale.BodyLine,
-                modifier = Modifier.clickable(onClick = onRefresh),
-            )
-        }
+private fun geoRoutingModeDescription(region: AppGeoRoutingRegion): String {
+    return when (region) {
+        AppGeoRoutingRegion.China -> uiText("国内网站和直连规则不走代理，其余走代理。")
+        AppGeoRoutingRegion.English -> uiText("美国网站和直连规则不走代理，其余走代理。")
+        AppGeoRoutingRegion.Russia -> uiText("俄罗斯网站和直连规则不走代理，其余走代理。")
     }
 }
 
@@ -378,20 +318,12 @@ private fun geoRoutingRegionSubtitle(region: AppGeoRoutingRegion): String {
 
 @Composable
 internal fun EmptyRulesCard() {
-    SurfaceCard(compact = true) {
+    SurfaceCard {
         Text(
-            text = uiText("还没有自定义规则源"),
-            fontSize = TypeScale.Body,
-            lineHeight = TypeScale.BodyLine,
-            fontWeight = FontWeight.Bold,
-            color = TextPrimary,
-        )
-        Text(
-            text = uiText("可继续使用系统默认规则。"),
+            text = uiText("暂无自定义规则，点右下角 + 添加"),
             color = TextSecondary,
             fontSize = TypeScale.Meta,
             lineHeight = TypeScale.MetaLine,
-            modifier = Modifier.padding(top = 3.dp),
         )
     }
 }
@@ -401,29 +333,21 @@ internal fun AddRuleFab(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    Box(
+    androidx.compose.material3.Surface(
+        shape = CircleShape,
+        color = Primary,
+        shadowElevation = 6.dp,
         modifier = modifier
+            .size(56.dp)
             .clip(CircleShape)
-            .background(Brush.linearGradient(listOf(Primary, PrimaryStrong)))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .clickable(onClick = onClick),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
+        Box(contentAlignment = Alignment.Center) {
             Icon(
-                Icons.Rounded.AddCircle,
-                contentDescription = null,
+                Icons.Rounded.Add,
+                contentDescription = uiText("添加规则"),
                 tint = AccentContentColor,
-                modifier = Modifier.size(19.dp),
-            )
-            Text(
-                uiText("添加规则"),
-                color = AccentContentColor,
-                fontWeight = FontWeight.Bold,
-                fontSize = TypeScale.Body,
-                lineHeight = TypeScale.BodyLine,
+                modifier = Modifier.size(26.dp),
             )
         }
     }

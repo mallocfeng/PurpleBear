@@ -18,7 +18,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AddCircle
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
@@ -62,185 +64,107 @@ internal fun GroupSectionCard(
     onDeleteGroup: (ServerGroup) -> Unit,
     onCreateLocalNode: () -> Unit,
 ) {
-    val sectionShape = RoundedCornerShape(18.dp)
-    val headerShape = RoundedCornerShape(14.dp)
-    val interactionSource = remember { MutableInteractionSource() }
     val containsSelectedServer = section.servers.any { it.id == selectedServerId }
-    val headerAccent = if (section.group.type == ServerGroupType.Subscription) Primary else Secondary
-    SurfaceCard(
-        compact = true,
-        shape = sectionShape,
-        background = SolidColor(SurfaceLow),
-        border = if (IsLightTheme) BorderStroke(0.8.dp, CardOutlineColor) else BorderStroke(0.8.dp, Outline.copy(alpha = 0.35f)),
-    ) {
-        Column(
+    val groupTesting = section.servers.any { latencyTestingIds.contains(it.id) }
+    GroupedCard {
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(SurfaceLow, sectionShape),
+                .clickable(onClick = onToggleGroup)
+                .padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(headerShape)
-                    .indication(
-                        interactionSource = interactionSource,
-                        indication = ripple(bounded = true),
-                    )
-                    .clickable(
-                        interactionSource = interactionSource,
-                        indication = null,
-                        onClick = onToggleGroup,
-                    )
-                    .padding(horizontal = 8.dp, vertical = 7.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(9.dp),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .width(3.dp)
-                        .height(32.dp)
-                        .clip(CircleShape)
-                        .background(headerAccent.copy(alpha = if (IsLightTheme) 0.70f else 0.82f)),
-                )
-                Box(
-                    modifier = Modifier
-                        .size(26.dp)
-                        .clip(CircleShape)
-                        .background(headerAccent.copy(alpha = if (containsSelectedServer) 0.16f else 0.08f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                        contentDescription = null,
-                        tint = TextSecondary,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-                Column(modifier = Modifier.weight(1f)) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
                         text = uiText(section.group.name),
-                        color = if (containsSelectedServer) headerAccent else TextPrimary,
-                        fontSize = TypeScale.Body,
-                        lineHeight = TypeScale.BodyLine,
-                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary,
+                        fontSize = TypeScale.ListTitle,
+                        lineHeight = TypeScale.ListTitleLine,
+                        fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
                     )
-                    Text(
-                        text = buildString {
-                            append(if (section.group.type == ServerGroupType.Subscription) uiText("订阅组") else "Local")
-                            append(" · ${uiText("${section.servers.size} 个节点", "${section.servers.size} nodes")}")
+                    if (containsSelectedServer) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(Primary),
+                        )
+                    }
+                }
+                Text(
+                    text = buildString {
+                        append(uiText("${section.servers.size} 个节点", "${section.servers.size} nodes"))
+                        if (section.group.type == ServerGroupType.Subscription) {
                             append(" · ${uiText(section.group.updatedAt)}")
-                            if (section.hiddenUnsupportedNodeCount > 0) {
-                                append(" · ${uiText("已隐藏 ${section.hiddenUnsupportedNodeCount} 个", "${section.hiddenUnsupportedNodeCount} hidden")}")
-                            }
-                        },
-                        color = TextSecondary,
-                        fontSize = TypeScale.Meta,
-                        lineHeight = TypeScale.MetaLine,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (section.servers.isNotEmpty()) {
-                        val groupTesting = section.servers.any { latencyTestingIds.contains(it.id) }
-                        CompactIconAction(
-                            icon = Icons.Rounded.Sync,
-                            tint = if (groupTesting) Primary else TextSecondary,
-                            onClick = {
-                                section.servers.forEach { server ->
-                                    onTestLatency(server.id)
-                                }
-                            },
-                        )
-                    }
-                    if (section.group.type == ServerGroupType.Local) {
-                        CompactIconAction(
-                            icon = Icons.Rounded.AddCircle,
-                            tint = Primary,
-                            onClick = onCreateLocalNode,
-                        )
-                    }
-                    if (section.group.type == ServerGroupType.Subscription) {
-                        CompactIconAction(
-                            icon = Icons.Rounded.Delete,
-                            tint = Error,
-                            onClick = { onDeleteGroup(section.group) },
-                        )
-                    }
-                }
-            }
-
-            if (expanded) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp, bottom = 2.dp)
-                        .height(1.dp)
-                        .background(Outline.copy(alpha = if (IsLightTheme) 0.16f else 0.20f)),
-                )
-                if (section.hiddenUnsupportedNodeCount > 0) {
-                    Text(
-                        text = uiText("已隐藏 ${section.hiddenUnsupportedNodeCount} 个暂不支持节点。"),
-                        color = TextSecondary,
-                        fontSize = TypeScale.Meta,
-                        lineHeight = TypeScale.MetaLine,
-                        modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 2.dp),
-                    )
-                }
-                if (section.servers.isEmpty()) {
-                    Text(
-                        text = uiText(if (section.group.type == ServerGroupType.Local) {
-                            if (section.hiddenUnsupportedNodeCount > 0) {
-                                "Local group 目前没有可显示节点。"
-                            } else {
-                                "Local group 还没有节点。"
-                            }
-                        } else {
-                            if (section.hiddenUnsupportedNodeCount > 0) {
-                                "这个订阅组当前没有可显示节点。"
-                            } else {
-                                "这个订阅组当前没有匹配到节点。"
-                            }
-                        }),
-                        color = TextSecondary,
-                        fontSize = TypeScale.Meta,
-                        lineHeight = TypeScale.MetaLine,
-                        modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 4.dp),
-                    )
-                } else {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        section.servers.forEachIndexed { index, server ->
-                            if (index > 0) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(start = 26.dp, end = 6.dp)
-                                        .height(1.dp)
-                                        .background(Outline.copy(alpha = if (IsLightTheme) 0.14f else 0.16f)),
-                                )
-                            }
-                            ServerCard(
-                                server = server,
-                                selected = selectedServerId == server.id,
-                                latencyTesting = latencyTestingIds.contains(server.id),
-                                onClick = { onSelectServer(server.id) },
-                                onOpenDetail = { onOpenServerDetail(server.id) },
-                                onToggleFavorite = { onToggleFavorite(server.id) },
-                                onTestLatency = { onTestLatency(server.id) },
-                                onDelete = if (section.group.type == ServerGroupType.Local) {
-                                    { onDeleteServer(server) }
-                                } else {
-                                    null
-                                },
-                            )
                         }
-                    }
+                        if (section.hiddenUnsupportedNodeCount > 0) {
+                            append(" · ${uiText("隐藏 ${section.hiddenUnsupportedNodeCount} 个", "${section.hiddenUnsupportedNodeCount} hidden")}")
+                        }
+                    },
+                    color = TextSecondary,
+                    fontSize = TypeScale.Tiny,
+                    lineHeight = TypeScale.TinyLine,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 1.dp),
+                )
+            }
+            if (section.servers.isNotEmpty()) {
+                CompactIconAction(
+                    icon = Icons.Rounded.Speed,
+                    tint = if (groupTesting) Primary else TextSecondary,
+                    onClick = {
+                        section.servers.forEach { server -> onTestLatency(server.id) }
+                    },
+                )
+            }
+            if (section.group.type == ServerGroupType.Local) {
+                CompactIconAction(icon = Icons.Rounded.Add, tint = Primary, onClick = onCreateLocalNode)
+            } else {
+                CompactIconAction(
+                    icon = Icons.Rounded.DeleteOutline,
+                    tint = TextSecondary,
+                    onClick = { onDeleteGroup(section.group) },
+                )
+            }
+            Icon(
+                imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                contentDescription = null,
+                tint = TextSecondary,
+                modifier = Modifier.size(22.dp),
+            )
+        }
+
+        if (expanded) {
+            if (section.servers.isEmpty()) {
+                GroupDivider()
+                Text(
+                    text = uiText(
+                        if (section.group.type == ServerGroupType.Local) "还没有节点，点 + 新建或导入" else "没有匹配的节点",
+                    ),
+                    color = TextSecondary,
+                    fontSize = TypeScale.Meta,
+                    lineHeight = TypeScale.MetaLine,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                )
+            } else {
+                section.servers.forEach { server ->
+                    GroupDivider(startIndent = 64.dp)
+                    ServerCard(
+                        server = server,
+                        selected = selectedServerId == server.id,
+                        latencyTesting = latencyTestingIds.contains(server.id),
+                        onClick = { onSelectServer(server.id) },
+                        onOpenDetail = { onOpenServerDetail(server.id) },
+                        onToggleFavorite = { onToggleFavorite(server.id) },
+                        onTestLatency = { onTestLatency(server.id) },
+                        onDelete = null,
+                    )
                 }
             }
         }

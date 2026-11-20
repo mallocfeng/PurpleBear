@@ -86,22 +86,26 @@ internal fun DiagnosticCard(step: DiagnosticStep) {
         DiagnosticStatus.Pending -> Primary
         DiagnosticStatus.Failed -> Error
     }
-    SurfaceCard(
-        border = BorderStroke(1.dp, accent.copy(alpha = 0.2f)),
-    ) {
+    SurfaceCard {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.Top,
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = uiText(step.title),
-                    fontSize = TypeScale.CardTitle,
-                    lineHeight = TypeScale.CardTitleLine,
-                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = TypeScale.ListTitle,
+                    lineHeight = TypeScale.ListTitleLine,
+                    fontWeight = FontWeight.SemiBold,
                 )
-                Text(uiText(step.detail), color = TextSecondary, modifier = Modifier.padding(top = 8.dp))
+                Text(
+                    uiText(step.detail),
+                    color = TextSecondary,
+                    fontSize = TypeScale.Meta,
+                    lineHeight = TypeScale.MetaLine,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
             }
             StatusPill(
                 text = when (step.status) {
@@ -118,8 +122,9 @@ internal fun DiagnosticCard(step: DiagnosticStep) {
 
 @Composable
 internal fun FeatureList(items: List<FeatureAction>) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        items.forEach { action ->
+    GroupedCard {
+        items.forEachIndexed { index, action ->
+            if (index > 0) GroupDivider(startIndent = 56.dp)
             FeatureListRow(action = action)
         }
     }
@@ -127,86 +132,149 @@ internal fun FeatureList(items: List<FeatureAction>) {
 
 @Composable
 internal fun FeatureListRow(action: FeatureAction) {
-    SurfaceCard(
-        modifier = Modifier.clickable(onClick = action.onClick),
-        compact = true,
-        shape = RoundedCornerShape(16.dp),
-        background = Brush.verticalGradient(listOf(SurfaceLow, SurfaceLow)),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(38.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(ControlSurfaceStrongColor),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    action.icon,
-                    contentDescription = null,
-                    tint = Primary,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                Text(
-                    text = uiText(action.title),
-                    color = TextPrimary,
-                    fontSize = TypeScale.ListTitle,
-                    lineHeight = TypeScale.ListTitleLine,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = uiText(action.subtitle),
-                    color = TextSecondary,
-                    fontSize = TypeScale.Meta,
-                    lineHeight = TypeScale.MetaLine,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Icon(
-                imageVector = Icons.AutoMirrored.Rounded.ArrowForwardIos,
-                contentDescription = null,
-                tint = TextSecondary,
-                modifier = Modifier.size(14.dp),
-            )
-        }
-    }
+    ListRow(
+        title = action.title,
+        value = action.subtitle,
+        icon = action.icon,
+        onClick = action.onClick,
+    )
+}
+
+/** A white rounded container for iOS-style grouped rows. */
+@Composable
+internal fun GroupedCard(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(CardRadius))
+            .background(SurfaceTone),
+        content = content,
+    )
 }
 
 @Composable
-internal fun PromoCard(
-    title: String,
-    subtitle: String,
-    buttonText: String?,
-    onClick: () -> Unit,
+internal fun GroupDivider(startIndent: Dp = 16.dp) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = startIndent)
+            .height(0.6.dp)
+            .background(DividerColor),
+    )
+}
+
+/** Small caption shown above a grouped card, like iOS section headers. */
+@Composable
+internal fun SectionLabel(
+    text: String,
+    modifier: Modifier = Modifier,
+    trailing: (@Composable () -> Unit)? = null,
 ) {
-    SurfaceCard(
-        background = Brush.linearGradient(
-            listOf(PromoGradientStartColor, PromoGradientEndColor),
-        ),
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(start = 6.dp, end = 4.dp, top = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Eyebrow(uiText("解锁超低延迟"))
         Text(
-            text = uiText(title),
-            fontSize = TypeScale.CardTitle,
-            lineHeight = TypeScale.CardTitleLine,
-            fontWeight = FontWeight.ExtraBold,
+            text = uiText(text),
+            color = TextSecondary,
+            fontSize = TypeScale.Meta,
+            lineHeight = TypeScale.MetaLine,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.weight(1f),
         )
-        Text(uiText(subtitle), color = TextSecondary, modifier = Modifier.padding(top = 8.dp))
-        if (buttonText != null) {
-            Spacer(modifier = Modifier.height(16.dp))
-            PrimaryActionButton(text = buttonText, onClick = onClick)
+        trailing?.invoke()
+    }
+}
+
+/** Tinted rounded-square icon used at the start of list rows. */
+@Composable
+internal fun RowIcon(
+    icon: ImageVector,
+    tint: Color = Primary,
+) {
+    Box(
+        modifier = Modifier
+            .size(30.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .background(tint.copy(alpha = if (IsLightTheme) 0.12f else 0.20f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
+    }
+}
+
+/** Standard grouped-list row: icon · title/subtitle · value · chevron or trailing. */
+@Composable
+internal fun ListRow(
+    title: String,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    value: String? = null,
+    icon: ImageVector? = null,
+    iconTint: Color = Primary,
+    titleColor: Color = TextPrimary,
+    enabled: Boolean = true,
+    showChevron: Boolean = true,
+    onClick: (() -> Unit)? = null,
+    trailing: (@Composable () -> Unit)? = null,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(enabled = enabled, onClick = onClick) else Modifier)
+            .padding(horizontal = 16.dp, vertical = if (subtitle != null) 11.dp else 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (icon != null) RowIcon(icon = icon, tint = iconTint)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = uiText(title),
+                color = if (enabled) titleColor else TextSecondary,
+                fontSize = TypeScale.ListTitle,
+                lineHeight = TypeScale.ListTitleLine,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (!subtitle.isNullOrBlank()) {
+                Text(
+                    text = uiText(subtitle),
+                    color = TextSecondary,
+                    fontSize = TypeScale.Meta,
+                    lineHeight = TypeScale.MetaLine,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+        }
+        if (!value.isNullOrBlank()) {
+            Text(
+                text = uiText(value),
+                color = TextSecondary,
+                fontSize = TypeScale.Body,
+                lineHeight = TypeScale.BodyLine,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.End,
+                modifier = Modifier.widthIn(max = 150.dp),
+            )
+        }
+        if (trailing != null) {
+            trailing()
+        } else if (onClick != null && showChevron) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.ArrowForwardIos,
+                contentDescription = null,
+                tint = TextSecondary.copy(alpha = 0.6f),
+                modifier = Modifier.size(13.dp),
+            )
         }
     }
 }
@@ -216,16 +284,9 @@ internal fun SettingsGroup(
     title: String,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    SurfaceCard {
-        Text(
-            text = uiText(title),
-            color = TextSecondary,
-            fontSize = TypeScale.Meta,
-            lineHeight = TypeScale.MetaLine,
-            fontWeight = FontWeight.Bold,
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        content()
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SectionLabel(title)
+        SurfaceCard(content = content)
     }
 }
 
@@ -240,14 +301,9 @@ internal fun SettingRow(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = uiText(title),
-                fontSize = TypeScale.ListTitle,
-                lineHeight = TypeScale.ListTitleLine,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(uiText(subtitle), color = TextSecondary)
+        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+            SettingTitle(title)
+            SettingSubtitle(subtitle)
         }
         TogglePill(checked = checked)
     }
@@ -265,14 +321,9 @@ internal fun SettingToggleRow(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = uiText(title),
-                fontSize = TypeScale.ListTitle,
-                lineHeight = TypeScale.ListTitleLine,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(uiText(subtitle), color = TextSecondary)
+        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+            SettingTitle(title)
+            SettingSubtitle(subtitle)
         }
         TogglePill(checked = checked, onClick = onToggle)
     }
@@ -291,21 +342,11 @@ internal fun SettingActionRow(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f).padding(end = 18.dp)) {
-            Text(
-                text = uiText(title),
-                fontSize = TypeScale.ListTitle,
-                lineHeight = TypeScale.ListTitleLine,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(uiText(subtitle), color = TextSecondary)
+        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+            SettingTitle(title)
+            SettingSubtitle(subtitle)
         }
-        Text(
-            text = uiText(actionText),
-            color = if (actionEnabled) Primary else TextSecondary,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.clickable(enabled = actionEnabled, onClick = onAction),
-        )
+        TextAction(text = actionText, enabled = actionEnabled, onClick = onAction)
     }
 }
 
@@ -323,28 +364,13 @@ internal fun SettingDualActionRow(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = uiText(title),
-                fontSize = TypeScale.ListTitle,
-                lineHeight = TypeScale.ListTitleLine,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(uiText(subtitle), color = TextSecondary)
+        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+            SettingTitle(title)
+            SettingSubtitle(subtitle)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text(
-                text = uiText(primaryActionText),
-                color = Primary,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.clickable(onClick = onPrimaryAction),
-            )
-            Text(
-                text = uiText(secondaryActionText),
-                color = Primary,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.clickable(onClick = onSecondaryAction),
-            )
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            TextAction(text = primaryActionText, onClick = onPrimaryAction)
+            TextAction(text = secondaryActionText, onClick = onSecondaryAction)
         }
     }
 }
@@ -354,15 +380,55 @@ internal fun SettingInfoRow(
     title: String,
     subtitle: String,
     ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = uiText(title),
-            fontSize = TypeScale.ListTitle,
-            lineHeight = TypeScale.ListTitleLine,
-            fontWeight = FontWeight.Bold,
-        )
-        Text(uiText(subtitle), color = TextSecondary)
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        SettingTitle(title)
+        SettingSubtitle(subtitle)
     }
+}
+
+@Composable
+private fun SettingTitle(title: String) {
+    Text(
+        text = uiText(title),
+        color = TextPrimary,
+        fontSize = TypeScale.ListTitle,
+        lineHeight = TypeScale.ListTitleLine,
+        fontWeight = FontWeight.Medium,
+    )
+}
+
+@Composable
+private fun SettingSubtitle(subtitle: String) {
+    if (subtitle.isBlank()) return
+    Text(
+        text = uiText(subtitle),
+        color = TextSecondary,
+        fontSize = TypeScale.Meta,
+        lineHeight = TypeScale.MetaLine,
+        modifier = Modifier.padding(top = 2.dp),
+    )
+}
+
+/** Compact tonal text button used at the end of setting rows. */
+@Composable
+internal fun TextAction(
+    text: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    Text(
+        text = uiText(text),
+        color = if (enabled) Primary else TextSecondary,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = TypeScale.Meta,
+        lineHeight = TypeScale.MetaLine,
+        maxLines = 1,
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(if (enabled) Primary.copy(alpha = if (IsLightTheme) 0.10f else 0.18f) else ControlSurfaceColor)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    )
 }
 
 @Composable
@@ -375,10 +441,10 @@ internal fun MediaRoutingServiceRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(Color.White.copy(alpha = 0.035f))
+            .clip(RoundedCornerShape(14.dp))
+            .background(ControlSurfaceColor)
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 14.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -390,7 +456,14 @@ internal fun MediaRoutingServiceRow(
                 lineHeight = TypeScale.ListTitleLine,
                 fontWeight = FontWeight.Bold,
             )
-            Text("${uiText(service.subtitle)} · ${uiText(service.suggestedRegion)}", color = TextSecondary)
+            Text(
+                uiText(service.suggestedRegion),
+                color = TextSecondary,
+                fontSize = TypeScale.Tiny,
+                lineHeight = TypeScale.TinyLine,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
         Text(
             text = uiText(selectedNodeLabel),
@@ -416,10 +489,10 @@ internal fun MediaRoutingNodeRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(Color.White.copy(alpha = if (enabled) 0.035f else 0.018f))
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (enabled) ControlSurfaceColor else ControlSurfaceColor.copy(alpha = 0.5f))
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 14.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -460,24 +533,22 @@ internal fun SearchField(
     placeholder: String = "搜索服务器、地区或协议…",
     onValueChange: (String) -> Unit,
 ) {
-    val shape = RoundedCornerShape(14.dp)
+    val shape = RoundedCornerShape(12.dp)
     BasicTextField(
         value = search,
         onValueChange = onValueChange,
         singleLine = true,
         textStyle = TextStyle(
             color = TextPrimary,
-            fontSize = TypeScale.Meta,
-            lineHeight = TypeScale.MetaLine,
-            fontWeight = FontWeight.Medium,
+            fontSize = TypeScale.Body,
+            lineHeight = TypeScale.BodyLine,
         ),
         cursorBrush = SolidColor(Primary),
         modifier = Modifier
             .fillMaxWidth()
-            .height(42.dp)
+            .height(44.dp)
             .clip(shape)
-            .background(SurfaceLow)
-            .border(1.dp, Primary.copy(alpha = 0.10f), shape),
+            .background(SurfaceTone),
         decorationBox = { innerTextField ->
             Row(
                 modifier = Modifier
@@ -489,7 +560,7 @@ internal fun SearchField(
                     imageVector = Icons.Rounded.Search,
                     contentDescription = null,
                     tint = TextSecondary,
-                    modifier = Modifier.size(17.dp),
+                    modifier = Modifier.size(19.dp),
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Box(
@@ -500,8 +571,8 @@ internal fun SearchField(
                         Text(
                             text = uiText(placeholder),
                             color = TextSecondary,
-                            fontSize = TypeScale.Meta,
-                            lineHeight = TypeScale.MetaLine,
+                            fontSize = TypeScale.Body,
+                            lineHeight = TypeScale.BodyLine,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -520,149 +591,109 @@ internal fun FilterRow(
 ) {
     Row(
         modifier = Modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         listOf(
-            "all" to uiText("所有位置"),
+            "all" to uiText("全部", "All"),
             "asia" to uiText("亚洲"),
             "latency" to uiText("低延迟"),
             "favorites" to uiText("收藏"),
         ).forEach { (value, label) ->
-            FilterChip(
-                selected = filter == value,
-                onClick = { onFilterChange(value) },
-                label = { Text(label) },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = Primary.copy(alpha = 0.18f),
-                    selectedLabelColor = TextPrimary,
-                    containerColor = SurfaceLow,
-                    labelColor = TextPrimary,
-                ),
+            ChoiceChip(text = label, selected = filter == value, onClick = { onFilterChange(value) })
+        }
+    }
+}
+
+/** Pill chip: solid accent when selected, white otherwise. */
+@Composable
+internal fun ChoiceChip(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Text(
+        text = text,
+        color = if (selected) AccentContentColor else TextPrimary,
+        fontSize = TypeScale.Meta,
+        lineHeight = TypeScale.MetaLine,
+        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+        maxLines = 1,
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(if (selected) Primary else SurfaceTone)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    )
+}
+
+/**
+ * Mutually exclusive options in one track; the active segment is filled with
+ * the accent so it is obvious which one is on.
+ */
+@Composable
+internal fun <T> SegmentedControl(
+    options: List<Pair<T, String>>,
+    selected: T,
+    onSelect: (T) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(SurfaceLow)
+            .padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        options.forEach { (value, label) ->
+            val active = value == selected
+            Text(
+                text = label,
+                color = if (active) AccentContentColor else TextSecondary,
+                fontSize = TypeScale.Body,
+                lineHeight = TypeScale.BodyLine,
+                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (active) Primary else Color.Transparent)
+                    .clickable { if (!active) onSelect(value) }
+                    .padding(vertical = 9.dp),
             )
         }
     }
 }
 
+internal val CardRadius = 20.dp
+
+/**
+ * Plain card: solid surface on the neutral canvas. [background] is only for
+ * the rare highlighted card; leave it null for the standard look.
+ */
 @Composable
 internal fun SurfaceCard(
     modifier: Modifier = Modifier,
-    background: Brush = Brush.verticalGradient(listOf(SurfaceLow, SurfaceTone)),
+    background: Brush? = null,
     border: BorderStroke? = null,
     compact: Boolean = false,
-    shape: RoundedCornerShape = RoundedCornerShape(28.dp),
+    shape: RoundedCornerShape = RoundedCornerShape(CardRadius),
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = shape,
         color = Color.Transparent,
-        border = border ?: if (IsLightTheme) BorderStroke(0.8.dp, CardOutlineColor) else null,
+        border = border,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
     ) {
         Column(
             modifier = Modifier
-                .background(background, shape)
-                .padding(if (compact) 12.dp else 20.dp),
+                .background(background ?: SolidColor(SurfaceTone), shape)
+                .padding(if (compact) 12.dp else 16.dp),
             content = content,
-        )
-    }
-}
-
-@Composable
-internal fun HomeMetricsCard(
-    durationValue: String,
-    downloadRate: String,
-    downloadSubtitle: String,
-    uploadRate: String,
-    uploadSubtitle: String,
-    latencyTesting: Boolean,
-    onRetestLatency: () -> Unit,
-) {
-    SurfaceCard(
-        shape = RoundedCornerShape(28.dp),
-        background = Brush.verticalGradient(listOf(SurfaceLow, SurfaceTone)),
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Eyebrow(uiText("连接时长"))
-                    CompactIconAction(
-                        icon = Icons.Rounded.Sync,
-                        tint = if (latencyTesting) Primary else TextSecondary,
-                        onClick = onRetestLatency,
-                    )
-                }
-                Text(
-                    text = durationValue,
-                    fontSize = TypeScale.LargeMetric,
-                    lineHeight = TypeScale.LargeMetricLine,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = TextPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalAlignment = Alignment.Top,
-            ) {
-                CompactMetricRow(
-                    label = uiText("节点下载"),
-                    value = downloadRate,
-                    subtitle = downloadSubtitle,
-                    modifier = Modifier.weight(1f),
-                )
-                CompactMetricRow(
-                    label = uiText("节点上传"),
-                    value = uploadRate,
-                    subtitle = uploadSubtitle,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-internal fun CompactMetricRow(
-    label: String,
-    value: String,
-    subtitle: String,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        Eyebrow(uiText(label))
-        Text(
-            text = value,
-            fontSize = TypeScale.Body,
-            lineHeight = TypeScale.BodyLine,
-            fontWeight = FontWeight.Bold,
-            color = TextPrimary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = uiText(subtitle),
-            color = TextSecondary,
-            fontSize = TypeScale.Tiny,
-            lineHeight = TypeScale.TinyLine,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -855,16 +886,18 @@ internal fun flattenJsonParameters(
 
 @Composable
 internal fun NoteBox(text: String) {
-    Box(
+    Text(
+        text = uiText(text),
+        color = TextSecondary,
+        fontSize = TypeScale.Meta,
+        lineHeight = TypeScale.MetaLine,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 14.dp)
-            .clip(RoundedCornerShape(18.dp))
+            .padding(top = 10.dp)
+            .clip(RoundedCornerShape(12.dp))
             .background(ControlSurfaceColor)
-            .padding(16.dp),
-    ) {
-        Text(uiText(text), color = TextSecondary)
-    }
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    )
 }
 
 @Composable
@@ -876,35 +909,29 @@ internal fun PendingSwitchBanner(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(22.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(PendingBannerColor)
-            .border(1.dp, Primary.copy(alpha = 0.28f), RoundedCornerShape(22.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 16.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
+        Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = uiText("已选中待切换节点"),
-                color = TextPrimary,
-                fontWeight = FontWeight.ExtraBold,
+                text = uiText("待切换节点"),
+                color = TextSecondary,
+                fontSize = TypeScale.Tiny,
+                lineHeight = TypeScale.TinyLine,
             )
             Text(
                 text = serverName,
-                color = TextSecondary,
+                color = TextPrimary,
+                fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        Text(
-            text = uiText("去首页切换"),
-            color = Primary,
-            fontWeight = FontWeight.ExtraBold,
-        )
+        TextAction(text = "去切换", onClick = onClick)
     }
 }
 
@@ -917,27 +944,31 @@ internal fun ButtonRow(
     tertiaryText: String? = null,
     onTertiary: (() -> Unit)? = null,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
+    // Three buttons in one row truncate their labels; give the primary
+    // action its own full-width row and pair the secondary ones below.
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         CompactPrimaryActionButton(
             text = primaryText,
             enabled = true,
             onClick = onPrimary,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.fillMaxWidth(),
         )
-        CompactOutlinedActionButton(
-            text = secondaryText,
-            onClick = onSecondary,
-            modifier = Modifier.weight(1f),
-        )
-        if (tertiaryText != null && onTertiary != null) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
             CompactOutlinedActionButton(
-                text = tertiaryText,
-                onClick = onTertiary,
+                text = secondaryText,
+                onClick = onSecondary,
                 modifier = Modifier.weight(1f),
             )
+            if (tertiaryText != null && onTertiary != null) {
+                CompactOutlinedActionButton(
+                    text = tertiaryText,
+                    onClick = onTertiary,
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
     }
 }
@@ -975,42 +1006,27 @@ internal fun CompactPrimaryActionButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val shape = RoundedCornerShape(999.dp)
     Button(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.height(44.dp),
-        shape = shape,
+        modifier = modifier.height(46.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = Color.Transparent,
+            containerColor = Primary,
             contentColor = AccentContentColor,
             disabledContainerColor = ControlSurfaceStrongColor,
             disabledContentColor = TextSecondary,
         ),
-        contentPadding = PaddingValues(),
+        contentPadding = PaddingValues(horizontal = 12.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .clip(shape)
-                .background(
-                    if (enabled) {
-                        Brush.linearGradient(listOf(Primary, PrimaryStrong))
-                    } else {
-                        Brush.linearGradient(listOf(ControlSurfaceStrongColor, ControlSurfaceStrongColor))
-                    },
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = uiText(text),
-                fontSize = TypeScale.Body,
-                lineHeight = TypeScale.BodyLine,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        Text(
+            text = uiText(text),
+            fontSize = TypeScale.Body,
+            lineHeight = TypeScale.BodyLine,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -1020,19 +1036,21 @@ internal fun CompactOutlinedActionButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    OutlinedButton(
+    Button(
         onClick = onClick,
-        modifier = modifier.height(44.dp),
-        shape = RoundedCornerShape(999.dp),
-        colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
-        border = BorderStroke(1.dp, Primary.copy(alpha = 0.16f)),
+        modifier = modifier.height(46.dp),
+        shape = RoundedCornerShape(14.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = ControlSurfaceStrongColor,
+            contentColor = TextPrimary,
+        ),
         contentPadding = PaddingValues(horizontal = 12.dp),
     ) {
         Text(
             text = uiText(text),
             fontSize = TypeScale.Body,
             lineHeight = TypeScale.BodyLine,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -1045,26 +1063,18 @@ internal fun PrimaryActionButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val shape = RoundedCornerShape(999.dp)
     Button(
         onClick = onClick,
-        modifier = modifier.height(54.dp),
-        shape = shape,
+        modifier = modifier
+            .fillMaxWidth()
+            .height(50.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = Color.Transparent,
+            containerColor = Primary,
             contentColor = AccentContentColor,
         ),
-        contentPadding = PaddingValues(),
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .clip(shape)
-                .background(Brush.linearGradient(listOf(Primary, PrimaryStrong))),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(uiText(text), fontWeight = FontWeight.ExtraBold)
-        }
+        Text(uiText(text), fontWeight = FontWeight.SemiBold, fontSize = TypeScale.Body)
     }
 }
 
@@ -1074,17 +1084,21 @@ internal fun OutlinedActionButton(
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
-    OutlinedButton(
+    Button(
         onClick = onClick,
         enabled = enabled,
         modifier = Modifier
             .fillMaxWidth()
-            .height(54.dp),
-        shape = RoundedCornerShape(999.dp),
-        colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
-        border = BorderStroke(1.dp, Primary.copy(alpha = 0.16f)),
+            .height(50.dp),
+        shape = RoundedCornerShape(14.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = ControlSurfaceStrongColor,
+            contentColor = TextPrimary,
+            disabledContainerColor = ControlSurfaceColor,
+            disabledContentColor = TextSecondary,
+        ),
     ) {
-        Text(uiText(text), fontWeight = FontWeight.Bold)
+        Text(uiText(text), fontWeight = FontWeight.SemiBold, fontSize = TypeScale.Body)
     }
 }
 
@@ -1095,25 +1109,19 @@ internal fun StatusPill(
     background: Color,
     compact: Boolean = false,
 ) {
-    Box(
+    Text(
+        text = uiText(text),
+        color = color,
+        fontSize = TypeScale.Tiny,
+        lineHeight = TypeScale.TinyLine,
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
         modifier = Modifier
             .clip(CircleShape)
             .background(background)
-            .padding(
-                horizontal = if (compact) 10.dp else 12.dp,
-                vertical = if (compact) 5.dp else 8.dp,
-            ),
-    ) {
-        Text(
-            text = uiText(text),
-            color = color,
-            fontSize = if (compact) TypeScale.Tiny else TypeScale.Meta,
-            lineHeight = if (compact) TypeScale.TinyLine else TypeScale.MetaLine,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
+            .padding(horizontal = if (compact) 8.dp else 10.dp, vertical = if (compact) 3.dp else 5.dp),
+    )
 }
 
 @Composable
@@ -1121,25 +1129,19 @@ internal fun OutlinedActionChip(
     text: String,
     compact: Boolean = false,
 ) {
-    Box(
+    Text(
+        text = uiText(text),
+        color = TextPrimary,
+        fontWeight = FontWeight.Medium,
+        fontSize = if (compact) TypeScale.Tiny else TypeScale.Meta,
+        lineHeight = if (compact) TypeScale.TinyLine else TypeScale.MetaLine,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
         modifier = Modifier
             .clip(CircleShape)
-            .border(1.dp, Primary.copy(alpha = 0.16f), CircleShape)
-            .padding(
-                horizontal = if (compact) 10.dp else 12.dp,
-                vertical = if (compact) 6.dp else 7.dp,
-            ),
-    ) {
-        Text(
-            text = uiText(text),
-            color = TextPrimary,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = if (compact) TypeScale.Tiny else TypeScale.Meta,
-            lineHeight = if (compact) TypeScale.TinyLine else TypeScale.MetaLine,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
+            .background(ControlSurfaceColor)
+            .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = if (compact) 3.dp else 6.dp),
+    )
 }
 
 @Composable
@@ -1171,22 +1173,23 @@ internal fun TogglePill(
     onClick: (() -> Unit)? = null,
 ) {
     val thumbOffset by animateDpAsState(
-        targetValue = if (checked) 22.dp else 0.dp,
+        targetValue = if (checked) 20.dp else 0.dp,
         animationSpec = tween(durationMillis = 180),
         label = "toggle-thumb-offset",
     )
     Box(
         modifier = Modifier
-            .width(50.dp)
+            .width(51.dp)
+            .height(31.dp)
             .clip(CircleShape)
-            .background(if (checked) Primary.copy(alpha = 0.75f) else ControlSurfaceTrackColor)
+            .background(if (checked) Primary else ControlSurfaceTrackColor)
             .clickable(enabled = onClick != null, onClick = { onClick?.invoke() })
-            .padding(horizontal = 5.dp, vertical = 4.dp),
+            .padding(2.dp),
     ) {
         Box(
             modifier = Modifier
                 .padding(start = thumbOffset)
-                .size(18.dp)
+                .size(27.dp)
                 .clip(CircleShape)
                 .background(Color.White),
         )
@@ -1218,15 +1221,7 @@ internal fun GlassBadge(
 
 @Composable
 internal fun MiniIcon(icon: ImageVector) {
-    Box(
-        modifier = Modifier
-            .size(40.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(ControlSurfaceStrongColor),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(icon, contentDescription = null, tint = TextPrimary)
-    }
+    RowIcon(icon = icon)
 }
 
 @Composable
@@ -1234,19 +1229,19 @@ internal fun IconButtonCard(
     icon: ImageVector,
     onClick: () -> Unit,
     tint: Color = TextPrimary,
-    background: Color = ControlSurfaceColor,
+    background: Color = SurfaceTone,
     borderColor: Color = Color.Transparent,
 ) {
     Box(
         modifier = Modifier
-            .size(40.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .size(38.dp)
+            .clip(CircleShape)
             .background(background)
-            .border(1.dp, borderColor, RoundedCornerShape(14.dp))
+            .border(1.dp, borderColor, CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = null, tint = tint)
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(21.dp))
     }
 }
 
@@ -1258,8 +1253,8 @@ internal fun CompactIconAction(
 ) {
     Box(
         modifier = Modifier
-            .size(30.dp)
-            .clip(RoundedCornerShape(6.dp))
+            .size(34.dp)
+            .clip(CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -1267,7 +1262,7 @@ internal fun CompactIconAction(
             icon,
             contentDescription = null,
             tint = tint,
-            modifier = Modifier.size(17.dp),
+            modifier = Modifier.size(19.dp),
         )
     }
 }
@@ -1322,26 +1317,28 @@ internal fun ScreenHeader(
     subtitle: String,
     align: TextAlign = TextAlign.Start,
 ) {
-    Column {
+    Column(modifier = Modifier.padding(horizontal = 4.dp)) {
         Text(
             text = uiText(title),
-            fontSize = TypeScale.PageTitle,
-            lineHeight = TypeScale.PageTitleLine,
-            fontWeight = FontWeight.ExtraBold,
+            fontSize = TypeScale.SectionTitle,
+            lineHeight = TypeScale.SectionTitleLine,
+            fontWeight = FontWeight.Bold,
             color = TextPrimary,
             textAlign = align,
             modifier = Modifier.fillMaxWidth(),
         )
-        Text(
-            text = uiText(subtitle),
-            color = TextSecondary,
-            fontSize = TypeScale.Body,
-            lineHeight = TypeScale.BodyLine,
-            textAlign = align,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 10.dp),
-        )
+        if (subtitle.isNotBlank()) {
+            Text(
+                text = uiText(subtitle),
+                color = TextSecondary,
+                fontSize = TypeScale.Meta,
+                lineHeight = TypeScale.MetaLine,
+                textAlign = align,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+            )
+        }
     }
 }
 
@@ -1352,7 +1349,7 @@ internal fun Eyebrow(text: String) {
         color = TextSecondary,
         fontSize = TypeScale.Tiny,
         lineHeight = TypeScale.TinyLine,
-        fontWeight = FontWeight.Bold,
+        fontWeight = FontWeight.Medium,
         letterSpacing = 0.sp,
     )
 }
@@ -1368,11 +1365,12 @@ internal fun InfoMini(
         Eyebrow(label)
         Text(
             text = value,
-            fontSize = TypeScale.CardTitle,
-            lineHeight = TypeScale.CardTitleLine,
-            fontWeight = FontWeight.ExtraBold,
+            fontSize = TypeScale.Body,
+            lineHeight = TypeScale.BodyLine,
+            fontWeight = FontWeight.SemiBold,
             maxLines = maxLines,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 2.dp),
         )
     }
 }
@@ -1382,26 +1380,15 @@ internal fun TwoColumnInfoGrid(
     items: List<Pair<String, String>>,
     compact: Boolean = false,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         items.chunked(2).forEach { rowItems ->
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 rowItems.forEach { (label, value) ->
-                    Box(modifier = Modifier.weight(1f)) {
-                        SurfaceCard(
-                            compact = compact,
-                            background = Brush.verticalGradient(listOf(ControlSurfaceStrongColor, ControlSurfaceColor)),
-                        ) {
-                            Eyebrow(label)
-                            Text(
-                                text = value,
-                                fontSize = if (compact) TypeScale.Body else TypeScale.CardTitle,
-                                lineHeight = if (compact) TypeScale.BodyLine else TypeScale.CardTitleLine,
-                                fontWeight = if (compact) FontWeight.Bold else FontWeight.ExtraBold,
-                            )
-                        }
-                    }
+                    InfoMini(label = label, value = value, modifier = Modifier.weight(1f))
                 }
+                if (rowItems.size == 1) Spacer(modifier = Modifier.weight(1f))
             }
         }
     }
 }
+

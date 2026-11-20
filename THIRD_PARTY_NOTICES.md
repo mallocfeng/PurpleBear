@@ -65,6 +65,19 @@ with Tailnet routing. The BSD 3-Clause license text is included in:
 - `LICENSES/Tailscale-BSD-3-Clause.txt`
 - `app/src/main/assets/licenses/Tailscale-BSD-3-Clause.txt`
 
+## Backdrop (Liquid Glass)
+
+- Project: Kyant0/AndroidLiquidGlass, artifact `io.github.kyant0:backdrop`
+- Version: 2.0.1
+- License: Apache License 2.0
+- Source: https://github.com/Kyant0/AndroidLiquidGlass
+
+The bottom tab bar uses this library for backdrop blur and lens refraction.
+`app/src/main/java/com/mallocgfw/app/ui/LiquidGlassTabBar.kt` is adapted from
+the catalog sample (`LiquidBottomTabs`, `DampedDragAnimation`,
+`InteractiveHighlight`, `inspectDragGestures`), Copyright Kyant0, used under
+the Apache License 2.0.
+
 ## Geo data
 
 - geoip.dat: v2fly/geoip `202611080027`

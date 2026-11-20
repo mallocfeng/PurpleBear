@@ -24,8 +24,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AddCircle
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Favorite
@@ -46,6 +51,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.Backdrop
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -79,10 +90,10 @@ import com.mallocgfw.app.ui.theme.Surface as SurfaceTone
 import com.mallocgfw.app.ui.theme.SurfaceLow
 import com.mallocgfw.app.ui.theme.TextPrimary
 import com.mallocgfw.app.ui.theme.TextSecondary
+import com.mallocgfw.app.ui.theme.Warning
 import com.mallocgfw.app.xray.NodeLatencyTester
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AppScaffold(
     screen: AppScreen,
@@ -92,53 +103,76 @@ internal fun AppScaffold(
     onToggleTheme: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenScan: () -> Unit,
+    onOpenImport: () -> Unit = { onSelectTab(MainTab.Import) },
     content: @Composable (PaddingValues) -> Unit,
 ) {
-    Scaffold(
-        containerColor = Background,
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        bottomBar = {
-            Surface(
-                modifier = Modifier.navigationBarsPadding(),
-                color = BottomBarSurfaceColor,
+    // Everything under the tab bar is recorded so the glass can refract it.
+    val backdrop = rememberLayerBackdrop()
+    val navigationBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val bottomInset = navigationBottom + GlassTabBarHeight + TabBarBottomMargin + 8.dp
+    CompositionLocalProvider(LocalBottomBarInset provides bottomInset) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .layerBackdrop(backdrop)
+                    .background(Background),
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    listOf(
-                        Triple(MainTab.Home, "首页", Icons.Rounded.Home),
-                        Triple(MainTab.Servers, "线路", Icons.Rounded.Dns),
-                        Triple(MainTab.Rules, "规则", Icons.Rounded.Description),
-                        Triple(MainTab.Import, "导入", Icons.Rounded.AddCircle),
-                        Triple(MainTab.Me, "我的", Icons.Rounded.Person),
-                    ).forEach { (tab, label, icon) ->
-                        BottomNavItem(
-                            modifier = Modifier.weight(1f),
-                            selected = currentTab == tab && screenMatchesTab(screen, tab),
-                            label = label,
-                            icon = icon,
-                            onClick = { onSelectTab(tab) },
-                        )
-                    }
+                content(PaddingValues(0.dp))
+                if (screenHasFixedMainTopBar(screen)) {
+                    FixedMainTopBar(
+                        screen = screen,
+                        onOpenSettings = onOpenSettings,
+                        onOpenScan = onOpenScan,
+                        onOpenImport = onOpenImport,
+                    )
                 }
             }
-        },
-    ) { padding ->
-        Box(modifier = Modifier.fillMaxSize()) {
-            content(padding)
-            if (screenHasFixedMainTopBar(screen)) {
-                FixedMainTopBar(
-                    isLightTheme = lightThemeEnabled,
-                    onToggleTheme = onToggleTheme,
-                    onOpenSettings = onOpenSettings,
-                    onOpenScan = onOpenScan,
-                )
-            }
+            FloatingTabBar(
+                screen = screen,
+                currentTab = currentTab,
+                onSelectTab = onSelectTab,
+                backdrop = backdrop,
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
         }
     }
+}
+
+private val TabBarBottomMargin = 8.dp
+
+/** Import lives behind the "+" on the Nodes tab, so it highlights Nodes. */
+private val VisibleTabs = listOf(
+    MainTab.Home to GlassTabItem("首页", Icons.Rounded.Home),
+    MainTab.Servers to GlassTabItem("节点", Icons.Rounded.Dns),
+    MainTab.Rules to GlassTabItem("规则", Icons.Rounded.Description),
+    MainTab.Me to GlassTabItem("我的", Icons.Rounded.Person),
+)
+
+@Composable
+private fun FloatingTabBar(
+    screen: AppScreen,
+    currentTab: MainTab,
+    onSelectTab: (MainTab) -> Unit,
+    backdrop: Backdrop,
+    modifier: Modifier = Modifier,
+) {
+    val tabs = VisibleTabs.map { it.first }
+    val screenTab = tabs.firstOrNull { tab ->
+        screenMatchesTab(screen, tab) || (tab == MainTab.Servers && screenMatchesTab(screen, MainTab.Import))
+    }
+    val activeTab = screenTab ?: if (currentTab == MainTab.Import) MainTab.Servers else currentTab
+    val selectedIndex = tabs.indexOf(activeTab).coerceAtLeast(0)
+    LiquidGlassTabBar(
+        items = VisibleTabs.map { it.second },
+        selectedIndex = selectedIndex,
+        onSelect = { index -> onSelectTab(tabs[index]) },
+        backdrop = backdrop,
+        modifier = modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(start = 20.dp, end = 20.dp, bottom = TabBarBottomMargin),
+    )
 }
 
 @Composable
@@ -151,25 +185,25 @@ internal fun BottomNavItem(
 ) {
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(24.dp))
             .background(if (selected) SelectedTabBackgroundColor else Color.Transparent)
             .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 5.dp),
+            .padding(vertical = 7.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+        verticalArrangement = Arrangement.spacedBy(1.dp),
     ) {
         Icon(
             icon,
             contentDescription = uiText(label),
             tint = if (selected) SelectedTabForegroundColor else TextSecondary,
-            modifier = Modifier.size(26.dp),
+            modifier = Modifier.size(23.dp),
         )
         Text(
             text = uiText(label),
             color = if (selected) SelectedTabForegroundColor else TextSecondary,
-            fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.Bold,
-            fontSize = TypeScale.Meta,
-            lineHeight = TypeScale.MetaLine,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            fontSize = 11.sp,
+            lineHeight = 14.sp,
         )
     }
 }
@@ -200,122 +234,95 @@ internal fun screenHasFixedMainTopBar(screen: AppScreen): Boolean {
 
 @Composable
 internal fun FixedMainTopBar(
-    isLightTheme: Boolean,
-    onToggleTheme: () -> Unit,
+    screen: AppScreen,
     onOpenSettings: () -> Unit,
     onOpenScan: () -> Unit,
+    onOpenImport: () -> Unit,
 ) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        FixedTopBarSurfaceColor,
-                        FixedTopBarSurfaceColor.copy(alpha = 0.86f),
-                    ),
-                ),
-            ),
+            .background(FixedTopBarSurfaceColor),
     ) {
         MainTopBar(
-            isLightTheme = isLightTheme,
-            onToggleTheme = onToggleTheme,
+            screen = screen,
             onOpenSettings = onOpenSettings,
             onOpenScan = onOpenScan,
-        )
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(CardOutlineColor),
+            onOpenImport = onOpenImport,
         )
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** Large page title on the left, contextual round actions on the right. */
 @Composable
 internal fun MainTopBar(
-    isLightTheme: Boolean,
-    onToggleTheme: () -> Unit,
+    screen: AppScreen,
     onOpenSettings: () -> Unit,
-    onOpenScan: (() -> Unit)? = null,
+    onOpenScan: () -> Unit,
+    onOpenImport: () -> Unit,
 ) {
     val context = LocalContext.current
     val brandLogo = remember(context) {
         BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher_foreground)?.asImageBitmap()
     }
+    val title = when (screen) {
+        AppScreen.Home -> APP_BRAND_NAME
+        AppScreen.Servers -> uiText("节点", "Nodes")
+        AppScreen.Rules -> uiText("规则", "Rules")
+        AppScreen.Import -> uiText("添加节点", "Add nodes")
+        AppScreen.Me -> uiText("我的", "Me")
+        else -> ""
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 5.dp, vertical = 8.dp),
+            .height(56.dp)
+            .padding(start = 20.dp, end = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier
-                .weight(1f)
-                .padding(end = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (brandLogo != null) {
-                Box(
-                    modifier = Modifier
-                        .size(30.dp)
-                        .clip(RoundedCornerShape(8.dp)),
-                ) {
-                    Image(
-                        bitmap = brandLogo,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .scale(1.9f),
-                    )
-                }
-            } else {
-                Icon(
-                    Icons.Rounded.Security,
+        if (screen == AppScreen.Home && brandLogo != null) {
+            Box(
+                modifier = Modifier
+                    .size(30.dp)
+                    .clip(RoundedCornerShape(9.dp)),
+            ) {
+                Image(
+                    bitmap = brandLogo,
                     contentDescription = null,
-                    tint = BrandIconTint,
-                    modifier = Modifier.size(28.dp),
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .scale(1.9f),
                 )
             }
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                APP_BRAND_NAME,
-                color = BrandTitleColor,
-                fontWeight = FontWeight.Bold,
-                fontSize = TypeScale.SectionTitle,
-                lineHeight = TypeScale.SectionTitleLine,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = APP_VERSION_BADGE,
-                color = BrandTitleColor,
-                fontWeight = FontWeight.Bold,
-                fontSize = TypeScale.SectionTitle,
-                lineHeight = TypeScale.SectionTitleLine,
-                maxLines = 1,
-            )
+            Spacer(modifier = Modifier.width(10.dp))
         }
+        Text(
+            title,
+            color = TextPrimary,
+            fontWeight = FontWeight.Bold,
+            fontSize = if (screen == AppScreen.Home) 22.sp else TypeScale.PageTitle,
+            lineHeight = TypeScale.PageTitleLine,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
         Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButtonCard(
-                icon = Icons.Rounded.LightMode,
-                onClick = onToggleTheme,
-                tint = if (isLightTheme) PrimaryStrong else TextSecondary,
-                background = if (isLightTheme) Primary.copy(alpha = 0.22f) else ControlSurfaceColor,
-                borderColor = if (isLightTheme) Primary.copy(alpha = 0.35f) else Color.Transparent,
-            )
-            if (onOpenScan != null) {
-                IconButtonCard(icon = Icons.Rounded.QrCodeScanner, onClick = onOpenScan)
+            when (screen) {
+                AppScreen.Home, AppScreen.Import -> IconButtonCard(icon = Icons.Rounded.QrCodeScanner, onClick = onOpenScan)
+                AppScreen.Servers -> IconButtonCard(
+                    icon = Icons.Rounded.Add,
+                    onClick = onOpenImport,
+                    tint = AccentContentColor,
+                    background = Primary,
+                )
+                AppScreen.Me -> IconButtonCard(icon = Icons.Rounded.Settings, onClick = onOpenSettings)
+                else -> Unit
             }
-            IconButtonCard(icon = Icons.Rounded.Settings, onClick = onOpenSettings)
         }
     }
 }
@@ -329,25 +336,18 @@ internal fun AppTopBar(
     onAction: (() -> Unit)? = null,
     actionIcon: ImageVector = Icons.Rounded.Settings,
 ) {
+    // The subtitle is intentionally not shown: one short title reads cleaner.
     CenterAlignedTopAppBar(
         title = {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                if (subtitle != null) {
-                    Text(
-                        text = uiText(subtitle),
-                        color = TextSecondary,
-                        fontSize = TypeScale.Tiny,
-                        lineHeight = TypeScale.TinyLine,
-                    )
-                }
-                Text(
-                    text = uiText(title),
-                    color = TextPrimary,
-                    fontSize = TypeScale.ListTitle,
-                    lineHeight = TypeScale.ListTitleLine,
-                    fontWeight = FontWeight.ExtraBold,
-                )
-            }
+            Text(
+                text = uiText(title),
+                color = TextPrimary,
+                fontSize = TypeScale.CardTitle,
+                lineHeight = TypeScale.CardTitleLine,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         },
         navigationIcon = {
             if (onBack != null) {
@@ -370,78 +370,6 @@ internal fun AppTopBar(
 }
 
 @Composable
-internal fun HeroOverviewCard(
-    connectionStatus: ConnectionStatus,
-    proxyMode: ProxyMode,
-    currentRouteLabel: String,
-    currentRouteHint: String?,
-    coreVersion: String?,
-    onToggleConnection: () -> Unit,
-) {
-    SurfaceCard(
-        background = Brush.verticalGradient(
-            colors = listOf(SurfaceLow, SurfaceTone),
-        ),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Eyebrow(uiText("状态总览"))
-                Text(
-                    text = uiText(connectionStatus.statusHeadline()),
-                    fontSize = TypeScale.SectionTitle,
-                    lineHeight = TypeScale.SectionTitleLine,
-                    fontWeight = FontWeight.ExtraBold,
-                )
-                Text(
-                    text = uiText(connectionStatus.statusDescription()),
-                    color = TextSecondary,
-                    fontSize = TypeScale.Body,
-                    lineHeight = TypeScale.BodyLine,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-            }
-            TogglePill(
-                checked = connectionStatus == ConnectionStatus.Connected ||
-                    connectionStatus == ConnectionStatus.Connecting,
-                onClick = if (
-                    connectionStatus == ConnectionStatus.Connecting ||
-                    connectionStatus == ConnectionStatus.Disconnecting
-                ) {
-                    null
-                } else {
-                    onToggleConnection
-                },
-            )
-        }
-        Spacer(modifier = Modifier.height(18.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxWidth()) {
-            InfoMini(
-                label = uiText("当前节点"),
-                value = currentRouteHint?.let { "$currentRouteLabel\n${uiText(it)}" } ?: currentRouteLabel,
-                modifier = Modifier.fillMaxWidth(),
-                maxLines = 2,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.fillMaxWidth()) {
-                InfoMini(
-                    label = uiText("模式"),
-                    value = uiText(proxyModeText(proxyMode)),
-                    modifier = Modifier.weight(1f),
-                )
-                InfoMini(
-                    label = uiText("核心版本"),
-                    value = coreVersion ?: uiText("初始化中"),
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-    }
-}
-
-@Composable
 internal fun ServerCard(
     server: ServerNode,
     selected: Boolean,
@@ -455,128 +383,76 @@ internal fun ServerCard(
     val highlightedPreProxy = server.hasPreProxyConfigured()
     val fallbackConfigured = server.hasFallbackConfigured()
     val fallbackUnsupported = fallbackConfigured && !NodeLatencyTester.supportsHeartbeatFallback(server)
-    val highlightedFallback = fallbackConfigured && !fallbackUnsupported
-    val subtitle = buildString {
-        val primaryMeta = server.region.ifBlank { server.description }.ifBlank { server.subscription }
-        append(uiText(primaryMeta))
-        if (highlightedPreProxy) {
-            append(uiText(" · 前置"))
-        }
-        if (highlightedFallback) {
-            append(uiText(" · 备用"))
-        }
-        if (fallbackUnsupported) {
-            append(uiText(" · 备用不可用"))
-        }
-    }
-    val rowBackground = when {
-        selected && IsLightTheme -> Secondary.copy(alpha = 0.12f)
-        selected -> Color.White.copy(alpha = 0.06f)
-        IsLightTheme -> Color.White.copy(alpha = 0.66f)
-        else -> Color.Transparent
-    }
+    val subtitle = buildList {
+        server.protocol.takeIf { it.isNotBlank() }?.let { add(it.uppercase(Locale.ROOT)) }
+        server.region.takeIf { it.isNotBlank() }?.let { add(uiText(it)) }
+        if (highlightedPreProxy) add(uiText("前置"))
+        if (fallbackConfigured) add(uiText(if (fallbackUnsupported) "备用不可用" else "备用"))
+    }.joinToString(" · ")
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(rowBackground)
+            .background(if (selected) Primary.copy(alpha = if (IsLightTheme) 0.06f else 0.12f) else Color.Transparent)
             .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .padding(start = 16.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .clip(CircleShape)
-                .background(
-                    when {
-                        selected -> Secondary
-                        highlightedPreProxy || highlightedFallback -> Secondary.copy(alpha = 0.70f)
-                        else -> Outline.copy(alpha = if (IsLightTheme) 0.26f else 0.22f)
-                    },
-                ),
-        )
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
-        ) {
+        if (selected) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(Primary),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Rounded.Check, contentDescription = null, tint = AccentContentColor, modifier = Modifier.size(20.dp))
+            }
+        } else {
+            NodeAvatar(server = server, size = 36.dp)
+        }
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = server.name,
-                color = if (fallbackUnsupported) TextSecondary else TextPrimary,
-                fontSize = 10.sp,
-                lineHeight = 13.sp,
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                color = if (selected) Primary else TextPrimary,
+                fontSize = TypeScale.Body,
+                lineHeight = TypeScale.BodyLine,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            if (subtitle.isNotBlank()) {
                 Text(
                     text = subtitle,
                     color = TextSecondary,
-                    fontSize = TypeScale.Meta,
-                    lineHeight = TypeScale.MetaLine,
+                    fontSize = TypeScale.Tiny,
+                    lineHeight = TypeScale.TinyLine,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.padding(top = 1.dp),
                 )
             }
         }
-        Column(
-            horizontalAlignment = Alignment.End,
-            verticalArrangement = Arrangement.spacedBy(3.dp),
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(onClick = onTestLatency)
+                .padding(horizontal = 6.dp, vertical = 6.dp),
         ) {
-            Text(
-                text = if (server.latencyMs > 0) "${server.latencyMs} ms" else "--",
-                color = if (server.latencyMs > 0) Secondary else TextSecondary,
-                fontSize = TypeScale.Meta,
-                lineHeight = TypeScale.MetaLine,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-            )
-            Text(
-                text = server.protocol.uppercase(Locale.ROOT),
-                color = TextSecondary,
-                fontSize = TypeScale.Tiny,
-                lineHeight = TypeScale.TinyLine,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            LatencyText(latencyMs = server.latencyMs, testing = latencyTesting)
         }
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            CompactIconAction(
-                icon = Icons.Rounded.Sync,
-                tint = when {
-                    latencyTesting -> Primary
-                    server.stable -> Success
-                    else -> TextSecondary
-                },
-                onClick = onTestLatency,
-            )
-            CompactIconAction(
-                icon = Icons.Rounded.MoreHoriz,
-                tint = Primary,
-                onClick = onOpenDetail,
-            )
-            CompactIconAction(
-                icon = if (server.favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                tint = if (server.favorite) Secondary else TextSecondary,
-                onClick = onToggleFavorite,
-            )
-            if (onDelete != null) {
-                CompactIconAction(
-                    icon = Icons.Rounded.Delete,
-                    tint = Error,
-                    onClick = onDelete,
-                )
-            }
+        CompactIconAction(
+            icon = if (server.favorite) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+            tint = if (server.favorite) Warning else TextSecondary.copy(alpha = 0.7f),
+            onClick = onToggleFavorite,
+        )
+        CompactIconAction(
+            icon = Icons.Rounded.MoreVert,
+            tint = TextSecondary,
+            onClick = onOpenDetail,
+        )
+        if (onDelete != null) {
+            CompactIconAction(icon = Icons.Rounded.Delete, tint = Error, onClick = onDelete)
         }
     }
 }

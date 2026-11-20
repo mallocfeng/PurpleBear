@@ -33,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
@@ -86,6 +87,8 @@ internal fun RulesScreen(
     var selectedCustomKind by remember { mutableStateOf(RuleSourceKind.LocalText) }
     var showAddRuleMenu by remember { mutableStateOf(false) }
     val displayedCustomSources = customSources.filter { it.sourceKind == selectedCustomKind }
+    // Global mode skips every rule; dim them so the page shows they are idle.
+    val rulesAlpha = if (globalProxyEnabled) 0.45f else 1f
 
     Box(
         modifier = Modifier
@@ -95,114 +98,84 @@ internal fun RulesScreen(
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             state = listState,
-            contentPadding = mainScreenPadding(bottom = 104.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = mainScreenPadding(bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            item {
-                ScreenHeader(
-                    title = "规则管理",
-                    subtitle = "管理规则源与 Geo 数据。",
+            item(key = "routing-card") {
+                RoutingOverviewCard(
+                    globalProxyEnabled = globalProxyEnabled,
+                    onGlobalProxyChange = onGlobalProxyChange,
+                    geoDataSnapshot = geoDataSnapshot,
+                    geoDataUpdating = geoDataUpdating,
+                    geoRoutingRegion = geoRoutingRegion,
+                    onGeoRoutingRegionChange = onGeoRoutingRegionChange,
+                    onRefreshGeoData = onRefreshGeoData,
                 )
-            }
-            item {
-                SurfaceCard {
-                    SettingToggleRow(
-                        title = "全局代理",
-                        subtitle = if (globalProxyEnabled) {
-                            "已开启：正常上网流量走代理，局域网/私网不走代理。"
-                        } else {
-                            "已关闭：按规则源、Geo 分流和流媒体分流处理。"
-                        },
-                        checked = globalProxyEnabled,
-                        onToggle = { onGlobalProxyChange(!globalProxyEnabled) },
-                    )
-                    Text(
-                        text = uiText("开启后会忽略规则源、流媒体分流和 Geo 直连规则；局域网、私有地址仍直连，其余 TCP 与 UDP 流量走当前节点。"),
-                        color = TextSecondary,
-                        fontSize = TypeScale.Meta,
-                        lineHeight = TypeScale.MetaLine,
-                        modifier = Modifier.padding(top = 10.dp),
-                    )
-                }
             }
             if (!ruleMessage.isNullOrBlank()) {
                 item { NoteBox(text = ruleMessage) }
             }
             item {
-                RuleSourceSectionHeader(
-                    title = "Geo 数据资源",
-                    subtitle = "更新后重新连接生效。",
-                )
-            }
-            item {
-                GeoDataCard(
-                    snapshot = geoDataSnapshot,
-                    updating = geoDataUpdating,
-                    selectedRegion = geoRoutingRegion,
-                    onRegionChange = onGeoRoutingRegionChange,
-                    onRefresh = onRefreshGeoData,
-                )
-            }
-            item {
-                RuleSourceSectionHeader(
-                    title = "系统默认规则源",
-                    subtitle = "默认启用。",
-                )
-            }
-            items(defaultSources, key = { it.id }) { source ->
-                RuleSourceCard(
-                    source = source,
-                    selected = selectedRuleSourceId == source.id,
-                    updating = updatingIds.contains(source.id),
-                    onClick = { onSelectSource(source.id) },
-                    onToggleEnabled = { onToggleEnabled(source.id) },
-                    onRefresh = { onRefreshSource(source.id) },
-                )
-            }
-            item {
-                RuleSourceSectionHeader(
-                    title = "自定义规则源",
-                    subtitle = if (displayedCustomSources.isEmpty()) {
-                        when (selectedCustomKind) {
-                            RuleSourceKind.LocalText -> "还没有手动文本规则。"
-                            RuleSourceKind.RemoteUrl -> "还没有 URL 规则源。"
-                        }
+                SectionLabel(
+                    text = "默认规则",
+                    trailing = if (globalProxyEnabled) {
+                        { InactiveRulesHint() }
                     } else {
-                        "更新后重新连接生效。"
+                        null
                     },
                 )
             }
-            item {
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    ModeChip(
-                        text = "文本规则",
-                        selected = selectedCustomKind == RuleSourceKind.LocalText,
-                    ) {
-                        selectedCustomKind = RuleSourceKind.LocalText
-                    }
-                    ModeChip(
-                        text = "URL 规则",
-                        selected = selectedCustomKind == RuleSourceKind.RemoteUrl,
-                    ) {
-                        selectedCustomKind = RuleSourceKind.RemoteUrl
+            item(key = "default-rules") {
+                GroupedCard(modifier = Modifier.alpha(rulesAlpha)) {
+                    defaultSources.forEachIndexed { index, source ->
+                        if (index > 0) GroupDivider()
+                        RuleSourceCard(
+                            source = source,
+                            selected = selectedRuleSourceId == source.id,
+                            updating = updatingIds.contains(source.id),
+                            onClick = { onSelectSource(source.id) },
+                            onToggleEnabled = { onToggleEnabled(source.id) },
+                            onRefresh = { onRefreshSource(source.id) },
+                        )
                     }
                 }
             }
-            if (displayedCustomSources.isEmpty()) {
-                item { EmptyRulesCard() }
-            } else {
-                items(displayedCustomSources, key = { it.id }) { source ->
-                    RuleSourceCard(
-                        source = source,
-                        selected = selectedRuleSourceId == source.id,
-                        updating = updatingIds.contains(source.id),
-                        onClick = { onSelectSource(source.id) },
-                        onToggleEnabled = { onToggleEnabled(source.id) },
-                        onRefresh = { onRefreshSource(source.id) },
-                    )
+            item {
+                SectionLabel(
+                    text = "自定义规则",
+                    trailing = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            ChoiceChip(
+                                text = uiText("文本"),
+                                selected = selectedCustomKind == RuleSourceKind.LocalText,
+                                onClick = { selectedCustomKind = RuleSourceKind.LocalText },
+                            )
+                            ChoiceChip(
+                                text = "URL",
+                                selected = selectedCustomKind == RuleSourceKind.RemoteUrl,
+                                onClick = { selectedCustomKind = RuleSourceKind.RemoteUrl },
+                            )
+                        }
+                    },
+                )
+            }
+            item(key = "custom-rules") {
+                if (displayedCustomSources.isEmpty()) {
+                    EmptyRulesCard()
+                } else {
+                    GroupedCard(modifier = Modifier.alpha(rulesAlpha)) {
+                        displayedCustomSources.forEachIndexed { index, source ->
+                            if (index > 0) GroupDivider()
+                            RuleSourceCard(
+                                source = source,
+                                selected = selectedRuleSourceId == source.id,
+                                updating = updatingIds.contains(source.id),
+                                onClick = { onSelectSource(source.id) },
+                                onToggleEnabled = { onToggleEnabled(source.id) },
+                                onRefresh = { onRefreshSource(source.id) },
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -210,8 +183,7 @@ internal fun RulesScreen(
         Box(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .navigationBarsPadding()
-                .padding(end = 24.dp, bottom = 16.dp),
+                .padding(end = 20.dp, bottom = 12.dp + LocalBottomBarInset.current),
         ) {
             AddRuleFab(
                 onClick = { showAddRuleMenu = true },
@@ -940,4 +912,14 @@ private fun TextFieldValue.replaceCurrentRuleToken(
     val nextText = text.replaceRange(context.start, context.end, replacement)
     val nextCursor = context.start + (cursorOffset ?: replacement.length)
     return copy(text = nextText, selection = TextRange(nextCursor.coerceIn(0, nextText.length)))
+}
+
+@Composable
+private fun InactiveRulesHint() {
+    Text(
+        text = uiText("全局模式下不生效"),
+        color = TextSecondary,
+        fontSize = TypeScale.Tiny,
+        lineHeight = TypeScale.TinyLine,
+    )
 }

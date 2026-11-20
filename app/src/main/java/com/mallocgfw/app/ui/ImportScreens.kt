@@ -2,6 +2,8 @@ package com.mallocgfw.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -35,6 +37,7 @@ import com.mallocgfw.app.ui.theme.Error
 import com.mallocgfw.app.ui.theme.Primary
 import com.mallocgfw.app.ui.theme.Success
 import com.mallocgfw.app.ui.theme.SurfaceHigh
+import com.mallocgfw.app.ui.theme.SurfaceLow
 import com.mallocgfw.app.ui.theme.TextPrimary
 import com.mallocgfw.app.ui.theme.TextSecondary
 import kotlinx.coroutines.delay
@@ -56,25 +59,10 @@ internal fun ImportScreen(
             .padding(padding),
         state = rememberRetainedLazyListState(),
         contentPadding = mainScreenPadding(),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item {
-            ScreenHeader(
-                title = "添加新连接",
-                subtitle = "支持订阅和单节点链接。",
-            )
-        }
-        item {
-                SurfaceCard {
-                    Eyebrow("导入源")
-                Text(
-                    text = uiText("粘贴订阅或单节点链接"),
-                    fontSize = TypeScale.CardTitle,
-                    lineHeight = TypeScale.CardTitleLine,
-                    fontWeight = FontWeight.ExtraBold,
-                )
-                Text(uiText("订阅进入 group，单节点进入 Local。"), color = TextSecondary, modifier = Modifier.padding(top = 8.dp))
-                Spacer(modifier = Modifier.height(16.dp))
+            SurfaceCard {
                 OutlinedTextField(
                     value = input,
                     onValueChange = onInputChange,
@@ -82,13 +70,12 @@ internal fun ImportScreen(
                     textStyle = compactInputTextStyle(),
                     minLines = 4,
                     maxLines = 8,
-                    label = { CompactInputLabel("订阅链接或节点 URL") },
-                    placeholder = { CompactInputPlaceholder("https://... 或 ss://... / vless://...") },
+                    placeholder = { CompactInputPlaceholder("粘贴订阅链接或节点链接（vless:// ss:// …）") },
                     shape = RoundedCornerShape(14.dp),
                     colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = SurfaceHigh,
-                        unfocusedContainerColor = SurfaceHigh,
-                        focusedBorderColor = Primary.copy(alpha = 0.3f),
+                        focusedContainerColor = SurfaceLow,
+                        unfocusedContainerColor = SurfaceLow,
+                        focusedBorderColor = Primary.copy(alpha = 0.5f),
                         unfocusedBorderColor = Color.Transparent,
                         cursorColor = Primary,
                         focusedTextColor = TextPrimary,
@@ -99,51 +86,31 @@ internal fun ImportScreen(
                     Text(
                         text = errorMessage,
                         color = Error,
-                        modifier = Modifier.padding(top = 12.dp),
+                        fontSize = TypeScale.Meta,
+                        lineHeight = TypeScale.MetaLine,
+                        modifier = Modifier.padding(top = 10.dp),
                     )
                 }
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 CompactButtonRow(
-                    primaryText = if (importInFlight) "正在解析…" else "解析并确认",
+                    primaryText = if (importInFlight) "正在解析…" else "解析",
                     onPrimary = onOpenConfirm,
-                    primaryEnabled = !importInFlight,
-                    secondaryText = "导入附件",
+                    primaryEnabled = !importInFlight && input.isNotBlank(),
+                    secondaryText = "从文件导入",
                     onSecondary = onOpenFile,
                 )
             }
         }
-        item {
-            SurfaceCard {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column {
-                        Eyebrow("最近导入")
-                        Text(
-                            text = uiText("继续上次操作"),
-                            fontSize = TypeScale.CardTitle,
-                            lineHeight = TypeScale.CardTitleLine,
-                            fontWeight = FontWeight.ExtraBold,
-                        )
+        if (recentImports.isNotEmpty()) {
+            item { SectionLabel("最近导入") }
+            item {
+                GroupedCard {
+                    recentImports.forEachIndexed { index, item ->
+                        if (index > 0) GroupDivider(startIndent = 58.dp)
+                        ListRow(title = item, icon = Icons.Rounded.Inventory2)
                     }
-                    OutlinedActionChip(text = "最多 30 天")
-                }
-                Spacer(modifier = Modifier.height(14.dp))
-                recentImports.forEach { item ->
-                    ActionListRow(text = uiText(item), icon = Icons.Rounded.Inventory2)
-                    Spacer(modifier = Modifier.height(10.dp))
                 }
             }
-        }
-        item {
-            PromoCard(
-                title = "订阅与规则统一更新",
-                subtitle = "一键同步节点与规则资源。",
-                buttonText = null,
-                onClick = {},
-            )
         }
     }
 }
@@ -273,107 +240,97 @@ internal fun SubscriptionsScreen(
         item {
             AppTopBar(title = "订阅管理", subtitle = "资源中心", onBack = onBack)
         }
-        item {
-            ScreenHeader(
-                title = "订阅与资源",
-                subtitle = "节点订阅与资源状态。",
-            )
-        }
         if (!message.isNullOrBlank()) {
             item { NoteBox(text = message) }
         }
         items(subscriptions, key = { it.id }) { subscription ->
             val refreshable = subscription.autoUpdate && !subscription.sourceUrl.isNullOrBlank()
             val refreshing = refreshingIds.contains(subscription.id)
+            val failed = subscription.status.contains("失败")
             SurfaceCard {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    RowIcon(icon = Icons.Rounded.Inventory2, tint = if (failed) Error else Primary)
                     Column(modifier = Modifier.weight(1f)) {
-                        Eyebrow(subscription.type)
                         Text(
                             text = uiText(subscription.name),
-                            fontSize = TypeScale.CardTitle,
-                            lineHeight = TypeScale.CardTitleLine,
-                            fontWeight = FontWeight.ExtraBold,
+                            color = TextPrimary,
+                            fontSize = TypeScale.ListTitle,
+                            lineHeight = TypeScale.ListTitleLine,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            uiText("${subscription.nodes} 个节点", "${subscription.nodes} nodes"),
+                            text = listOf(
+                                uiText("${subscription.nodes} 个节点", "${subscription.nodes} nodes"),
+                                uiText(formatRelativeSyncTime(subscription.updatedAtMs, subscription.updatedAt, nowMs)),
+                                uiText(
+                                    when {
+                                        subscription.sourceUrl == null -> "文件导入"
+                                        subscription.autoUpdate -> "订阅链接"
+                                        else -> "快照"
+                                    },
+                                ),
+                            ).joinToString(" · "),
                             color = TextSecondary,
+                            fontSize = TypeScale.Tiny,
+                            lineHeight = TypeScale.TinyLine,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 1.dp),
                         )
                     }
-                    Column(horizontalAlignment = Alignment.End) {
+                    if (refreshing || failed) {
                         StatusPill(
                             text = if (refreshing) "刷新中" else subscription.status,
-                            color = when {
-                                refreshing -> Primary
-                                subscription.status.contains("失败") -> Error
-                                else -> Success
-                            },
-                            background = when {
-                                refreshing -> Primary.copy(alpha = 0.14f)
-                                subscription.status.contains("失败") -> Error.copy(alpha = 0.14f)
-                                else -> Success.copy(alpha = 0.14f)
-                            },
-                        )
-                        Text(
-                            text = uiText("删除"),
-                            color = Error,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier
-                                .padding(top = 10.dp)
-                                .clickable { onDelete(subscription.id) },
+                            color = if (refreshing) Primary else Error,
+                            background = (if (refreshing) Primary else Error).copy(alpha = 0.12f),
+                            compact = true,
                         )
                     }
                 }
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            text = uiText("最近同步：${formatRelativeSyncTime(subscription.updatedAtMs, subscription.updatedAt, nowMs)}"),
-                            color = TextSecondary,
-                        )
-                        Text(
-                            text = uiText(when {
-                                subscription.sourceUrl == null -> "来源：文件导入"
-                                subscription.autoUpdate -> "来源：订阅链接"
-                                else -> "来源：订阅快照（不刷新）"
-                            }),
-                            color = TextSecondary,
-                            fontSize = TypeScale.Meta,
-                            lineHeight = TypeScale.MetaLine,
-                        )
-                    }
                     if (refreshable) {
-                        Text(
-                            text = uiText(if (refreshing) "刷新中…" else "手动刷新"),
-                            color = Primary,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.clickable(enabled = !refreshing) { onRefresh(subscription.id) },
+                        TextAction(
+                            text = if (refreshing) "刷新中…" else "刷新",
+                            enabled = !refreshing,
+                            onClick = { onRefresh(subscription.id) },
                         )
                     }
+                    Text(
+                        text = uiText("删除"),
+                        color = Error,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = TypeScale.Meta,
+                        lineHeight = TypeScale.MetaLine,
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(Error.copy(alpha = 0.10f))
+                            .clickable { onDelete(subscription.id) }
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
                 }
             }
         }
         if (subscriptions.isEmpty()) {
             item {
-                NoteBox(text = "还没有订阅组。")
+                SurfaceCard {
+                    Text(
+                        text = uiText("还没有订阅，可在“节点”页点 + 导入"),
+                        color = TextSecondary,
+                        fontSize = TypeScale.Meta,
+                        lineHeight = TypeScale.MetaLine,
+                    )
+                }
             }
-        }
-        item {
-            CompactButtonRow(
-                primaryText = "立即刷新",
-                onPrimary = { subscriptions.firstOrNull()?.id?.let(onRefresh) },
-                primaryEnabled = subscriptions.isNotEmpty(),
-                secondaryText = "打开设置",
-                onSecondary = onOpenSettings,
-            )
         }
     }
 }

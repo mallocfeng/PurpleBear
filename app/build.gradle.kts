@@ -132,6 +132,8 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.foundation:foundation")
+    // Liquid-glass backdrop effects (blur, lens refraction) for the tab bar.
+    implementation("io.github.kyant0:backdrop:2.0.1")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("com.google.android.material:material:1.14.0")

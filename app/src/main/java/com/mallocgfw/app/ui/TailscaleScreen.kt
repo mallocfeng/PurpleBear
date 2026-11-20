@@ -82,13 +82,7 @@ internal fun TailscaleScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
-            AppTopBar(title = "Tailscale (beta)", subtitle = "Tailnet 分流", onBack = onBack)
-        }
-        item {
-            ScreenHeader(
-                title = "Tailscale (beta)",
-                subtitle = "在当前代理 VPN 内访问官方 Tailnet。",
-            )
+            AppTopBar(title = "Tailscale", subtitle = "Tailnet 分流", onBack = onBack)
         }
         item {
             SettingsGroup(title = "全局模块") {

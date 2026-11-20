@@ -617,11 +617,7 @@ fun MallocGfwApp(
             connectionStatus == ConnectionStatus.Connected ||
             connectionStatus == ConnectionStatus.Connecting ||
             connectionStatus == ConnectionStatus.Disconnecting
-        ruleMessage = if (shouldReconnect) {
-            "Geo 分流国家已更新，正在重连 VPN 以应用新规则。"
-        } else {
-            "Geo 分流国家已更新，连接后会按新规则分流。"
-        }
+        ruleMessage = if (shouldReconnect) "正在重新连接以应用新模式…" else null
         val reconnectServer = resolveServerForSettingsReconnect()
         if (shouldReconnect && reconnectServer != null) {
             reconnectVpnForSettingsChange(
@@ -649,19 +645,8 @@ fun MallocGfwApp(
             connectionStatus == ConnectionStatus.Connected ||
             connectionStatus == ConnectionStatus.Connecting ||
             connectionStatus == ConnectionStatus.Disconnecting
-        ruleMessage = if (enabled) {
-            if (shouldReconnect) {
-                "全局代理已开启，正在重启 VPN 服务；局域网/私网不走代理。"
-            } else {
-                "全局代理已开启，连接后正常上网流量走代理，局域网/私网不走代理。"
-            }
-        } else {
-            if (shouldReconnect) {
-                "全局代理已关闭，正在重连 VPN 以恢复规则分流。"
-            } else {
-                "全局代理已关闭，连接后会按规则分流。"
-            }
-        }
+        // The mode card already explains each mode; only report the reconnect.
+        ruleMessage = if (shouldReconnect) "正在重新连接以应用新模式…" else null
         val reconnectServer = resolveServerForSettingsReconnect()
         if (shouldReconnect && reconnectServer != null) {
             reconnectVpnForSettingsChange(
@@ -2039,6 +2024,10 @@ fun MallocGfwApp(
     BackHandler(enabled = screen !in setOf(AppScreen.Home, AppScreen.Servers, AppScreen.Rules, AppScreen.Import, AppScreen.Me)) {
         onBack()
     }
+    // Import is opened from the "+" on Nodes, so Back returns there instead of leaving the app.
+    BackHandler(enabled = screen == AppScreen.Import) {
+        goToMain(MainTab.Servers)
+    }
 
     if (startupHiddenUnsupportedNodeCount > 0 && screen != AppScreen.Launch) {
         AlertDialog(
@@ -2253,10 +2242,6 @@ fun MallocGfwApp(
                         },
                         onOpenNodeDetail = { openNodeDetailForServer(selectedServer?.id) },
                         onOpenImport = { goToMain(MainTab.Import) },
-                        onOpenDiagnostics = { navigateSecondary(AppScreen.Diagnostics) },
-                        onOpenSubscriptions = { navigateSecondary(AppScreen.Subscriptions) },
-                        onOpenPerApp = { navigateSecondary(AppScreen.PerApp) },
-                        onOpenMediaRouting = { navigateSecondary(AppScreen.MediaRouting) },
                     )
 
                     AppScreen.Servers -> ServersScreen(
@@ -2375,7 +2360,13 @@ fun MallocGfwApp(
                             pendingImport?.let {
                                 val applyResult = applyImport(it)
                                 applyResult.message?.let { message -> subscriptionMessage = message }
-                                navigateSecondary(AppScreen.Subscriptions)
+                                // Single nodes land in Local: show them in Nodes, not the
+                                // (possibly empty) subscription list.
+                                if (it.group.type == ServerGroupType.Local) {
+                                    goToMain(MainTab.Servers)
+                                } else {
+                                    navigateSecondary(AppScreen.Subscriptions)
+                                }
                                 applyResult.reconnectServer?.let { reconnectServer ->
                                     reconnectVpnForSettingsChange(
                                         server = reconnectServer,
@@ -2696,6 +2687,8 @@ fun MallocGfwApp(
                         proxyMode = proxyMode,
                         server = selectedServer,
                         streamingRoutingEnabled = appSettings.streamingRoutingEnabled,
+                        lightThemeEnabled = appSettings.lightThemeEnabled,
+                        onToggleTheme = ::toggleThemeMode,
                         onOpenSubscriptions = { navigateSecondary(AppScreen.Subscriptions) },
                         onOpenPerApp = { navigateSecondary(AppScreen.PerApp) },
                         onOpenDiagnostics = { navigateSecondary(AppScreen.Diagnostics) },

@@ -1,3 +1,5 @@
 <resources>
     <color name="ic_launcher_background">#09131D</color>
+    <!-- Matches the dark Compose Background so the cold start does not flash. -->
+    <color name="launch_background">#0C0C10</color>
 </resources>

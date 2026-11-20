@@ -18,6 +18,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -31,6 +33,7 @@ import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -90,38 +93,34 @@ internal fun ModeChip(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    Box(
-        modifier = Modifier
-            .clip(CircleShape)
-            .background(if (selected) Primary.copy(alpha = 0.18f) else SurfaceLow)
-            .border(
-                1.dp,
-                if (selected) Primary.copy(alpha = 0.2f) else Color.Transparent,
-                CircleShape,
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-    ) {
-        Text(uiText(text), color = TextPrimary, fontWeight = FontWeight.Bold, maxLines = 1)
-    }
+    ChoiceChip(text = uiText(text), selected = selected, onClick = onClick)
 }
 
+/** Content padding for tab screens: clears the status bar + 56dp title bar. */
 @Composable
-internal fun mainScreenPadding(bottom: Dp = 32.dp): PaddingValues = screenPadding(
-    top = 116.dp,
+internal fun mainScreenPadding(bottom: Dp = 24.dp): PaddingValues = screenPadding(
+    top = androidx.compose.foundation.layout.WindowInsets.statusBars
+        .asPaddingValues()
+        .calculateTopPadding() + 64.dp,
     bottom = bottom,
 )
 
+/**
+ * Height of the floating glass tab bar plus system navigation. Content scrolls
+ * underneath the bar, so scrollable screens add this to their bottom padding.
+ */
+internal val LocalBottomBarInset = staticCompositionLocalOf { 0.dp }
+
 @Composable
 internal fun screenPadding(
-    top: Dp = 12.dp,
-    bottom: Dp = 32.dp,
+    top: Dp = 8.dp,
+    bottom: Dp = 24.dp,
 ): PaddingValues {
     return PaddingValues(
-        start = 18.dp,
+        start = 16.dp,
         top = top,
-        end = 18.dp,
-        bottom = bottom,
+        end = 16.dp,
+        bottom = bottom + LocalBottomBarInset.current,
     )
 }
 

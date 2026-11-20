@@ -22,6 +22,37 @@ import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.GppGood
 import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.LiveTv
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.automirrored.rounded.ArrowForwardIos
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.PowerSettingsNew
+import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.SwapHoriz
+import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import com.mallocgfw.app.ui.theme.Error
+import com.mallocgfw.app.ui.theme.IsLightTheme
+import com.mallocgfw.app.ui.theme.Success
+import com.mallocgfw.app.ui.theme.Surface as SurfaceTone
+import com.mallocgfw.app.ui.theme.TextPrimary
+import com.mallocgfw.app.ui.theme.Warning
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -68,12 +99,7 @@ internal fun HomeScreen(
     onOpenServers: () -> Unit,
     onOpenNodeDetail: () -> Unit,
     onOpenImport: () -> Unit,
-    onOpenDiagnostics: () -> Unit,
-    onOpenSubscriptions: () -> Unit,
-    onOpenPerApp: () -> Unit,
-    onOpenMediaRouting: () -> Unit,
 ) {
-    val currentRouteLabel = currentServer?.name ?: uiText("未选择")
     val currentRouteHint = currentServer?.ssrCompatibilityLabel()
     val liveDurationMs by produceState(
         initialValue = 0L,
@@ -157,116 +183,385 @@ internal fun HomeScreen(
         }
     }
 
+    val connected = connectionStatus == ConnectionStatus.Connected ||
+        connectionStatus == ConnectionStatus.Disconnecting
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(padding),
         state = listState,
         contentPadding = mainScreenPadding(),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        item {
-            HeroOverviewCard(
+        item(key = "home-connect") {
+            ConnectHero(
                 connectionStatus = connectionStatus,
                 proxyMode = proxyMode,
-                currentRouteLabel = currentRouteLabel,
-                currentRouteHint = currentRouteHint,
-                coreVersion = coreVersion,
+                durationValue = durationValue,
                 onToggleConnection = onToggleConnection,
             )
         }
-        item {
-            HomeMetricsCard(
-                durationValue = durationValue,
-                downloadRate = downloadRate,
-                downloadSubtitle = downloadSubtitle,
-                uploadRate = uploadRate,
-                uploadSubtitle = uploadSubtitle,
-                latencyTesting = latencyTesting,
-                onRetestLatency = onRetestLatency,
-            )
+        if (connected) {
+            item(key = "home-stats") {
+                HomeStatsCard(
+                    downloadRate = downloadRate,
+                    downloadSubtitle = downloadSubtitle,
+                    uploadRate = uploadRate,
+                    uploadSubtitle = uploadSubtitle,
+                    latencyTesting = latencyTesting,
+                    onRefresh = onRetestLatency,
+                )
+            }
         }
         item(key = "home-current-node-card") {
-            SurfaceCard(
-                shape = RoundedCornerShape(28.dp),
-                background = Brush.verticalGradient(listOf(SurfaceLow, SurfaceLow)),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Eyebrow("当前节点")
-                        Text(
-                            currentServer?.name ?: uiText("暂无节点"),
-                            fontSize = TypeScale.ListTitle,
-                            lineHeight = TypeScale.ListTitleLine,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = if (currentServer == null) {
-                                uiText("请先导入线路。")
-                            } else {
-                                "${uiText(currentServer.subscription)} · ${uiText(currentServer.description)}"
-                            },
-                            color = TextSecondary,
-                            fontSize = TypeScale.Meta,
-                            lineHeight = TypeScale.MetaLine,
-                            modifier = Modifier.padding(top = 4.dp),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    Text(
-                        text = currentServer?.latencyMs?.takeIf { it > 0 }?.let { "$it ms" } ?: "--",
-                        color = Secondary,
-                        fontSize = TypeScale.Body,
-                        lineHeight = TypeScale.BodyLine,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(start = 12.dp),
-                    )
-                }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SectionLabel("当前节点")
                 pendingServer?.let { server ->
-                    Spacer(modifier = Modifier.height(8.dp))
-                        NoteBox(
-                        text = uiText("待切换线路：${server.name}", "Pending switch: ${server.name}"),
-                    )
+                    PendingSwitchBanner(serverName = server.name, onClick = onOpenServers)
                 }
-                Spacer(modifier = Modifier.height(10.dp))
-                if (pendingServer != null) {
-                    CompactButtonRow(
-                        primaryText = "切换线路",
-                        onPrimary = onOpenServers,
-                        secondaryText = "查看详情",
-                        onSecondary = onOpenNodeDetail,
-                    )
-                } else {
-                    CompactButtonRow(
-                        primaryText = when {
-                            currentServer == null -> "导入线路"
-                            else -> "选择线路"
-                        },
-                        onPrimary = if (currentServer == null) onOpenImport else onOpenServers,
-                        secondaryText = if (currentServer == null) "订阅管理" else "查看详情",
-                        onSecondary = if (currentServer == null) onOpenSubscriptions else onOpenNodeDetail,
+                CurrentNodeCard(
+                    server = currentServer,
+                    hint = currentRouteHint,
+                    latencyTesting = latencyTesting,
+                    onOpenServers = onOpenServers,
+                    onOpenImport = onOpenImport,
+                    onOpenDetail = onOpenNodeDetail,
+                    onRetestLatency = onRetestLatency,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConnectHero(
+    connectionStatus: ConnectionStatus,
+    proxyMode: ProxyMode,
+    durationValue: String,
+    onToggleConnection: () -> Unit,
+) {
+    val busy = connectionStatus == ConnectionStatus.Connecting ||
+        connectionStatus == ConnectionStatus.Disconnecting
+    val connected = connectionStatus == ConnectionStatus.Connected
+    val haloScale by animateFloatAsState(
+        targetValue = if (connected) 1f else 0.82f,
+        animationSpec = tween(durationMillis = 420),
+        label = "connect-halo",
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 18.dp, bottom = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            modifier = Modifier.size(212.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(212.dp)
+                    .scale(haloScale)
+                    .clip(CircleShape)
+                    .background(Primary.copy(alpha = if (connected) 0.12f else 0.06f)),
+            )
+            if (busy) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(176.dp),
+                    color = Primary,
+                    trackColor = Primary.copy(alpha = 0.12f),
+                    strokeWidth = 3.dp,
+                )
+            }
+            Surface(
+                shape = CircleShape,
+                color = if (connected) Primary else SurfaceTone,
+                shadowElevation = if (connected || !IsLightTheme) 0.dp else 8.dp,
+                modifier = Modifier
+                    .size(160.dp)
+                    .clip(CircleShape)
+                    .clickable(enabled = !busy, onClick = onToggleConnection),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Rounded.PowerSettingsNew,
+                        contentDescription = uiText(if (connected) "断开连接" else "连接"),
+                        tint = if (connected) AccentContentColor else Primary,
+                        modifier = Modifier.size(64.dp),
                     )
                 }
             }
         }
-        item {
-            FeatureList(
-                items = listOf(
-                    FeatureAction("系统诊断", "内核 / VPN / DNS", Icons.Rounded.GppGood, onOpenDiagnostics),
-                    FeatureAction("订阅管理", "节点与资源", Icons.Rounded.Inventory2, onOpenSubscriptions),
-                    FeatureAction("分应用代理", "应用名单", Icons.Rounded.Apps, onOpenPerApp),
-                    FeatureAction("流媒体分流", "单独出口", Icons.Rounded.LiveTv, onOpenMediaRouting),
-                ),
+        Spacer(modifier = Modifier.height(14.dp))
+        Text(
+            text = uiText(
+                when (connectionStatus) {
+                    ConnectionStatus.Connected -> "已连接"
+                    ConnectionStatus.Connecting -> "正在连接…"
+                    ConnectionStatus.Disconnecting -> "正在断开…"
+                    ConnectionStatus.Disconnected -> "未连接"
+                },
+            ),
+            color = TextPrimary,
+            fontSize = TypeScale.Hero,
+            lineHeight = TypeScale.HeroLine,
+            fontWeight = FontWeight.Bold,
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = if (connected) {
+                "$durationValue · ${uiText(proxyModeText(proxyMode))}"
+            } else {
+                uiText("轻触按钮开始连接", "Tap to connect")
+            },
+            color = TextSecondary,
+            fontSize = TypeScale.Body,
+            lineHeight = TypeScale.BodyLine,
+        )
+    }
+}
+
+@Composable
+private fun HomeStatsCard(
+    downloadRate: String,
+    downloadSubtitle: String,
+    uploadRate: String,
+    uploadSubtitle: String,
+    latencyTesting: Boolean,
+    onRefresh: () -> Unit,
+) {
+    SurfaceCard {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            StatCell(
+                icon = Icons.Rounded.ArrowDownward,
+                label = "下载",
+                value = uiText(downloadRate),
+                subtitle = downloadSubtitle,
+                modifier = Modifier.weight(1f),
+            )
+            Box(
+                modifier = Modifier
+                    .height(40.dp)
+                    .width(0.6.dp)
+                    .background(DividerColor),
+            )
+            StatCell(
+                icon = Icons.Rounded.ArrowUpward,
+                label = "上传",
+                value = uiText(uploadRate),
+                subtitle = uploadSubtitle,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 16.dp),
+            )
+            CompactIconAction(
+                icon = Icons.Rounded.Sync,
+                tint = if (latencyTesting) Primary else TextSecondary,
+                onClick = onRefresh,
             )
         }
     }
+}
+
+@Composable
+private fun StatCell(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    value: String,
+    subtitle: String,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Icon(icon, contentDescription = null, tint = Primary, modifier = Modifier.size(14.dp))
+            Eyebrow(label)
+        }
+        Text(
+            text = value,
+            color = TextPrimary,
+            fontSize = TypeScale.CardTitle,
+            lineHeight = TypeScale.CardTitleLine,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+        Text(
+            text = uiText(subtitle),
+            color = TextSecondary,
+            fontSize = TypeScale.Tiny,
+            lineHeight = TypeScale.TinyLine,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun CurrentNodeCard(
+    server: ServerNode?,
+    hint: String?,
+    latencyTesting: Boolean,
+    onOpenServers: () -> Unit,
+    onOpenImport: () -> Unit,
+    onOpenDetail: () -> Unit,
+    onRetestLatency: () -> Unit,
+) {
+    GroupedCard {
+        if (server == null) {
+            ListRow(
+                title = "导入节点",
+                subtitle = "粘贴订阅链接、扫码或选择文件",
+                icon = Icons.Rounded.Add,
+                onClick = onOpenImport,
+            )
+            return@GroupedCard
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onOpenServers)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            NodeAvatar(server = server)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = server.name,
+                    color = TextPrimary,
+                    fontSize = TypeScale.ListTitle,
+                    lineHeight = TypeScale.ListTitleLine,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = listOfNotNull(
+                        server.protocol.takeIf { it.isNotBlank() },
+                        hint?.let { uiText(it) } ?: uiText(server.subscription).takeIf { it.isNotBlank() },
+                    ).joinToString(" · "),
+                    color = TextSecondary,
+                    fontSize = TypeScale.Meta,
+                    lineHeight = TypeScale.MetaLine,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+            LatencyText(latencyMs = server.latencyMs, testing = latencyTesting)
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.ArrowForwardIos,
+                contentDescription = null,
+                tint = TextSecondary.copy(alpha = 0.6f),
+                modifier = Modifier.size(13.dp),
+            )
+        }
+        GroupDivider(startIndent = 16.dp)
+        Row(modifier = Modifier.fillMaxWidth()) {
+            NodeQuickAction(
+                text = if (latencyTesting) "测速中…" else "测速",
+                icon = Icons.Rounded.Speed,
+                onClick = onRetestLatency,
+                modifier = Modifier.weight(1f),
+            )
+            NodeQuickAction(
+                text = "详情",
+                icon = Icons.Rounded.Info,
+                onClick = onOpenDetail,
+                modifier = Modifier.weight(1f),
+            )
+            NodeQuickAction(
+                text = "切换",
+                icon = Icons.Rounded.SwapHoriz,
+                onClick = onOpenServers,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun NodeQuickAction(
+    text: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = Primary, modifier = Modifier.size(17.dp))
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = uiText(text),
+            color = TextPrimary,
+            fontSize = TypeScale.Meta,
+            lineHeight = TypeScale.MetaLine,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+/** Round initial badge for a node (first letter/emoji of its name). */
+@Composable
+internal fun NodeAvatar(server: ServerNode, size: androidx.compose.ui.unit.Dp = 40.dp) {
+    val label = server.name.trim().let { name ->
+        val codePoint = name.codePointAt(0).takeIf { name.isNotEmpty() }
+        when {
+            codePoint == null -> "?"
+            // Regional-indicator flag emoji take two code points.
+            codePoint in 0x1F1E6..0x1F1FF && name.length >= 4 -> name.substring(0, 4)
+            Character.isLetterOrDigit(codePoint) -> String(Character.toChars(codePoint)).uppercase()
+            else -> String(Character.toChars(codePoint))
+        }
+    }
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(Primary.copy(alpha = if (IsLightTheme) 0.10f else 0.20f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            color = Primary,
+            fontSize = TypeScale.ListTitle,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+        )
+    }
+}
+
+/** Latency coloured by quality: green < 200ms, amber < 500ms, red beyond. */
+@Composable
+internal fun LatencyText(latencyMs: Int, testing: Boolean = false) {
+    val color = when {
+        testing || latencyMs <= 0 -> TextSecondary
+        latencyMs < 200 -> Success
+        latencyMs < 500 -> Warning
+        else -> Error
+    }
+    Text(
+        text = when {
+            testing -> "…"
+            latencyMs > 0 -> "$latencyMs ms"
+            else -> "--"
+        },
+        color = color,
+        fontSize = TypeScale.Meta,
+        lineHeight = TypeScale.MetaLine,
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+    )
 }
 
 @Composable
@@ -302,13 +597,7 @@ internal fun ServersScreen(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item {
-            ScreenHeader(
-                title = "切换线路",
-                subtitle = "按分组管理线路。",
-            )
-        }
-        item {
-            SearchField(search = search, onValueChange = onSearchChange)
+            SearchField(search = search, placeholder = "搜索节点", onValueChange = onSearchChange)
         }
         item {
             FilterRow(
@@ -391,6 +680,7 @@ internal fun NodeDetailScreen(
 ) {
     var showDeleteNodeDialog by remember { mutableStateOf(false) }
     var showDeleteGroupDialog by remember { mutableStateOf(false) }
+    var showAllParameters by remember { mutableStateOf(false) }
     val isActiveServer = server?.id != null && server.id == activeServerId
     val parameterRows = remember(server?.id, server?.outboundJson, server?.rawUri) {
         server?.let(::buildNodeParameterRows).orEmpty()
@@ -427,47 +717,27 @@ internal fun NodeDetailScreen(
         }
         if (server != null && (canSelectPreProxy || canSelectFallback)) {
             item {
-                SurfaceCard(
-                    border = BorderStroke(1.dp, Primary.copy(alpha = 0.18f)),
-                    background = Brush.verticalGradient(listOf(SurfaceHigh, SurfaceLow)),
-                ) {
+                GroupedCard {
                     if (canSelectPreProxy) {
-                        DetailMenuRow(
-                            label = "前置代理节点",
-                            value = "选择可用节点作为跳板",
-                            selection = preProxyNode?.name ?: "未设置",
+                        ListRow(
+                            title = "前置代理",
+                            subtitle = "重新连接后生效",
+                            value = preProxyNode?.name ?: "未设置",
+                            icon = Icons.Rounded.Link,
                             onClick = onOpenPreProxyPicker,
                         )
                     }
-                    if (canSelectPreProxy && canSelectFallback) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                    }
+                    if (canSelectPreProxy && canSelectFallback) GroupDivider(startIndent = 58.dp)
                     if (canSelectFallback) {
-                        DetailMenuRow(
-                            label = "备用节点",
-                            value = if (fallbackUnsupportedMessage == null) {
-                                "当前线路检测失败时自动切换"
-                            } else {
-                                "此协议不能可靠触发自动切换"
-                            },
-                            selection = if (fallbackUnsupportedMessage == null) {
-                                fallbackNode?.name ?: "未设置"
-                            } else {
-                                "不支持"
-                            },
-                            onClick = onOpenFallbackPicker,
+                        ListRow(
+                            title = "备用节点",
+                            subtitle = fallbackUnsupportedUiMessage ?: "检测失败时自动切换",
+                            value = if (fallbackUnsupportedMessage == null) fallbackNode?.name ?: "未设置" else "不支持",
+                            icon = Icons.Rounded.SwapHoriz,
                             enabled = fallbackSelectionEnabled,
+                            onClick = onOpenFallbackPicker,
                         )
                     }
-                    Spacer(modifier = Modifier.height(12.dp))
-                    NoteBox(
-                        text = fallbackUnsupportedMessage
-                            ?.let { fallbackUnsupportedUiMessage }
-                            ?: uiText(
-                                "前置代理重新连接后生效；备用节点会在当前连接节点检测失败后自动阻断操作并切换。",
-                                "Pre-proxy applies after reconnect. Fallback blocks input and switches when the active node fails checks.",
-                            ),
-                    )
                 }
             }
         }
@@ -522,17 +792,34 @@ internal fun NodeDetailScreen(
                     value = server?.subscription?.let { uiText(it) } ?: uiText("未导入"),
                     trailing = group?.let { if (it.type == ServerGroupType.Local) "Local" else "订阅组" } ?: "官方核心兼容",
                 )
-                NoteBox(text = "完整节点参数在这里查看。")
             }
         }
         if (parameterRows.isNotEmpty()) {
             item {
-                SurfaceCard {
-                    Eyebrow("全部参数")
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        parameterRows.forEach { entry ->
-                            ParameterReadRow(label = entry.first, value = entry.second)
+                // Raw parameters are long; keep them folded until asked for.
+                GroupedCard {
+                    ListRow(
+                        title = "全部参数",
+                        value = uiText("${parameterRows.size} 项", "${parameterRows.size} items"),
+                        icon = Icons.Rounded.Code,
+                        onClick = { showAllParameters = !showAllParameters },
+                        trailing = {
+                            Icon(
+                                imageVector = if (showAllParameters) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                contentDescription = null,
+                                tint = TextSecondary,
+                            )
+                        },
+                    )
+                    if (showAllParameters) {
+                        GroupDivider()
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            parameterRows.forEach { entry ->
+                                ParameterReadRow(label = entry.first, value = entry.second)
+                            }
                         }
                     }
                 }

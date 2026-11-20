@@ -245,12 +245,6 @@ internal fun DiagnosticsScreen(
         item {
             AppTopBar(title = "系统诊断", subtitle = "故障分析", onBack = onBack)
         }
-        item {
-            ScreenHeader(
-                title = "系统诊断",
-                subtitle = "检查配置、内核、VPN、DNS 和握手。",
-            )
-        }
         items(steps, key = { it.key }) { step ->
             DiagnosticCard(step = step)
         }
@@ -314,12 +308,6 @@ internal fun SettingsScreen(
     ) {
         item {
             AppTopBar(title = uiText("设置"), subtitle = uiText("偏好与高级"), onBack = onBack)
-        }
-        item {
-            ScreenHeader(
-                title = uiText("设置"),
-                subtitle = uiText("连接、更新、DNS 与日志。"),
-            )
         }
         if (!message.isNullOrBlank()) {
             item {
@@ -563,10 +551,10 @@ internal fun OpenSourceLicensesScreen(
                     Text(
                         text = """
                             Project: MetaCubeX/mihomo
-                            Version: v1.19.24
+                            Version: v1.19.34
                             License: GPL-3.0
-                            Source: https://github.com/MetaCubeX/mihomo/tree/v1.19.24
-                            Release asset: mihomo-android-arm64-v8-v1.19.24.gz
+                            Source: https://github.com/MetaCubeX/mihomo/tree/v1.19.34
+                            Release asset: mihomo-android-arm64-v8-v1.19.34.gz
                             Release asset SHA-256:
                             e45a0b18ea3554cf7f322b59cf2dd21f3e4879dd2db657cbba6a557235e33115
                             Packaged binary:
@@ -613,13 +601,31 @@ internal fun OpenSourceLicensesScreen(
                     Text(
                         text = """
                             Project: Tailscale
-                            Version: v1.98.8
+                            Version: v1.104.7
                             License: BSD 3-Clause
-                            Source: https://github.com/tailscale/tailscale/tree/v1.98.8
+                            Source: https://github.com/tailscale/tailscale/tree/v1.104.7
                             PurpleBear 在进程内运行 Tailscale userspace 节点，
                             并将其本地 SOCKS5 接口交给 Xray 做 Tailnet 分流。
                             BSD 3-Clause 全文已随 APK 打包在
                             assets/licenses/Tailscale-BSD-3-Clause.txt。
+                        """.trimIndent(),
+                        color = TextSecondary,
+                        fontSize = TypeScale.Body,
+                        lineHeight = TypeScale.BodyLine,
+                    )
+                }
+            }
+        }
+        item {
+            SettingsGroup(title = "Backdrop") {
+                SelectionContainer {
+                    Text(
+                        text = """
+                            Project: Kyant0/AndroidLiquidGlass (backdrop)
+                            Version: 2.0.1
+                            License: Apache License 2.0
+                            Source: https://github.com/Kyant0/AndroidLiquidGlass
+                            底部导航栏的液态玻璃效果基于该库及其示例代码改写。
                         """.trimIndent(),
                         color = TextSecondary,
                         fontSize = TypeScale.Body,
@@ -652,15 +658,6 @@ internal fun UpdateScreen(
     ) {
         item {
             AppTopBar(title = "检查更新", subtitle = "GitHub Release", onBack = onBack)
-        }
-        item {
-            ScreenHeader(
-                title = "检查更新",
-                subtitle = uiText(
-                    "当前 $currentVersionName · versionCode $currentVersionCode",
-                    "Current $currentVersionName · versionCode $currentVersionCode",
-                ),
-            )
         }
         state.message?.takeIf { it.isNotBlank() }?.let { message ->
             item {
@@ -840,12 +837,6 @@ internal fun MediaRoutingScreen(
     ) {
         item {
             AppTopBar(title = "流媒体分流", subtitle = "按服务指定出口", onBack = onBack)
-        }
-        item {
-            ScreenHeader(
-                title = "流媒体分流",
-                subtitle = "按服务指定出口节点。",
-            )
         }
         if (connectionStatus == ConnectionStatus.Connected) {
             item {

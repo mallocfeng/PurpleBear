@@ -18,7 +18,10 @@ import androidx.compose.material.icons.rounded.GppGood
 import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.DeviceHub
+import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.VpnKey
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -31,6 +34,8 @@ import androidx.compose.ui.unit.dp
 import com.mallocgfw.app.model.ConnectionStatus
 import com.mallocgfw.app.model.ProxyMode
 import com.mallocgfw.app.model.ServerNode
+import com.mallocgfw.app.ui.theme.Success
+import com.mallocgfw.app.ui.theme.TextPrimary
 import com.mallocgfw.app.ui.theme.TextSecondary
 
 @Composable
@@ -40,6 +45,8 @@ internal fun MeScreen(
     proxyMode: ProxyMode,
     server: ServerNode?,
     streamingRoutingEnabled: Boolean,
+    lightThemeEnabled: Boolean,
+    onToggleTheme: () -> Unit,
     onOpenSubscriptions: () -> Unit,
     onOpenPerApp: () -> Unit,
     onOpenDiagnostics: () -> Unit,
@@ -63,41 +70,41 @@ internal fun MeScreen(
             .padding(padding),
         state = rememberRetainedLazyListState(),
         contentPadding = mainScreenPadding(),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        item {
-            ScreenHeader(
-                title = "个人环境",
-                subtitle = "状态与工具。",
-            )
-        }
         item {
             SurfaceCard {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.Top,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Column(
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Eyebrow("当前环境")
+                    RowIcon(
+                        icon = Icons.Rounded.Shield,
+                        tint = if (connectionStatus == ConnectionStatus.Connected) Success else TextSecondary,
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            uiText(when (connectionStatus) {
-                                ConnectionStatus.Connected -> "已受保护"
-                                ConnectionStatus.Connecting -> "正在建立连接"
-                                ConnectionStatus.Disconnecting -> "正在断开连接"
-                                ConnectionStatus.Disconnected -> "尚未建立连接"
-                            }),
-                            fontSize = TypeScale.CardTitle,
-                            lineHeight = TypeScale.CardTitleLine,
-                            fontWeight = FontWeight.Bold,
+                            uiText(
+                                when (connectionStatus) {
+                                    ConnectionStatus.Connected -> "已受保护"
+                                    ConnectionStatus.Connecting -> "正在连接…"
+                                    ConnectionStatus.Disconnecting -> "正在断开…"
+                                    ConnectionStatus.Disconnected -> "未连接"
+                                },
+                            ),
+                            color = TextPrimary,
+                            fontSize = TypeScale.ListTitle,
+                            lineHeight = TypeScale.ListTitleLine,
+                            fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
                             "${server?.name ?: uiText("暂无节点")} · ${uiText(proxyModeText(proxyMode))}",
                             color = TextSecondary,
+                            fontSize = TypeScale.Meta,
+                            lineHeight = TypeScale.MetaLine,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -111,39 +118,35 @@ internal fun MeScreen(
             }
         }
         item {
-            FeatureList(
-                items = listOf(
-                    FeatureAction("订阅管理", "节点与资源", Icons.Rounded.Inventory2, onOpenSubscriptions),
-                    FeatureAction("分应用代理", "应用名单", Icons.Rounded.Apps, onOpenPerApp),
-                    FeatureAction(
-                        title = "流媒体分流",
-                        subtitle = if (streamingRoutingEnabled) {
-                            "已启用"
-                        } else {
-                            "单独出口"
-                        },
-                        icon = Icons.Rounded.LiveTv,
-                        onClick = onOpenMediaRouting,
-                    ),
-                    FeatureAction("系统诊断", "VPN / DNS / 握手", Icons.Rounded.GppGood, onOpenDiagnostics),
-                    FeatureAction("设置", "连接与更新", Icons.Rounded.Settings, onOpenSettings),
-                    FeatureAction("Tailscale (beta)", "Tailnet 分流", Icons.Rounded.DeviceHub, onOpenTailscale),
-                ),
-            )
+            GroupedCard {
+                ListRow(title = "订阅管理", icon = Icons.Rounded.Inventory2, onClick = onOpenSubscriptions)
+                GroupDivider(startIndent = 58.dp)
+                ListRow(title = "分应用代理", icon = Icons.Rounded.Apps, onClick = onOpenPerApp)
+                GroupDivider(startIndent = 58.dp)
+                ListRow(
+                    title = "流媒体分流",
+                    value = if (streamingRoutingEnabled) "已启用" else null,
+                    icon = Icons.Rounded.LiveTv,
+                    onClick = onOpenMediaRouting,
+                )
+                GroupDivider(startIndent = 58.dp)
+                ListRow(title = "Tailscale", icon = Icons.Rounded.DeviceHub, onClick = onOpenTailscale)
+            }
         }
         item {
-            SurfaceCard {
-                Text(
-                    text = "授权与设备",
-                    color = TextSecondary,
-                    fontSize = TypeScale.Meta,
-                    lineHeight = TypeScale.MetaLine,
-                    fontWeight = FontWeight.Bold,
+            GroupedCard {
+                ListRow(
+                    title = "深色模式",
+                    icon = Icons.Rounded.DarkMode,
+                    onClick = onToggleTheme,
+                    trailing = { TogglePill(checked = !lightThemeEnabled, onClick = onToggleTheme) },
                 )
-                Spacer(modifier = Modifier.height(14.dp))
-                DetailRow(label = "VPN 授权状态", value = uiText("已授权"), trailing = uiText("查看"), trailingClickable = onOpenPermission)
-                Spacer(modifier = Modifier.height(12.dp))
-                DetailRow(label = "兼容平台", value = "Android · arm64-v8a / amd64", trailing = uiText("已匹配"))
+                GroupDivider(startIndent = 58.dp)
+                ListRow(title = "系统诊断", icon = Icons.Rounded.GppGood, onClick = onOpenDiagnostics)
+                GroupDivider(startIndent = 58.dp)
+                ListRow(title = "VPN 权限", value = "已授权", icon = Icons.Rounded.VpnKey, onClick = onOpenPermission)
+                GroupDivider(startIndent = 58.dp)
+                ListRow(title = "设置", icon = Icons.Rounded.Settings, onClick = onOpenSettings)
             }
         }
     }

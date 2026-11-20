@@ -19,9 +19,9 @@ import androidx.core.view.WindowCompat
 
 private val DarkColorScheme = darkColorScheme(
     primary = DarkPrimaryColor,
-    onPrimary = Color(0xFF24113F),
+    onPrimary = Color(0xFF130B30),
     secondary = DarkSecondaryColor,
-    onSecondary = Color(0xFF2A1845),
+    onSecondary = Color(0xFF130B30),
     background = DarkBackgroundColor,
     onBackground = DarkTextPrimaryColor,
     surface = DarkSurfaceColor,
@@ -36,7 +36,7 @@ private val LightColorScheme = lightColorScheme(
     primary = LightPrimaryColor,
     onPrimary = Color(0xFFFFFFFF),
     secondary = LightSecondaryColor,
-    onSecondary = Color(0xFF24113F),
+    onSecondary = Color(0xFFFFFFFF),
     background = LightBackgroundColor,
     onBackground = LightTextPrimaryColor,
     surface = LightSurfaceColor,
@@ -48,11 +48,11 @@ private val LightColorScheme = lightColorScheme(
 )
 
 private val AppShapes = Shapes(
-    extraSmall = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
-    small = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
-    medium = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
-    large = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
-    extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(32.dp),
+    extraSmall = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+    small = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+    medium = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+    large = androidx.compose.foundation.shape.RoundedCornerShape(22.dp),
+    extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
 )
 
 @Composable
