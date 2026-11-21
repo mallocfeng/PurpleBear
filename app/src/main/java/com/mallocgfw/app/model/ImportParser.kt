@@ -194,6 +194,19 @@ object ImportParser {
     }
 
     private suspend fun buildSubscriptionPreview(sourceUrl: String): ImportPreview {
+        val preview = fetchSubscriptionPreview(sourceUrl)
+        // Plain-HTTP subscriptions work, but their content (node passwords)
+        // crosses the network unencrypted: say so on the confirmation screen.
+        return if (sourceUrl.trim().startsWith("http://", ignoreCase = true)) {
+            preview.copy(summary = preview.summary + PLAIN_HTTP_NOTE)
+        } else {
+            preview
+        }
+    }
+
+    const val PLAIN_HTTP_NOTE = " 此订阅使用未加密的 HTTP 链接，节点信息在传输中可能被他人看到或篡改，建议向服务商索取 https 链接。"
+
+    private suspend fun fetchSubscriptionPreview(sourceUrl: String): ImportPreview {
         val requestProfile = selectSubscriptionRequestProfile(sourceUrl)
         val autoUpdate = shouldAutoRefreshSubscription(sourceUrl)
         suspend fun fetch(profile: ResourceFetchClient.RequestProfile) = withContext(Dispatchers.IO) {

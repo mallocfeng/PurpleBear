@@ -81,6 +81,7 @@ import com.mallocgfw.app.model.RuleSourceStatus
 import com.mallocgfw.app.model.RuleSourceType
 import com.mallocgfw.app.model.ServerNode
 import com.mallocgfw.app.model.ServerGroupType
+import com.mallocgfw.app.model.isSameImportedNode
 import com.mallocgfw.app.model.mergedSubscriptionGroupNodes
 import com.mallocgfw.app.model.normalizedAppVpnMtu
 import com.mallocgfw.app.model.StreamingMediaManager
@@ -890,10 +891,7 @@ fun MallocGfwApp(
             val finalIds = mutableMapOf<String, String>()
             normalizedPreviewNodes.forEach { normalizedNode ->
                 val existingNodeIndex = servers.indexOfFirst {
-                    it.groupId == normalizedNode.groupId && (
-                        it.rawUri == normalizedNode.rawUri ||
-                            it.subscriptionMergeKey() == normalizedNode.subscriptionMergeKey()
-                        )
+                    it.isSameImportedNode(normalizedNode)
                 }
                 if (existingNodeIndex >= 0) {
                     existingIndexes[normalizedNode.id] = existingNodeIndex

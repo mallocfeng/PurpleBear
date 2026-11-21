@@ -8,6 +8,7 @@ import com.mallocgfw.app.model.RuleSourceManager
 import com.mallocgfw.app.model.ServerGroupType
 import com.mallocgfw.app.model.StreamingMediaManager
 import com.mallocgfw.app.model.SubscriptionItem
+import com.mallocgfw.app.model.isSameImportedNode
 import com.mallocgfw.app.model.mergedSubscriptionGroupNodes
 import com.mallocgfw.app.model.subscriptionMergeKey
 import com.mallocgfw.app.model.subscriptionNameKey
@@ -157,10 +158,7 @@ object BackgroundSyncManager {
         } else {
             normalizedPreviewNodes.forEach { normalizedNode ->
                 val existingNodeIndex = servers.indexOfFirst {
-                    it.groupId == normalizedNode.groupId && (
-                        it.rawUri == normalizedNode.rawUri ||
-                            it.subscriptionMergeKey() == normalizedNode.subscriptionMergeKey()
-                        )
+                    it.isSameImportedNode(normalizedNode)
                 }
                 if (existingNodeIndex >= 0) {
                     val existingNode = servers[existingNodeIndex]

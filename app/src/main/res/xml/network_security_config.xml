@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Subscription, rule-source and provider URLs are typed in by the user, so they
+  can't be allowlisted per domain, and some providers only serve plain http://.
+  Android blocks cleartext HTTP by default, which made such imports fail with a
+  bare system error. Allow it app-wide; HTTPS keeps trusting only system CAs.
+  ImportParser warns when a subscription is fetched over plain HTTP.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

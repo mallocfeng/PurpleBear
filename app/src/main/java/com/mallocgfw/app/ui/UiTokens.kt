@@ -27,6 +27,8 @@ internal val SelectedTabForegroundColor: Color get() = Primary
 internal val BottomBarSurfaceColor: Color get() = if (IsLightTheme) Color(0xF7FFFFFF) else Color(0xF21E1E25)
 internal val FixedTopBarSurfaceColor: Color get() = if (IsLightTheme) Color(0xF2F2F2F7) else Color(0xF20C0C10)
 internal val CardOutlineColor: Color get() = if (IsLightTheme) Color(0x0F16151B) else Color(0x14FFFFFF)
+/** Shade under a group's node rows, so they read as its contents. */
+internal val GroupContentTint: Color get() = if (IsLightTheme) Color(0x0816151B) else Color(0x33000000)
 internal val DividerColor: Color get() = if (IsLightTheme) Color(0x1416151B) else Color(0x1AFFFFFF)
 internal val PromoGradientStartColor: Color get() = if (IsLightTheme) Color(0xFFEFEAFF) else Color(0xFF221D38)
 internal val PromoGradientEndColor: Color get() = if (IsLightTheme) Color(0xFFFFFFFF) else Color(0xFF18181D)

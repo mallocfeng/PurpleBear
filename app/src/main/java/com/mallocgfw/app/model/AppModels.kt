@@ -185,6 +185,18 @@ private fun normalizedSubscriptionNodeName(name: String): String {
     return usageAmountSuffixRegex.replace(trimmed, "").trim().ifBlank { trimmed }.lowercase()
 }
 
+/**
+ * Whether [other] is the same imported node as this one. Nodes parsed from
+ * Clash / sing-box / Xray configs have no share link (blank rawUri), so a blank
+ * rawUri must never count as a match: it made every such node of a group
+ * "merge" into one, and a Clash subscription imported as a single node.
+ */
+fun ServerNode.isSameImportedNode(other: ServerNode): Boolean {
+    if (groupId != other.groupId) return false
+    if (rawUri.isNotBlank() && rawUri == other.rawUri) return true
+    return subscriptionMergeKey() == other.subscriptionMergeKey()
+}
+
 fun List<ServerNode>.mergedSubscriptionGroupNodes(targetGroupId: String): List<ServerNode> {
     val merged = mutableListOf<ServerNode>()
     val rawUriIndex = mutableMapOf<String, Int>()
@@ -195,9 +207,11 @@ fun List<ServerNode>.mergedSubscriptionGroupNodes(targetGroupId: String): List<S
             merged += node
             continue
         }
-        val duplicateIndex = rawUriIndex[node.rawUri] ?: mergeKeyIndex[node.subscriptionMergeKey()]
+        // A blank rawUri (config-file nodes) identifies nothing; see isSameImportedNode.
+        val duplicateIndex = node.rawUri.takeIf { it.isNotBlank() }?.let(rawUriIndex::get)
+            ?: mergeKeyIndex[node.subscriptionMergeKey()]
         if (duplicateIndex == null) {
-            rawUriIndex[node.rawUri] = merged.size
+            if (node.rawUri.isNotBlank()) rawUriIndex[node.rawUri] = merged.size
             mergeKeyIndex[node.subscriptionMergeKey()] = merged.size
             merged += node
             continue
@@ -215,7 +229,7 @@ fun List<ServerNode>.mergedSubscriptionGroupNodes(targetGroupId: String): List<S
         merged[duplicateIndex] = normalized
         rawUriIndex.remove(existing.rawUri)
         mergeKeyIndex[existing.subscriptionMergeKey()] = duplicateIndex
-        rawUriIndex[normalized.rawUri] = duplicateIndex
+        if (normalized.rawUri.isNotBlank()) rawUriIndex[normalized.rawUri] = duplicateIndex
         mergeKeyIndex[normalized.subscriptionMergeKey()] = duplicateIndex
     }
 

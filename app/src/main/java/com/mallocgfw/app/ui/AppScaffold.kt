@@ -383,9 +383,13 @@ internal fun ServerCard(
     val highlightedPreProxy = server.hasPreProxyConfigured()
     val fallbackConfigured = server.hasFallbackConfigured()
     val fallbackUnsupported = fallbackConfigured && !NodeLatencyTester.supportsHeartbeatFallback(server)
+    val flag = leadingFlagEmoji(server.name)
+    // The avatar already shows a leading flag; don't repeat it in the name.
+    val displayName = flag?.let { server.name.removePrefix(it).trimStart() }?.ifBlank { null } ?: server.name
     val subtitle = buildList {
-        server.protocol.takeIf { it.isNotBlank() }?.let { add(it.uppercase(Locale.ROOT)) }
-        server.region.takeIf { it.isNotBlank() }?.let { add(uiText(it)) }
+        server.protocol.takeIf { it.isNotBlank() }?.let { add(protocolDisplayName(it)) }
+        // Region only when known and not already obvious from a flag in the name.
+        server.region.takeIf { it.isNotBlank() && it != "未标注" && flag == null }?.let { add(uiText(it)) }
         if (highlightedPreProxy) add(uiText("前置"))
         if (fallbackConfigured) add(uiText(if (fallbackUnsupported) "备用不可用" else "备用"))
     }.joinToString(" · ")
@@ -394,26 +398,26 @@ internal fun ServerCard(
             .fillMaxWidth()
             .background(if (selected) Primary.copy(alpha = if (IsLightTheme) 0.06f else 0.12f) else Color.Transparent)
             .clickable(onClick = onClick)
-            .padding(start = 16.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
+            .padding(start = 18.dp, end = 6.dp, top = 9.dp, bottom = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         if (selected) {
             Box(
                 modifier = Modifier
-                    .size(36.dp)
+                    .size(32.dp)
                     .clip(CircleShape)
                     .background(Primary),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Rounded.Check, contentDescription = null, tint = AccentContentColor, modifier = Modifier.size(20.dp))
+                Icon(Icons.Rounded.Check, contentDescription = null, tint = AccentContentColor, modifier = Modifier.size(18.dp))
             }
         } else {
-            NodeAvatar(server = server, size = 36.dp)
+            NodeAvatar(server = server, size = 32.dp)
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = server.name,
+                text = displayName,
                 color = if (selected) Primary else TextPrimary,
                 fontSize = TypeScale.Body,
                 lineHeight = TypeScale.BodyLine,
@@ -458,5 +462,35 @@ internal fun ServerCard(
 }
 
 internal fun ServerNode.hasPreProxyConfigured(): Boolean = preProxyNodeId.isNotBlank()
+
+/** A regional-indicator flag emoji at the start of [name], e.g. "🇯🇵 Tokyo" → "🇯🇵". */
+internal fun leadingFlagEmoji(name: String): String? {
+    val trimmed = name.trimStart()
+    if (trimmed.length < 4) return null
+    val first = trimmed.codePointAt(0)
+    val second = trimmed.codePointAt(Character.charCount(first))
+    val isIndicator = { cp: Int -> cp in 0x1F1E6..0x1F1FF }
+    return if (isIndicator(first) && isIndicator(second)) trimmed.substring(0, 4) else null
+}
+
+/** Protocol labels as people write them, instead of all caps. */
+internal fun protocolDisplayName(raw: String): String = when (raw.trim().uppercase(Locale.ROOT)) {
+    "VLESS" -> "VLESS"
+    "VMESS" -> "VMess"
+    "TROJAN" -> "Trojan"
+    "SHADOWSOCKS", "SS" -> "Shadowsocks"
+    "SHADOWSOCKSR", "SSR" -> "SSR"
+    "HYSTERIA2", "HY2" -> "Hysteria2"
+    "HYSTERIA" -> "Hysteria"
+    "TUIC" -> "TUIC"
+    "ANYTLS" -> "AnyTLS"
+    "WIREGUARD" -> "WireGuard"
+    "SOCKS", "SOCKS5" -> "SOCKS5"
+    "HTTP", "HTTP PROXY" -> "HTTP"
+    "SNELL" -> "Snell"
+    "MIERU" -> "Mieru"
+    "SSH" -> "SSH"
+    else -> raw.trim()
+}
 
 internal fun ServerNode.hasFallbackConfigured(): Boolean = fallbackNodeId.isNotBlank()

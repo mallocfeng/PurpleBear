@@ -594,7 +594,7 @@ internal fun ServersScreen(
             .padding(padding),
         state = listState,
         contentPadding = mainScreenPadding(),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
             SearchField(search = search, placeholder = "搜索节点", onValueChange = onSearchChange)

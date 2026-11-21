@@ -176,6 +176,12 @@ Release 包输出在 `app/build/outputs/apk/release/app-release.apk`。签名读
 
 ## 更新日志
 
+### 0.8.6
+
+- 修复 Clash / sing-box / Xray 配置格式的订阅或文件导入后只剩 1 个节点。
+- 支持导入 `http://` 订阅链接（会提示链接未加密）。
+- 节点页改版：分组与节点层级更清晰，分组操作收进“⋯”菜单。
+
 ### 0.8.5
 
 - 修复开启 Tailscale 但控制服务器连不上时，每次连接 VPN 都要等约 47 秒；现在最多等 6 秒，Tailscale 之后连上会自动加载 Tailnet 分流。

@@ -389,6 +389,11 @@ private fun translateImportText(raw: String, language: ResolvedLanguage): String
         )
     }
     text = text.replace(
+        " 此订阅使用未加密的 HTTP 链接，节点信息在传输中可能被他人看到或篡改，建议向服务商索取 https 链接。",
+        if (ru) " Подписка использует незашифрованную ссылку HTTP: данные узлов могут быть перехвачены или изменены в пути. Попросите у провайдера ссылку https."
+        else " This subscription uses an unencrypted HTTP link, so node details can be read or altered in transit. Ask your provider for an https link.",
+    )
+    text = text.replace(
         " 该链接包含时效签名，已按静态快照导入，不参与后续刷新。",
         if (ru) " Ссылка содержит подпись со сроком действия, импортирован статический снимок без обновлений."
         else " This link has a time-limited signature, so it was imported as a static snapshot and won't refresh.",
@@ -2273,4 +2278,6 @@ private val russianText = mapOf(
     "无加密" to "Без шифрования",
     "兼容内核运行的协议暂不支持" to "Недоступно для протоколов ядра совместимости",
     "无" to "Нет",
+    "使用中" to "Используется",
+    "最快" to "Быстрейший",
 )

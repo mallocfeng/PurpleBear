@@ -186,4 +186,11 @@ class SubscriptionCompatibilityTest {
         assertEquals(1, preview.nodes.size)
         assertTrue(preview.summary, "local1" in preview.summary)
     }
+
+    @Test
+    fun plainHttpSubscriptionIsImportedWithAWarning() {
+        val preview = panel(200 to clashTwo, 200 to clashTwo) { url -> runBlocking { ImportParser.buildPreview(url) } }
+        assertEquals(2, preview.nodes.size)
+        assertTrue(preview.summary, preview.summary.endsWith(ImportParser.PLAIN_HTTP_NOTE))
+    }
 }
