@@ -22,6 +22,11 @@ object XrayConfigFactory {
     const val DEFAULT_VPN_MTU = DEFAULT_APP_VPN_MTU
     private const val SPEED_TEST_INBOUND_TAG = "speedtest-http-in"
     private const val APP_SOCKS_INBOUND_TAG = "app-socks-in"
+    private const val MAGIC_DNS_OUTBOUND_TAG = "magic-dns-out"
+    private const val MAGIC_DNS_PASSTHROUGH_TAG = "magic-dns-pass"
+    /** Tailscale's resolver; also the DNS address the VPN advertises for MagicDNS. */
+    const val TAILSCALE_RESOLVER = "100.100.100.100"
+    private const val NXDOMAIN = 3
     private val GOOGLE_PLAY_DOWNLOAD_DOMAINS = listOf(
         "android.clients.google.com",
         "google.com",
@@ -117,6 +122,8 @@ object XrayConfigFactory {
         errorLogPath: String? = null,
         accessLogPath: String? = null,
         vpnMtu: Int = DEFAULT_VPN_MTU,
+        /** Real resolver ("host:port") when the tunnel advertises [TAILSCALE_RESOLVER] for MagicDNS. */
+        magicDnsUpstream: String? = null,
         globalProxyEnabled: Boolean = false,
         geoRoutingRegion: AppGeoRoutingRegion = AppGeoRoutingRegion.defaultForLanguage(AppLanguage.System),
         tailscale: TailscaleRouting? = null,
@@ -160,6 +167,7 @@ object XrayConfigFactory {
                         buildOutboundChain(outbound.node, outbound.tag, availableServers, localProxy, sidecarNodes).forEach(::put)
                     }
                     tailscale?.let { put(tailscaleOutbound(it)) }
+                    magicDnsUpstream?.let { upstream -> magicDnsOutbounds(upstream, tailscale).forEach(::put) }
                     put(JSONObject().apply {
                         put("tag", "direct")
                         put("protocol", "freedom")
@@ -186,10 +194,14 @@ object XrayConfigFactory {
                             globalProxyEnabled = globalProxyEnabled,
                             geoRoutingRegion = geoRoutingRegion,
                             tailscale = tailscale,
+                            magicDns = magicDnsUpstream != null,
                         ),
                     )
                 },
             )
+            if (magicDnsUpstream != null) {
+                tailscale?.takeIf { it.resolvesMagicDns }?.let { put("dns", magicDnsSettings(it)) }
+            }
         }.toString(2)
     }
 
@@ -200,8 +212,25 @@ object XrayConfigFactory {
         globalProxyEnabled: Boolean = false,
         geoRoutingRegion: AppGeoRoutingRegion = AppGeoRoutingRegion.defaultForLanguage(AppLanguage.System),
         tailscale: TailscaleRouting? = null,
+        magicDns: Boolean = false,
     ): JSONArray {
         val rules = JSONArray()
+
+        if (magicDns) {
+            // System DNS (sent to the advertised resolver address) passes the
+            // MagicDNS filter first; see magicDnsOutbounds. Apps that use their
+            // own resolver are not touched. Only tun-in, so queries handed back
+            // through the loopback are routed normally instead of looping.
+            rules.put(
+                JSONObject().apply {
+                    put("type", "field")
+                    put("inboundTag", JSONArray().put("tun-in"))
+                    put("ip", JSONArray().put(TAILSCALE_RESOLVER))
+                    put("port", "53")
+                    put("outboundTag", MAGIC_DNS_OUTBOUND_TAG)
+                },
+            )
+        }
 
         if (forceSpeedTestToProxy) {
             rules.put(
@@ -341,6 +370,93 @@ object XrayConfigFactory {
         return rules
     }
 
+    /**
+     * MagicDNS inside the VPN. Android sends all DNS to one server and has no
+     * split DNS, so tunnel DNS goes through Xray's `dns` outbound:
+     * - peer names under the tailnet suffix are hijacked and answered by the DNS
+     *   module ([magicDnsSettings]); other names under the suffix get NXDOMAIN;
+     * - every other query is forwarded untouched. Its dialer is a loopback that
+     *   hands the query back to routing, so it takes exactly the path it took
+     *   without MagicDNS (private resolver direct, remote resolver via proxy, …).
+     */
+    private fun magicDnsOutbounds(upstream: String, tailscale: TailscaleRouting?): List<JSONObject> {
+        val (upstreamHost, upstreamPort) = splitHostPort(upstream)
+        val rules = JSONArray()
+        tailscale?.takeIf { it.resolvesMagicDns }?.let { config ->
+            if (config.magicDnsHosts.isNotEmpty()) {
+                rules.put(
+                    JSONObject()
+                        .put("action", "hijack")
+                        .put("domain", JSONArray(config.magicDnsHosts.keys.map { "full:$it" })),
+                )
+            }
+            // Other names in the tailnet do not exist: answer at once instead of
+            // leaking them to the regular resolver.
+            rules.put(
+                JSONObject()
+                    .put("action", "return")
+                    .put("rCode", NXDOMAIN)
+                    .put("domain", JSONArray().put("domain:${config.magicDnsSuffix}")),
+            )
+        }
+        rules.put(JSONObject().put("action", "direct"))
+        return listOf(
+            JSONObject().apply {
+                put("tag", MAGIC_DNS_OUTBOUND_TAG)
+                put("protocol", "dns")
+                put(
+                    "settings",
+                    JSONObject().apply {
+                        // Passed-on queries go to the real resolver, not the advertised address.
+                        put("address", upstreamHost)
+                        put("port", upstreamPort)
+                        put("rules", rules)
+                    },
+                )
+                put(
+                    "streamSettings",
+                    JSONObject().put("sockopt", JSONObject().put("dialerProxy", MAGIC_DNS_PASSTHROUGH_TAG)),
+                )
+            },
+            JSONObject().apply {
+                put("tag", MAGIC_DNS_PASSTHROUGH_TAG)
+                put("protocol", "loopback")
+                put("settings", JSONObject().put("inboundTag", MAGIC_DNS_PASSTHROUGH_TAG))
+            },
+        )
+    }
+
+    /** "1.2.3.4:53" / "[2001:db8::1]:53" / "1.2.3.4" → host and port. */
+    private fun splitHostPort(value: String): Pair<String, Int> {
+        val trimmed = value.trim()
+        return if (trimmed.startsWith("[")) {
+            trimmed.substringAfter('[').substringBefore(']') to
+                (trimmed.substringAfter("]:", "").toIntOrNull() ?: 53)
+        } else if (trimmed.count { it == ':' } == 1) {
+            trimmed.substringBefore(':') to (trimmed.substringAfter(':').toIntOrNull() ?: 53)
+        } else {
+            trimmed to 53
+        }
+    }
+
+    /**
+     * Peer names come from the Tailscale status; static hosts answer every record
+     * type themselves (no AAAA for a v4-only peer gives an empty answer), so the
+     * DNS module needs no upstream. Asking 100.100.100.100 over the tailnet
+     * instead was tried: the userspace node does not serve it to SOCKS clients
+     * and every lookup waited for timeouts.
+     */
+    private fun magicDnsSettings(config: TailscaleRouting): JSONObject = JSONObject().apply {
+        put("tag", "magic-dns")
+        put(
+            "hosts",
+            JSONObject().apply {
+                config.magicDnsHosts.forEach { (name, addresses) -> put("full:$name", JSONArray(addresses)) }
+            },
+        )
+        put("queryStrategy", "UseIP")
+    }
+
     private fun tailscaleOutbound(config: TailscaleRouting): JSONObject {
         return JSONObject().apply {
             put("tag", "tailscale")
@@ -456,6 +572,31 @@ object XrayConfigFactory {
         }
     }
 
+    /**
+     * A minimal config that only runs [front] (with its own pre-proxy chain)
+     * behind the authenticated SOCKS inbound of [localProxy]. Used briefly
+     * before the real start to fetch the certificate of a node that sits
+     * behind [front] and skips certificate verification.
+     */
+    fun buildPinFetchConfig(
+        front: ServerNode,
+        availableServers: List<ServerNode>,
+        localProxy: LocalProxyAllocation,
+    ): String {
+        return JSONObject().apply {
+            put("log", JSONObject().put("loglevel", "warning"))
+            // No sniffing: it would replace the node's address with the TLS SNI.
+            put("inbounds", JSONArray().put(socksInbound(localProxy.socks).apply { remove("sniffing") }))
+            put(
+                "outbounds",
+                JSONArray().apply {
+                    // The first outbound is the default one; chain nodes never run in the sidecar.
+                    buildOutboundChain(front, "proxy", availableServers, localProxy, emptyList()).forEach(::put)
+                },
+            )
+        }.toString(2)
+    }
+
     private fun proxyOutbound(
         node: ServerNode,
         tag: String,
@@ -499,7 +640,8 @@ object XrayConfigFactory {
         }
     }
 
-    private fun resolvePreProxyNode(
+    /** The node [node] dials through, or null; same rules the config builder applies. */
+    internal fun resolvePreProxyNode(
         node: ServerNode,
         availableServers: List<ServerNode>,
         visitedNodeIds: Set<String>,

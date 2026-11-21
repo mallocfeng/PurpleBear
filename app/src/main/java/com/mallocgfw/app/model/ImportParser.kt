@@ -366,17 +366,6 @@ object ImportParser {
         return " 另有 ${types.size} 个节点的协议暂不支持（${types.distinct().take(3).joinToString("、")}）。"
     }
 
-    /** Provider files can repeat indexes; keep node ids unique within one import. */
-    private fun withUniqueIds(nodes: List<ServerNode>): List<ServerNode> {
-        val seen = mutableSetOf<String>()
-        return nodes.map { node ->
-            var id = node.id
-            var n = 2
-            while (!seen.add(id)) id = "${node.id}_${n++}"
-            if (id == node.id) node else node.copy(id = id)
-        }
-    }
-
     /** Downloads the HTTP proxy-providers a Clash config points at (inline ones are parsed directly). */
     private suspend fun fetchProviderContents(content: String): List<ProviderContent> {
         if (!Regex("(?m)^proxy-providers\\s*:").containsMatchIn(content)) return emptyList()
@@ -1696,4 +1685,44 @@ object ImportParser {
     }
 
     const val LOCAL_GROUP_ID = "local_group"
+
+    /**
+     * Local imports number their nodes from 1 and derive the id from the first
+     * characters of the link, so two separate imports from the same provider
+     * (same scheme and password) produce the same id. Node ids are used for
+     * selection, pre-proxy and fallback links and deletion, so they must be
+     * unique: this returns [base] when free, otherwise a variant of it.
+     */
+    fun uniqueNodeId(base: String, taken: Set<String>): String {
+        if (base !in taken) return base
+        var attempt = 1
+        while (true) {
+            val digest = MessageDigest.getInstance("SHA-256").digest("$base#$attempt".toByteArray())
+            val candidate = base + "_" + digest.take(4).joinToString("") { "%02x".format(it) }
+            if (candidate !in taken) return candidate
+            attempt += 1
+        }
+    }
+
+    /**
+     * Gives every node a distinct id. Earlier duplicates keep theirs; later ones
+     * are renamed (pre-proxy and fallback links to a duplicated id are kept on
+     * the first node, which is the one they resolved to before).
+     */
+    fun withUniqueIds(nodes: List<ServerNode>): List<ServerNode> {
+        if (nodes.distinctBy { it.id }.size == nodes.size) return nodes
+        val taken = nodes.map { it.id }.toMutableSet()
+        val seen = mutableSetOf<String>()
+        return nodes.map { node ->
+            if (seen.add(node.id)) {
+                node
+            } else {
+                // Provider files repeat indexes too; also used when loading saved state.
+                val id = uniqueNodeId(node.id, taken)
+                taken += id
+                seen += id
+                node.copy(id = id)
+            }
+        }
+    }
 }

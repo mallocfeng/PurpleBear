@@ -19,6 +19,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
@@ -52,7 +53,10 @@ internal fun TailscaleScreen(
     onLogout: () -> Unit,
 ) {
     val authKey = settings.tailscaleAuthKey
-    var controlUrl by remember(settings.tailscaleControlUrl) {
+    // Not keyed on the saved value: every keystroke is saved, and a blank value
+    // is stored as the official URL, so keying would refill the field with it
+    // as soon as the user clears it to type their own server.
+    var controlUrl by rememberSaveable {
         mutableStateOf(settings.tailscaleControlUrl.ifBlank { DEFAULT_TAILSCALE_CONTROL_URL })
     }
     var revealAuthKey by remember { mutableStateOf(false) }
@@ -95,10 +99,10 @@ internal fun TailscaleScreen(
                 Spacer(Modifier.height(12.dp))
                 Text(
                     text = when (snapshot.status) {
-                        TailscaleRuntimeStatus.Connected -> "已连接${snapshot.ipv4?.let { " · $it" }.orEmpty()}"
-                        TailscaleRuntimeStatus.Connecting -> "正在连接…"
-                        TailscaleRuntimeStatus.Failed -> snapshot.message ?: "连接失败"
-                        TailscaleRuntimeStatus.Stopped -> "未连接"
+                        TailscaleRuntimeStatus.Connected -> uiText("已连接", "Connected") + snapshot.ipv4?.let { " · $it" }.orEmpty()
+                        TailscaleRuntimeStatus.Connecting -> uiText("正在连接…")
+                        TailscaleRuntimeStatus.Failed -> uiText(snapshot.message ?: "连接失败")
+                        TailscaleRuntimeStatus.Stopped -> uiText("未连接")
                     },
                     color = if (snapshot.status == TailscaleRuntimeStatus.Connected) Success else TextSecondary,
                     fontWeight = FontWeight.Bold,
@@ -114,13 +118,13 @@ internal fun TailscaleScreen(
                     value = authKey,
                     onValueChange = onAuthKeyChange,
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("认证密钥") },
+                    label = { Text(uiText("认证密钥")) },
                     placeholder = { Text("tskey-auth-…") },
                     singleLine = true,
                     visualTransformation = if (revealAuthKey) VisualTransformation.None else PasswordVisualTransformation(),
                     trailingIcon = {
                         Text(
-                            text = if (revealAuthKey) "隐藏" else "显示",
+                            text = uiText(if (revealAuthKey) "隐藏" else "显示"),
                             modifier = Modifier
                                 .padding(end = 12.dp)
                                 .clickable { revealAuthKey = !revealAuthKey },
@@ -129,7 +133,7 @@ internal fun TailscaleScreen(
                     },
                 )
                 Text(
-                    "保存在本机应用私有设置中；显示密钥时请注意周围环境。",
+                    uiText("保存在本机应用私有设置中；显示密钥时请注意周围环境。"),
                     color = TextSecondary,
                     modifier = Modifier.padding(top = 6.dp),
                 )
@@ -141,8 +145,8 @@ internal fun TailscaleScreen(
                         onControlUrlChange(value)
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("控制服务器 URL") },
-                    placeholder = { Text("留空使用官方 Tailscale") },
+                    label = { Text(uiText("控制服务器 URL")) },
+                    placeholder = { Text(uiText("留空使用官方 Tailscale")) },
                     singleLine = true,
                 )
                 if (settings.tailscaleEnabled) {
@@ -158,7 +162,7 @@ internal fun TailscaleScreen(
                     )
                 } else {
                     Text(
-                        "填写认证信息后，打开上方“启用 Tailscale”开关即可连接。",
+                        uiText("填写认证信息后，打开上方“启用 Tailscale”开关即可连接。"),
                         color = TextSecondary,
                         modifier = Modifier.padding(top = 12.dp),
                     )
@@ -176,20 +180,20 @@ internal fun TailscaleScreen(
                 Spacer(Modifier.height(12.dp))
                 SettingInfoRow(
                     title = "MagicDNS",
-                    subtitle = snapshot.magicDnsSuffix?.let { "当前 Tailnet 后缀：$it" }
-                        ?: "普通 DNS 保持应用原有设置；Tailnet 可使用 100.x 地址访问。",
+                    subtitle = uiText("Tailnet 设备名称（如 nas.xxx.ts.net）在 VPN 内可直接访问；其他域名的 DNS 保持原有设置。") +
+                        snapshot.magicDnsSuffix?.let { suffix -> "\n" + uiText("当前 Tailnet 后缀：$suffix", "Tailnet suffix: $suffix") }.orEmpty(),
                 )
             }
         }
         item {
             SettingsGroup(title = "子网访问") {
                 Text(
-                    "仅启用你选择的私有子网。未设置时不会接管任何局域网地址。",
+                    uiText("仅启用你选择的私有子网。未设置时不会接管任何局域网地址。"),
                     color = TextSecondary,
                 )
                 if (advertisedSubnetOwners.isEmpty() && selectedSubnetRoutes.isEmpty()) {
                     Text(
-                        "当前没有检测到已批准的 Tailscale 子网路由。",
+                        uiText("当前没有检测到已批准的 Tailscale 子网路由。"),
                         color = TextSecondary,
                         modifier = Modifier.padding(top = 10.dp),
                     )
@@ -198,7 +202,7 @@ internal fun TailscaleScreen(
                     Spacer(Modifier.height(10.dp))
                     SettingToggleRow(
                         title = route,
-                        subtitle = "由 ${owners.joinToString()} 公布",
+                        subtitle = uiText("由 ${owners.joinToString()} 公布", "Advertised by ${owners.joinToString()}"),
                         checked = route in selectedSubnetRoutes,
                         onToggle = {
                             onSubnetRoutesChange(
@@ -228,14 +232,14 @@ internal fun TailscaleScreen(
                         subnetInputError = null
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("手动添加私有子网 CIDR") },
-                    placeholder = { Text("例如 192.168.2.0/24") },
+                    label = { Text(uiText("手动添加私有子网 CIDR")) },
+                    placeholder = { Text(uiText("例如 192.168.2.0/24")) },
                     singleLine = true,
                     isError = subnetInputError != null,
                 )
                 subnetInputError?.let { message ->
                     Text(
-                        message,
+                        uiText(message),
                         color = Error,
                         modifier = Modifier.padding(top = 6.dp),
                     )
@@ -261,7 +265,7 @@ internal fun TailscaleScreen(
         item {
             SettingsGroup(title = "出口节点") {
                 Text(
-                    "选择后，当前 VPN 的默认流量将优先通过该 Tailscale 出口节点。留空则仅处理 Tailnet 流量。",
+                    uiText("选择后，当前 VPN 的默认流量将优先通过该 Tailscale 出口节点。留空则仅处理 Tailnet 流量。"),
                     color = TextSecondary,
                 )
                 Spacer(Modifier.height(12.dp))
@@ -282,23 +286,31 @@ internal fun TailscaleScreen(
             }
         }
         item {
-            SettingsGroup(title = "设备") {
-                if (snapshot.peers.isEmpty()) {
-                    Text("连接后会自动显示 Tailnet 中的设备。", color = TextSecondary)
+            if (snapshot.peers.isEmpty()) {
+                SettingsGroup(title = "设备") {
+                    Text(uiText("连接后会自动显示 Tailnet 中的设备。"), color = TextSecondary)
                 }
+            } else {
+                // The device cards follow as their own items; no empty card under the label.
+                SectionLabel("设备")
             }
         }
         items(snapshot.peers, key = { it.id.ifBlank { it.dnsName } }) { peer ->
+            val noMagicDnsName = uiText("无 MagicDNS 名称")
+            val onlineLabel = uiText("在线")
+            val offlineLabel = uiText("离线")
+            val activeLabel = uiText("活跃")
+            val exitNodeLabel = uiText("出口节点")
             SurfaceCard {
                 Text(peer.name.ifBlank { peer.dnsName }, fontWeight = FontWeight.Bold, fontSize = TypeScale.ListTitle)
                 Text(
                     buildString {
-                        append(peer.dnsName.ifBlank { "无 MagicDNS 名称" })
+                        append(peer.dnsName.ifBlank { noMagicDnsName })
                         append(" · ")
-                        append(if (peer.online) "在线" else "离线")
-                        if (peer.active) append(" · 活跃")
+                        append(if (peer.online) onlineLabel else offlineLabel)
+                        if (peer.active) append(" · $activeLabel")
                         peer.relay?.takeIf { it.isNotBlank() }?.let { append(" · DERP $it") }
-                        if (peer.canExit) append(" · 出口节点")
+                        if (peer.canExit) append(" · $exitNodeLabel")
                     },
                     color = TextSecondary,
                     modifier = Modifier.padding(top = 4.dp),
@@ -306,15 +318,15 @@ internal fun TailscaleScreen(
                 val tailscaleAddresses = listOfNotNull(peer.ipv4, peer.ipv6)
                 Text(
                     text = if (tailscaleAddresses.isEmpty()) {
-                        "Tailscale IP：暂无地址"
+                        uiText("Tailscale IP：暂无地址")
                     } else {
-                        "Tailscale IP：${tailscaleAddresses.joinToString(" · ")}"
+                        uiText("Tailscale IP：", "Tailscale IP: ") + tailscaleAddresses.joinToString(" · ")
                     },
                     color = TextSecondary,
                     modifier = Modifier.padding(top = 4.dp),
                 )
                 if (peer.routes.isNotEmpty()) {
-                    Text("子网路由：${peer.routes.joinToString()}", color = TextSecondary, modifier = Modifier.padding(top = 4.dp))
+                    Text(uiText("子网路由：", "Subnet routes: ") + peer.routes.joinToString(), color = TextSecondary, modifier = Modifier.padding(top = 4.dp))
                 }
             }
         }

@@ -882,6 +882,12 @@ fun MallocGfwApp(
             servers.addAll(otherServers)
             servers.addAll(normalizedPreviewNodes)
         } else {
+            // Local ids restart at 1 on every import, so a new node can carry the
+            // id of an unrelated existing one. Settle each node's final id first
+            // (existing match, or a free id), then remap links inside the batch.
+            val takenIds = servers.map { it.id }.toMutableSet()
+            val existingIndexes = mutableMapOf<String, Int>()
+            val finalIds = mutableMapOf<String, String>()
             normalizedPreviewNodes.forEach { normalizedNode ->
                 val existingNodeIndex = servers.indexOfFirst {
                     it.groupId == normalizedNode.groupId && (
@@ -890,6 +896,17 @@ fun MallocGfwApp(
                         )
                 }
                 if (existingNodeIndex >= 0) {
+                    existingIndexes[normalizedNode.id] = existingNodeIndex
+                    finalIds[normalizedNode.id] = servers[existingNodeIndex].id
+                } else {
+                    val id = ImportParser.uniqueNodeId(normalizedNode.id, takenIds)
+                    takenIds += id
+                    finalIds[normalizedNode.id] = id
+                }
+            }
+            normalizedPreviewNodes.forEach { normalizedNode ->
+                val existingNodeIndex = existingIndexes[normalizedNode.id]
+                if (existingNodeIndex != null) {
                     val existingNode = servers[existingNodeIndex]
                     servers[existingNodeIndex] = normalizedNode.copy(
                         id = existingNode.id,
@@ -900,7 +917,13 @@ fun MallocGfwApp(
                         fallbackNodeId = existingNode.fallbackNodeId,
                     )
                 } else {
-                    servers.add(normalizedNode)
+                    servers.add(
+                        normalizedNode.copy(
+                            id = finalIds.getValue(normalizedNode.id),
+                            preProxyNodeId = finalIds[normalizedNode.preProxyNodeId] ?: normalizedNode.preProxyNodeId,
+                            fallbackNodeId = finalIds[normalizedNode.fallbackNodeId] ?: normalizedNode.fallbackNodeId,
+                        ),
+                    )
                 }
             }
         }

@@ -771,7 +771,7 @@ internal fun NodeDetailScreen(
                 TwoColumnInfoGrid(
                     items = listOf(
                         "协议" to (server?.protocol ?: "--"),
-                        "安全层" to (server?.security ?: "--"),
+                        "安全层" to (server?.security?.let { uiText(it) } ?: "--"),
                         "传输层" to (server?.transport ?: "--"),
                         "Flow" to (server?.flow ?: "--"),
                     ),
@@ -818,7 +818,11 @@ internal fun NodeDetailScreen(
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             parameterRows.forEach { entry ->
-                                ParameterReadRow(label = entry.first, value = entry.second)
+                                // Values are raw config data; only the security label is a display word.
+                                ParameterReadRow(
+                                    label = entry.first,
+                                    value = if (entry.first == "安全层") uiText(entry.second) else entry.second,
+                                )
                             }
                         }
                     }

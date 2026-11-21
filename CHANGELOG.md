@@ -2,6 +2,22 @@
 
 PurpleBear 各版本的完整更新记录。安装包见 [GitHub Releases](https://github.com/mallocfeng/PurpleBear/releases)。
 
+## 0.8.3
+
+1. Tailscale 支持 MagicDNS：开启 Tailscale 并连接 VPN 后，可直接用设备名（如 `nas` 或 `nas.xxx.ts.net`）访问 Tailnet 设备。应用把 VPN 的 DNS 地址设为 `100.100.100.100`，Tailnet 设备名由内核按设备列表直接解析，其他域名原样转发给原 DNS，走向（直连或代理）与之前完全一致。Tailscale 后台配置的自定义 DNS 记录与 Split DNS 暂不支持。
+
+2. Tailscale 进程意外退出（崩溃或被系统回收）后，界面会如实显示状态，VPN 连接中会自动重启 Tailscale 并重新加载分流，不再出现显示“已连接”但 Tailnet 不通的情况。
+
+3. 修复 Tailscale 控制服务器 URL 输入框清空后自动填回官方地址、无法改成自建服务器的问题。
+
+4. 修复本地导入的节点可能出现重复 ID：同一服务商、相同密码的节点分几次导入时会拿到相同 ID，导致点开、删除或设为前置代理时指向另一个节点（删除时会把两个一起删掉）。现在导入时分配唯一 ID，已有的重复 ID 在打开应用时自动修复。
+
+5. 修复跳过证书校验的出口节点挂在前置代理后无法使用：此前连接前会直连出口服务器获取证书，出口直连不通时就失败，且会用本机 IP 直接探测出口。现在这类节点的证书经前置代理链路获取。
+
+6. 补齐 Tailscale 页面、导入预览（“无加密”等）、节点编辑页、DNS / MTU 对话框和多处提示的英文与俄文翻译。
+
+7. 更新版本号到 `0.8.3`，`versionCode` 更新为 `278`。
+
 ## 0.8.2
 
 1. 订阅兼容性大幅提升：新增 Surge、Loon、Quantumult X、Xray / v2rayN JSON 配置导入；Clash 支持 `proxy-providers`（网络与内联，含 `filter` / `exclude-filter` / `exclude-type` / `override`）和 `dialer-proxy` 链式代理；sing-box 支持 1.11+ 的 `endpoints`、shadow-tls 组合与端口跳跃；导入框可一次粘贴多条链接。

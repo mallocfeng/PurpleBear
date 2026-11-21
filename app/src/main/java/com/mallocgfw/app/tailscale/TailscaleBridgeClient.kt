@@ -20,6 +20,14 @@ object TailscaleBridgeClient {
 
     private var connection: ServiceConnection? = null
 
+    /**
+     * Called when the :tailscale process goes away (crash or low-memory kill).
+     * Android restarts the bound service, but the Go node inside it starts
+     * stopped and its SOCKS port changes, so the owner must start it again.
+     */
+    @Volatile
+    var onBridgeLost: (() -> Unit)? = null
+
     suspend fun start(context: Context, config: String): String = service(context).start(config)
 
     suspend fun status(context: Context): String = service(context).status()
@@ -47,10 +55,12 @@ object TailscaleBridgeClient {
 
             override fun onServiceDisconnected(name: ComponentName) {
                 bridge = null
+                onBridgeLost?.invoke()
             }
 
             override fun onBindingDied(name: ComponentName) {
                 bridge = null
+                onBridgeLost?.invoke()
             }
         }
         connection = nextConnection

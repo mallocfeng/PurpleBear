@@ -11,4 +11,11 @@ data class TailscaleRouting(
     val socksPassword: String,
     val subnetRoutes: List<String> = emptyList(),
     val routeAllTraffic: Boolean = false,
-)
+    /** MagicDNS suffix of the tailnet (e.g. `tail1234.ts.net`), without dots at the ends. */
+    val magicDnsSuffix: String = "",
+    /** MagicDNS names of the peers and their Tailscale addresses. */
+    val magicDnsHosts: Map<String, List<String>> = emptyMap(),
+) {
+    /** Names under the suffix can be answered inside the VPN (see XrayConfigFactory.buildVpn). */
+    val resolvesMagicDns: Boolean get() = magicDnsSuffix.isNotBlank()
+}

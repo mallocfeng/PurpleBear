@@ -9,7 +9,9 @@ import com.mallocgfw.app.model.AppSettings
 import com.mallocgfw.app.tailscale.TailscaleBridgeClient
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
@@ -78,7 +80,20 @@ data class TailscaleRuntimeSnapshot(
                 .filter { it in advertisedSubnets }
                 .distinct(),
             routeAllTraffic = settings.tailscaleExitNodeId.isNotBlank(),
+            magicDnsSuffix = magicDnsSuffix.orEmpty().trim().trim('.').lowercase()
+                .ifBlank { commonMagicDnsSuffix() },
+            magicDnsHosts = peers.mapNotNull { peer ->
+                val name = peer.dnsName.trim().trimEnd('.').lowercase()
+                val addresses = listOfNotNull(peer.ipv4, peer.ipv6)
+                if (name.isBlank() || addresses.isEmpty()) null else name to addresses
+            }.toMap(),
         )
+    }
+
+    /** Older control servers omit the suffix; every MagicDNS name of a tailnet shares it. */
+    private fun commonMagicDnsSuffix(): String {
+        val self = dnsName.orEmpty().trim().trimEnd('.').lowercase()
+        return self.substringAfter('.', "").takeIf { '.' in it }.orEmpty()
     }
 }
 
@@ -86,6 +101,36 @@ object TailscaleRuntimeManager {
     private const val TAG = "TailscaleRuntime"
     private val _snapshot = MutableStateFlow(TailscaleRuntimeSnapshot())
     val snapshot: StateFlow<TailscaleRuntimeSnapshot> = _snapshot.asStateFlow()
+
+    private val _bridgeLost = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
+    /** Emits when a running Tailscale node was lost with its process; see [handleBridgeLost]. */
+    val bridgeLost: SharedFlow<Unit> = _bridgeLost
+
+    init {
+        TailscaleBridgeClient.onBridgeLost = ::handleBridgeLost
+    }
+
+    /**
+     * The :tailscale process died. Its SOCKS endpoint is gone, so the snapshot
+     * must stop offering routing (otherwise the UI keeps saying "connected"
+     * while Tailnet traffic fails), and a running VPN has to restart the node
+     * and reload its config to pick up the new endpoint.
+     */
+    private fun handleBridgeLost() {
+        val previous = _snapshot.value
+        if (previous.status == TailscaleRuntimeStatus.Stopped) return
+        Log.w(TAG, "Tailscale bridge process was lost")
+        _snapshot.value = previous.copy(
+            status = TailscaleRuntimeStatus.Failed,
+            message = "Tailscale 进程已退出，正在重新连接…",
+            socksHost = null,
+            socksPort = null,
+            socksUsername = null,
+            socksPassword = null,
+        )
+        _bridgeLost.tryEmit(Unit)
+    }
 
     suspend fun ensureStarted(
         context: Context,

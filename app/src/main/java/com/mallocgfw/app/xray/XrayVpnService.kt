@@ -68,12 +68,45 @@ class XrayVpnService : VpnService() {
     private var publishDisconnectedOnDestroy = false
     private var cleanupCompleted = false
     private var destroyMessage = "VPN 已断开"
+    private val tailscaleRecoveryTimes = ArrayDeque<Long>()
+
+    /** Real resolver behind the MagicDNS address of the current tunnel, or null. */
+    @Volatile
+    private var activeMagicDnsUpstream: String? = null
 
     override fun onCreate() {
         super.onCreate()
         cleanupCompleted = false
         runningInstance = this
         VpnQuickSettingsTileHelper.requestRefresh(applicationContext)
+        scope.launch {
+            TailscaleRuntimeManager.bridgeLost.collect { recoverTailscaleAfterBridgeLoss() }
+        }
+    }
+
+    /**
+     * The Tailscale node died with its process while the tunnel was up. Its
+     * SOCKS endpoint changes on restart, so reconnect: [connect] starts the node
+     * again and rebuilds the Xray config with the new endpoint.
+     */
+    private suspend fun recoverTailscaleAfterBridgeLoss() {
+        val now = System.currentTimeMillis()
+        while (tailscaleRecoveryTimes.isNotEmpty() && now - tailscaleRecoveryTimes.first() > TAILSCALE_RECOVERY_WINDOW_MS) {
+            tailscaleRecoveryTimes.removeFirst()
+        }
+        if (tailscaleRecoveryTimes.size >= TAILSCALE_RECOVERY_LIMIT) {
+            AppLogManager.append(applicationContext, TAG, "Tailscale 进程反复退出，已停止自动恢复；请在 Tailscale 页面重新连接。")
+            return
+        }
+        // Give Android a moment to bring the bound :tailscale service back.
+        delay(TAILSCALE_RECOVERY_DELAY_MS)
+        val runtime = VpnRuntimeStore.snapshot.value
+        val serverId = runtime.activeServerId?.takeIf { it.isNotBlank() } ?: return
+        if (runtime.status != ConnectionStatus.Connected) return
+        if (!AppStateStore.load(applicationContext).settings.tailscaleEnabled) return
+        tailscaleRecoveryTimes.addLast(now)
+        AppLogManager.append(applicationContext, TAG, "Tailscale 进程已退出，正在重新连接以恢复 Tailnet 分流")
+        startService(connectIntent(applicationContext, serverId))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -293,7 +326,23 @@ class XrayVpnService : VpnService() {
             .addRoute("0.0.0.0", 0)
             .addRoute("::", 0)
             .applyLocalNetworkExclusions(tailscaleRouting?.subnetRoutes.orEmpty())
-        dnsServer?.let(builder::addDnsServer)
+        // MagicDNS: Android gets Tailscale's resolver address, which always enters
+        // the tunnel (a LAN resolver is excluded from it). Xray answers tailnet
+        // names and forwards every other query to the real resolver, routed as
+        // before; see XrayConfigFactory.magicDnsOutbounds.
+        val magicDnsUpstream = dnsEndpoint?.takeIf { tailscaleRouting?.resolvesMagicDns == true }
+        activeMagicDnsUpstream = magicDnsUpstream
+        if (magicDnsUpstream != null) {
+            builder.addDnsServer(XrayConfigFactory.TAILSCALE_RESOLVER)
+            // Lets short names like "nas" expand to nas.<tailnet>.ts.net.
+            tailscaleRouting?.magicDnsSuffix?.let { suffix ->
+                runCatching { builder.addSearchDomain(suffix) }
+                    .onFailure { Log.w(TAG, "Unable to add MagicDNS search domain", it) }
+            }
+            AppLogManager.append(applicationContext, TAG, "已启用 MagicDNS，其他域名仍使用 $magicDnsUpstream")
+        } else {
+            dnsServer?.let(builder::addDnsServer)
+        }
 
         if (state.proxyMode == ProxyMode.PerApp && !globalProxyEnabled) {
             val allowedPackages = state.protectedApps.filter { it.enabled }.map { it.id }.distinct()
@@ -343,6 +392,7 @@ class XrayVpnService : VpnService() {
             routingRules = streamingRouting.routingRules + ruleRouting.routingRules,
             additionalOutbounds = streamingRouting.outbounds + ruleRouting.outbounds,
             vpnMtu = vpnMtu,
+            magicDnsUpstream = activeMagicDnsUpstream,
         )
             .getOrElse { throw it }
     }
@@ -382,6 +432,7 @@ class XrayVpnService : VpnService() {
             routingRules = streamingRouting.routingRules + ruleRouting.routingRules,
             additionalOutbounds = streamingRouting.outbounds + ruleRouting.outbounds,
             vpnMtu = vpnMtu,
+            magicDnsUpstream = activeMagicDnsUpstream,
         ).getOrElse { throw it }
     }
 
@@ -989,6 +1040,9 @@ class XrayVpnService : VpnService() {
         private const val DOWNLOAD_TEST_URL = "https://speed.cloudflare.com/__down?bytes=262144"
         private const val UPLOAD_TEST_URL = "https://speed.cloudflare.com/__up"
         private val HEARTBEAT_INTERVAL_OPTIONS_MINUTES = setOf(2, 5, 10)
+        private const val TAILSCALE_RECOVERY_DELAY_MS = 1_500L
+        private const val TAILSCALE_RECOVERY_WINDOW_MS = 10 * 60_000L
+        private const val TAILSCALE_RECOVERY_LIMIT = 3
         private val LOCAL_EXCLUDED_ROUTES = listOf(
             "10.0.0.0" to 8,
             "172.16.0.0" to 12,

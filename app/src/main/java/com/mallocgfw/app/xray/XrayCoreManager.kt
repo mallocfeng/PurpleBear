@@ -107,6 +107,7 @@ object XrayCoreManager {
         routingRules: List<XrayRoutingRule> = emptyList(),
         additionalOutbounds: List<XrayNamedOutbound> = emptyList(),
         vpnMtu: Int = XrayConfigFactory.DEFAULT_VPN_MTU,
+        magicDnsUpstream: String? = null,
     ): Result<XrayCoreSnapshot> {
         return startWithConfig(
             context = context,
@@ -126,6 +127,7 @@ object XrayCoreManager {
                 errorLogPath = AppLogManager.xrayErrorLogFile(context).absolutePath,
                 accessLogPath = AppLogManager.xrayAccessLogFile(context).absolutePath,
                 vpnMtu = vpnMtu,
+                magicDnsUpstream = magicDnsUpstream,
                 globalProxyEnabled = settings.globalProxyEnabled,
                 geoRoutingRegion = settings.geoRoutingRegion,
                 tailscale = TailscaleRuntimeManager.snapshot.value.routing(settings),
@@ -134,24 +136,69 @@ object XrayCoreManager {
         }
     }
 
-    /** The node, its pre-proxy chain and any extra routed outbounds. */
+    /** A node that may need a pinned certificate, and the node it dials through. */
+    private data class PinCandidate(val node: ServerNode, val front: ServerNode?)
+
+    /**
+     * The node, any extra routed outbounds, and each one's pre-proxy chain,
+     * nodes nearest the device first (a front must be pinned before the node
+     * behind it can be reached through it).
+     */
     private fun pinCandidates(
         context: Context,
         server: ServerNode,
         additionalOutbounds: List<XrayNamedOutbound>,
-    ): List<ServerNode> {
+    ): List<PinCandidate> {
         val servers = runCatching { AppStateStore.load(context).servers }.getOrDefault(emptyList())
-        val chain = mutableListOf(server)
-        var current = server
-        while (chain.size < 8) {
-            val nextId = current.preProxyNodeId.trim()
-            if (nextId.isBlank()) break
-            val next = servers.firstOrNull { it.id == nextId } ?: break
-            if (chain.any { it.id == next.id }) break
-            chain += next
-            current = next
+        return (listOf(server) + additionalOutbounds.map { it.node }).flatMap { root ->
+            val chain = mutableListOf<PinCandidate>()
+            var current = root
+            val visited = mutableSetOf(root.id)
+            while (chain.size < 8) {
+                val front = XrayConfigFactory.resolvePreProxyNode(current, servers, visited)
+                chain += PinCandidate(current, front)
+                current = front ?: break
+                visited += current.id
+            }
+            chain.asReversed()
+        }.distinctBy { it.node.id to it.front?.id }
+    }
+
+    /**
+     * Fetches certificates of skip-verify nodes that sit behind a pre-proxy:
+     * runs only the pre-proxy chain for a moment and handshakes through it.
+     */
+    private suspend fun fetchChainedPins(
+        context: Context,
+        chained: List<PinCandidate>,
+        localProxy: LocalProxyAllocation,
+        datDir: String,
+    ) {
+        if (chained.isEmpty() || !InsecureTlsPinner.hasPending(context, chained.map { it.node })) return
+        val servers = runCatching { AppStateStore.load(context).servers }.getOrDefault(emptyList())
+        for (candidate in chained) {
+            val front = candidate.front ?: continue
+            if (!InsecureTlsPinner.hasPending(context, listOf(candidate.node))) continue
+            val config = runCatching { XrayConfigFactory.buildPinFetchConfig(front, servers, localProxy) }
+                .onFailure { Log.w(TAG, "Unable to build pin fetch config", it) }
+                .getOrNull() ?: continue
+            val response = synchronized(coreLock) {
+                stopInternal()
+                invoke(
+                    method = "runXray",
+                    payload = JSONObject().put("xrayJson", withRuntimeEnv(config, datDir, null)),
+                )
+            }
+            try {
+                if (response.success) {
+                    InsecureTlsPinner.refreshThrough(context, listOf(candidate.node), localProxy.socks.socksProxy())
+                } else {
+                    Log.w(TAG, "Pin fetch core did not start: ${response.error}")
+                }
+            } finally {
+                synchronized(coreLock) { stopInternal() }
+            }
         }
-        return chain + additionalOutbounds.map { it.node }
     }
 
     private suspend fun startWithConfig(
@@ -167,11 +214,13 @@ object XrayCoreManager {
                 XrayNativeLoader.ensureLoaded()
                 // Nodes that skip certificate verification need a pinned
                 // certificate before the config is built (Xray rejects allowInsecure).
-                InsecureTlsPinner.refresh(context, pinCandidates(context, server, additionalOutbounds))
+                val pinCandidates = pinCandidates(context, server, additionalOutbounds)
+                InsecureTlsPinner.refresh(context, pinCandidates.filter { it.front == null }.map { it.node })
                 val prepared = prepareRuntime(context)
                 val datDir = prepared.runtimeDir.absolutePath
                 // Fresh random ports and credentials for every run; see LocalProxyRuntime.
                 val localProxy = LocalProxyRuntime.allocate(::freePortsFromCore)
+                fetchChainedPins(context, pinCandidates.filter { it.front != null }, localProxy, datDir)
                 val configJson = buildConfigJson(localProxy)
                 SsrRuntimeManager.startIfNeeded(
                     context,

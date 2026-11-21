@@ -141,13 +141,15 @@ object AppStateStore {
                 .forEach(::add)
         }
         val validGroupIds = ensuredGroups.map { it.id }.toSet()
-        val normalizedServers = servers.map { server ->
-            if (server.groupId in localGroupIds) {
-                server.copy(groupId = ImportParser.LOCAL_GROUP_ID, subscription = "Local")
-            } else {
-                server
-            }
-        }
+        val normalizedServers = ImportParser.withUniqueIds(
+            servers.map { server ->
+                if (server.groupId in localGroupIds) {
+                    server.copy(groupId = ImportParser.LOCAL_GROUP_ID, subscription = "Local")
+                } else {
+                    server
+                }
+            },
+        )
         val filteredServers = normalizedServers
             .filter { server -> server.groupId in validGroupIds }
             .map { server ->

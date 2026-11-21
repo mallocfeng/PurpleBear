@@ -6,6 +6,7 @@ import com.mallocgfw.app.model.ServerNode
 import com.mallocgfw.app.model.TlsPinCache
 import com.mallocgfw.app.model.TlsPinTarget
 import java.net.InetSocketAddress
+import java.net.Proxy
 import java.net.Socket
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -42,43 +43,66 @@ object InsecureTlsPinner {
     private var loaded = false
     private val fetchedAt = ConcurrentHashMap<String, Long>()
 
+    /** Pins the nodes reached directly from the device. */
     suspend fun refresh(context: Context, nodes: Collection<ServerNode>) = withContext(Dispatchers.IO) {
         ensureLoaded(context)
-        val targets = nodes.mapNotNull { node ->
-            runCatching { ManualNodeFactory.insecureTlsTarget(node) }.getOrNull()?.let { node to it }
-        }.distinctBy { it.second.key }
+        val targets = pending(nodes)
         if (targets.isEmpty()) return@withContext
         coroutineScope {
-            targets.map { (node, target) ->
-                async {
-                    val last = fetchedAt[target.key]
-                    if (last != null && System.currentTimeMillis() - last < FRESH_MS && TlsPinCache.get(target) != null) {
-                        return@async
-                    }
-                    val pin = withTimeoutOrNull(TOTAL_TIMEOUT_MS) { runCatching { fetchLeafSha256(target) } }
-                    val result = pin?.getOrNull()
-                    if (result != null) {
-                        val previous = TlsPinCache.get(target)
-                        TlsPinCache.put(target, result)
-                        fetchedAt[target.key] = System.currentTimeMillis()
-                        if (previous != result) {
-                            AppLogManager.append(
-                                context,
-                                "TLS",
-                                "${node.name} 跳过了证书校验，已改为固定服务器证书 SHA-256 ${result.take(12)}…",
-                            )
-                        }
-                    } else {
-                        val reason = pin?.exceptionOrNull()?.message ?: "超时"
-                        val fallback = if (TlsPinCache.get(target) != null) "，沿用上次保存的证书" else ""
-                        AppLogManager.append(
-                            context,
-                            "TLS",
-                            "${node.name} 获取服务器证书失败（$reason）$fallback",
-                        )
-                    }
-                }
-            }.awaitAll()
+            targets.map { (node, target) -> async { pin(context, node, target, proxy = null) } }.awaitAll()
+        }
+    }
+
+    /**
+     * Nodes behind a pre-proxy: the exit is often unreachable from the device
+     * (that is why there is a pre-proxy), and dialing it directly would also
+     * expose the device's own address to it. [proxy] reaches the node through
+     * its pre-proxy chain; see XrayCoreManager.fetchChainedPins.
+     */
+    suspend fun refreshThrough(context: Context, nodes: Collection<ServerNode>, proxy: Proxy) = withContext(Dispatchers.IO) {
+        ensureLoaded(context)
+        pending(nodes).forEach { (node, target) -> pin(context, node, target, proxy) }
+    }
+
+    /** True when one of [nodes] needs a certificate fetch now. */
+    fun hasPending(context: Context, nodes: Collection<ServerNode>): Boolean {
+        ensureLoaded(context)
+        return pending(nodes).isNotEmpty()
+    }
+
+    /** Nodes of [nodes] that need a certificate fetch now. */
+    private fun pending(nodes: Collection<ServerNode>): List<Pair<ServerNode, TlsPinTarget>> =
+        nodes.mapNotNull { node ->
+            runCatching { ManualNodeFactory.insecureTlsTarget(node) }.getOrNull()?.let { node to it }
+        }.distinctBy { it.second.key }.filter { (_, target) ->
+            val last = fetchedAt[target.key]
+            !(last != null && System.currentTimeMillis() - last < FRESH_MS && TlsPinCache.get(target) != null)
+        }
+
+    private suspend fun pin(context: Context, node: ServerNode, target: TlsPinTarget, proxy: Proxy?) {
+        val pin = withTimeoutOrNull(TOTAL_TIMEOUT_MS) { runCatching { fetchLeafSha256(target, proxy) } }
+        val result = pin?.getOrNull()
+        if (result != null) {
+            val previous = TlsPinCache.get(target)
+            TlsPinCache.put(target, result)
+            fetchedAt[target.key] = System.currentTimeMillis()
+            if (previous != result) {
+                AppLogManager.append(
+                    context,
+                    "TLS",
+                    "${node.name} 跳过了证书校验，已改为固定服务器证书 SHA-256 ${result.take(12)}…" +
+                        if (proxy != null) "（经前置代理获取）" else "",
+                )
+            }
+        } else {
+            val reason = pin?.exceptionOrNull()?.message ?: "超时"
+            val fallback = if (TlsPinCache.get(target) != null) "，沿用上次保存的证书" else ""
+            val via = if (proxy != null) "经前置代理" else ""
+            AppLogManager.append(
+                context,
+                "TLS",
+                "${node.name} ${via}获取服务器证书失败（$reason）$fallback",
+            )
         }
     }
 
@@ -103,11 +127,17 @@ object InsecureTlsPinner {
      * data is sent, so accepting any certificate here is safe; the hash is
      * what Xray then verifies on every real connection.
      */
-    private fun fetchLeafSha256(target: TlsPinTarget): String {
+    private fun fetchLeafSha256(target: TlsPinTarget, proxy: Proxy?): String {
         val context = SSLContext.getInstance("TLS")
         context.init(null, arrayOf<TrustManager>(CaptureOnlyTrustManager), SecureRandom())
-        Socket().use { raw ->
-            raw.connect(InetSocketAddress(target.host, target.port), CONNECT_TIMEOUT_MS)
+        (if (proxy == null) Socket() else Socket(proxy)).use { raw ->
+            // Through the proxy the name is resolved at the far end, as Xray does.
+            val address = if (proxy == null) {
+                InetSocketAddress(target.host, target.port)
+            } else {
+                InetSocketAddress.createUnresolved(target.host, target.port)
+            }
+            raw.connect(address, CONNECT_TIMEOUT_MS)
             raw.soTimeout = CONNECT_TIMEOUT_MS
             (context.socketFactory.createSocket(raw, target.host, target.port, false) as SSLSocket).use { socket ->
                 if (!target.serverName.isIpLiteral()) {

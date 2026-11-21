@@ -185,8 +185,8 @@ internal fun ConfirmImportScreen(
                             add("协议" to (localNode?.protocol ?: "--"))
                             add("地址" to (localNode?.address ?: "--"))
                             add("端口" to (localNode?.port ?: "--"))
-                            add("传输" to (localNode?.transport ?: "--"))
-                            add("安全" to (localNode?.security ?: "--"))
+                            add("传输" to (localNode?.transport?.let { uiText(it) } ?: "--"))
+                            add("安全" to (localNode?.security?.let { uiText(it) } ?: "--"))
                             add("目标分组" to (preview?.group?.name?.let { uiText(it) } ?: "Local"))
                         } else {
                             add("节点数量" to uiText("${preview?.nodes?.size ?: 0} 个节点", "${preview?.nodes?.size ?: 0} nodes"))
