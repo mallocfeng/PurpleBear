@@ -20,9 +20,12 @@ object ResourceFetchClient {
     enum class RequestProfile {
         DEFAULT,
         SHADOWROCKET_SUBSCRIPTION,
+        /** Panels (Xboard, Marzban, Remnawave…) answer this with a full Clash Meta config. */
+        CLASH_META_SUBSCRIPTION,
     }
 
     private const val USER_AGENT = "MallocGFW/0.1"
+    private const val CLASH_META_USER_AGENT = "clash.meta/1.19.34 (mihomo; PurpleBear)"
     private const val SHADOWROCKET_USER_AGENT = "Shadowrocket/2.2.62 (iPhone; iOS 17.0; Scale/3.00)"
     private const val MAX_REDIRECTS = 5
     private const val MAX_HEADER_BYTES = 64 * 1024
@@ -83,7 +86,9 @@ object ResourceFetchClient {
     ): HttpResponse {
         require(redirectCount <= MAX_REDIRECTS) { "订阅链接重定向次数过多。" }
         return when (requestProfile) {
-            RequestProfile.DEFAULT -> fetchResponseWithConnection(url, connectTimeoutMs, readTimeoutMs, requestProfile)
+            RequestProfile.DEFAULT,
+            RequestProfile.CLASH_META_SUBSCRIPTION,
+            -> fetchResponseWithConnection(url, connectTimeoutMs, readTimeoutMs, requestProfile)
             RequestProfile.SHADOWROCKET_SUBSCRIPTION -> fetchResponseWithShadowrocketHttp1(url, connectTimeoutMs, readTimeoutMs, redirectCount)
         }
     }
@@ -404,6 +409,13 @@ object ResourceFetchClient {
             when (requestProfile) {
                 RequestProfile.DEFAULT -> {
                     setRequestProperty("User-Agent", USER_AGENT)
+                    // Without this some stacks send "text/html, …" and panels such as
+                    // 3x-ui answer with their browser page instead of the node list.
+                    setRequestProperty("Accept", "*/*")
+                }
+                RequestProfile.CLASH_META_SUBSCRIPTION -> {
+                    setRequestProperty("User-Agent", CLASH_META_USER_AGENT)
+                    setRequestProperty("Accept", "*/*")
                 }
                 RequestProfile.SHADOWROCKET_SUBSCRIPTION -> {
                     setRequestProperty("User-Agent", SHADOWROCKET_USER_AGENT)

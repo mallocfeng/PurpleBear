@@ -22,14 +22,118 @@ object ImportParser {
         require(trimmed.isNotBlank()) { "请输入订阅链接或节点 URL。" }
 
         return when {
+            // Several links (or a pasted subscription / Clash body) at once: parse it as content.
+            trimmed.lines().count { it.isNotBlank() } > 1 -> buildPastedPreview(trimmed)
             looksLikeHttpProxyShareLink(trimmed) -> buildLocalPreview(trimmed)
             trimmed.startsWith("http://") || trimmed.startsWith("https://") -> buildSubscriptionPreview(trimmed)
-            ManualNodeFactory.supportsShareLink(trimmed) -> buildLocalPreview(trimmed)
-            else -> error("当前仅支持 http(s) 订阅，以及 VLESS / VMess / Trojan / Shadowsocks / SSR / SOCKS / HTTP / Hysteria2 单节点导入。")
+            ManualNodeFactory.supportsShareLink(trimmed) || MihomoNodes.handlesShareLink(trimmed) -> buildLocalPreview(trimmed)
+            else -> runCatching { buildPastedPreview(trimmed) }.getOrElse {
+                error("当前仅支持 http(s) 订阅，以及 VLESS / VMess / Trojan / Shadowsocks / SSR / SOCKS / HTTP / Hysteria2 单节点导入。")
+            }
         }
     }
 
-    fun buildFilePreview(fileName: String, content: String): ImportPreview {
+    /** Pasted text holding several nodes; they go to the Local group next to single imports. */
+    private fun buildPastedPreview(content: String): ImportPreview = buildGroupPreview(
+        sourceValue = "pasted",
+        groupName = "Local",
+        groupType = ServerGroupType.Local,
+        autoUpdate = false,
+        content = content,
+    )
+
+    /** Nodes downloaded from a Clash proxy-provider, with that provider's filters. */
+    data class ProviderContent(
+        val content: String,
+        val filter: ProviderFilter = ProviderFilter(),
+        val override: ProviderOverride = ProviderOverride(),
+    )
+
+    /** Clash provider `override`: renames and fields forced onto every proxy. */
+    data class ProviderOverride(
+        val prefix: String = "",
+        val suffix: String = "",
+        val renames: List<Pair<Regex, String>> = emptyList(),
+        val fields: Map<String, Any?> = emptyMap(),
+    ) {
+        fun rename(name: String): String =
+            prefix + renames.fold(name) { acc, (regex, target) -> regex.replace(acc, target) } + suffix
+
+        /** Forced fields on a Clash proxy map (names are handled by [rename]). */
+        fun apply(map: Map<*, *>): Map<*, *> {
+            if (fields.isEmpty()) return map
+            return LinkedHashMap<Any?, Any?>(map).apply { putAll(fields) }
+        }
+
+        companion object {
+            private val FIELD_KEYS = setOf("skip-cert-verify", "udp", "udp-over-tcp", "up", "down", "tfo", "mptcp", "dialer-proxy")
+
+            fun from(provider: Map<*, *>): ProviderOverride {
+                val override = provider["override"] as? Map<*, *> ?: return ProviderOverride()
+                return ProviderOverride(
+                    prefix = override["additional-prefix"]?.toString().orEmpty(),
+                    suffix = override["additional-suffix"]?.toString().orEmpty(),
+                    renames = (override["proxy-name"] as? List<*>).orEmpty().mapNotNull { entry ->
+                        val rule = entry as? Map<*, *> ?: return@mapNotNull null
+                        val regex = runCatching { Regex(rule["pattern"]?.toString().orEmpty()) }.getOrNull() ?: return@mapNotNull null
+                        regex to rule["target"]?.toString().orEmpty().replace(Regex("\\$\\{?(\\d+)}?"), "\\$$1")
+                    },
+                    fields = override.entries.mapNotNull { (k, v) -> k?.toString()?.takeIf { it in FIELD_KEYS }?.let { it to v } }.toMap(),
+                )
+            }
+        }
+    }
+
+    /** Provider content with [override] fields applied to its Clash proxies (re-emitted as JSON). */
+    private fun overriddenContent(content: String, override: ProviderOverride): String {
+        if (override.fields.isEmpty()) return content
+        val root = runCatching { Yaml().load<Any?>(content) as? Map<*, *> }.getOrNull() ?: return content
+        val proxies = root["proxies"] as? List<*> ?: return content
+        val json = JSONArray()
+        proxies.forEach { item -> (item as? Map<*, *>)?.let { json.put(MihomoNodes.jsonOf(override.apply(it))) } }
+        return JSONObject().put("proxies", json).toString()
+    }
+
+    /** Clash `filter` / `exclude-filter` (regexes, "`"-separated) and `exclude-type` ("|"-separated). */
+    data class ProviderFilter(
+        val include: List<Regex> = emptyList(),
+        val exclude: List<Regex> = emptyList(),
+        val excludeTypes: Set<String> = emptySet(),
+    ) {
+        fun keeps(node: ServerNode): Boolean {
+            if (include.isNotEmpty() && include.none { it.containsMatchIn(node.name) }) return false
+            if (exclude.any { it.containsMatchIn(node.name) }) return false
+            return clashType(node) !in excludeTypes
+        }
+
+        companion object {
+            fun from(provider: Map<*, *>): ProviderFilter = ProviderFilter(
+                include = regexes(provider["filter"]),
+                exclude = regexes(provider["exclude-filter"]),
+                excludeTypes = provider["exclude-type"]?.toString().orEmpty().split('|')
+                    .map { it.trim().lowercase(Locale.ROOT) }.filter(String::isNotBlank)
+                    .map { MihomoNodes.normalizedType(it) ?: it }.toSet(),
+            )
+
+            private fun regexes(raw: Any?): List<Regex> = raw?.toString().orEmpty().split('`')
+                .filter(String::isNotBlank).mapNotNull { runCatching { Regex(it) }.getOrNull() }
+
+            private fun clashType(node: ServerNode): String {
+                node.mihomoProxyJson.takeIf { it.isNotBlank() }?.let { raw ->
+                    runCatching { JSONObject(raw).optString("type") }.getOrNull()?.takeIf { it.isNotBlank() }?.let { return it }
+                }
+                return when (val p = node.protocol.uppercase(Locale.ROOT)) {
+                    "SHADOWSOCKS" -> "ss"
+                    "SHADOWSOCKSR", "SSR" -> "ssr"
+                    "SOCKS", "SOCKS5" -> "socks5"
+                    "HTTP", "HTTP PROXY" -> "http"
+                    else -> p.lowercase(Locale.ROOT)
+                }
+            }
+        }
+    }
+
+    fun buildFilePreview(fileName: String, content: String, providerContents: List<ProviderContent> = emptyList()): ImportPreview {
         val cleanName = fileName.substringBeforeLast(".").ifBlank { "导入文件" }
         return buildGroupPreview(
             sourceValue = fileName,
@@ -37,8 +141,13 @@ object ImportParser {
             groupType = ServerGroupType.Subscription,
             autoUpdate = false,
             content = content,
+            providerContents = providerContents,
         )
     }
+
+    /** [buildFilePreview] that also downloads the config's Clash proxy-providers. */
+    suspend fun buildFilePreviewWithProviders(fileName: String, content: String): ImportPreview =
+        buildFilePreview(fileName, content, fetchProviderContents(content))
 
     fun buildSeedSubscriptionPreview(sourceUrl: String, nodeUrl: String): ImportPreview {
         val groupId = stableGroupId(sourceUrl)
@@ -78,6 +187,7 @@ object ImportParser {
                 autoUpdate = true,
                 sourceValue = sourceUrl,
                 hiddenUnsupportedNodeCount = hiddenUnsupportedNodeCount,
+                hiddenReason = firstHiddenReason(nodes),
             ),
             hiddenUnsupportedNodeCount = hiddenUnsupportedNodeCount,
         )
@@ -85,23 +195,50 @@ object ImportParser {
 
     private suspend fun buildSubscriptionPreview(sourceUrl: String): ImportPreview {
         val requestProfile = selectSubscriptionRequestProfile(sourceUrl)
-        val content = withContext(Dispatchers.IO) {
+        val autoUpdate = shouldAutoRefreshSubscription(sourceUrl)
+        suspend fun fetch(profile: ResourceFetchClient.RequestProfile) = withContext(Dispatchers.IO) {
             ResourceFetchClient.fetchText(
                 url = sourceUrl,
                 connectTimeoutMs = SUBSCRIPTION_CONNECT_TIMEOUT_MS,
                 readTimeoutMs = SUBSCRIPTION_READ_TIMEOUT_MS,
                 label = "订阅链接",
-                requestProfile = requestProfile,
+                requestProfile = profile,
             )
         }
-        val autoUpdate = shouldAutoRefreshSubscription(sourceUrl)
-        return buildGroupPreview(
+        suspend fun preview(content: String) = buildGroupPreview(
             sourceValue = sourceUrl,
             groupName = sourceUrl.toHostLabel(),
             groupType = ServerGroupType.Subscription,
             autoUpdate = autoUpdate,
             content = content,
+            providerContents = fetchProviderContents(content),
         )
+        suspend fun attempt(profile: ResourceFetchClient.RequestProfile) = runCatching {
+            val content = fetch(profile)
+            if (looksLikeWebPage(content)) error(WEB_PAGE_ERROR)
+            preview(content)
+        }
+        val first = attempt(requestProfile)
+        if (requestProfile != ResourceFetchClient.RequestProfile.DEFAULT) return first.getOrThrow()
+        // One-time (signed snapshot) links can't be fetched twice.
+        if (!autoUpdate && first.isSuccess) return first.getOrThrow()
+        // Panels pick the format from the User-Agent: unknown clients often get a
+        // reduced base64 list (no TUIC, AnyTLS…), a web page or an error, while
+        // Clash Meta clients get the full list. Ask both ways, keep the fuller one.
+        val second = attempt(ResourceFetchClient.RequestProfile.CLASH_META_SUBSCRIPTION)
+        fun usable(result: Result<ImportPreview>) = result.getOrNull()?.nodes?.count { !it.hiddenUnsupported } ?: -1
+        return when {
+            usable(second) > usable(first) -> second.getOrThrow()
+            first.isSuccess -> first.getOrThrow()
+            else -> throw first.exceptionOrNull()!!
+        }
+    }
+
+    private const val WEB_PAGE_ERROR = "订阅地址返回的是网页而不是节点列表，请确认复制的是订阅链接（而不是订阅页面地址）。"
+
+    private fun looksLikeWebPage(content: String): Boolean {
+        val head = content.trimStart().take(64).lowercase(Locale.ROOT)
+        return head.startsWith("<!doctype html") || head.startsWith("<html")
     }
 
     private fun buildLocalPreview(nodeUrl: String): ImportPreview {
@@ -126,6 +263,7 @@ object ImportParser {
                 autoUpdate = true,
                 sourceValue = nodeUrl,
                 hiddenUnsupportedNodeCount = if (node.hiddenUnsupported) 1 else 0,
+                hiddenReason = firstHiddenReason(listOf(node)),
             ),
             hiddenUnsupportedNodeCount = if (node.hiddenUnsupported) 1 else 0,
         )
@@ -137,6 +275,7 @@ object ImportParser {
         groupType: ServerGroupType,
         autoUpdate: Boolean,
         content: String,
+        providerContents: List<ProviderContent> = emptyList(),
     ): ImportPreview {
         val sourceId = if (groupType == ServerGroupType.Local) LOCAL_GROUP_ID else stableGroupId(sourceValue)
         val group = ServerGroup(
@@ -146,12 +285,24 @@ object ImportParser {
             sourceUrl = if (groupType == ServerGroupType.Subscription) sourceValue else null,
             updatedAt = "刚刚",
         )
-        val parsedNodes = parseSubscriptionNodes(content, groupId = sourceId, sourceLabel = groupName)
+        skippedTypes.get().clear()
+        skippedProviders.get().clear()
+        val parsedNodes = (listOf(ProviderContent(content)) + providerContents).flatMap { part ->
+            runCatching { parseSubscriptionNodes(overriddenContent(part.content, part.override), groupId = sourceId, sourceLabel = groupName) }
+                .getOrElse { if (part.content === content) throw it else emptyList() }
+                .map { node -> part.override.rename(node.name).let { if (it == node.name) node else node.copy(name = it) } }
+                .filter(part.filter::keeps)
+        }.let(::withUniqueIds)
+        val skipped = skippedTypes.get().toList()
+        val unreadableProviders = skippedProviders.get().toList()
         val nodes = parsedNodes.filterNot(::isDecorativeNode).map(::markHiddenIfUnsupported)
         val visibleNodeCount = nodes.count { !it.hiddenUnsupported }
         val hiddenUnsupportedNodeCount = nodes.count { it.hiddenUnsupported }
 
         require(nodes.isNotEmpty()) {
+            if (skipped.isNotEmpty()) {
+                return@require "没有可用节点：${skipped.size} 个节点的协议暂不支持（${skipped.distinct().take(3).joinToString("、")}）。"
+            }
             if (groupType == ServerGroupType.Subscription && shouldAutoRefreshSubscription(sourceValue).not()) {
                 when {
                     containsRegularClientBlock(content) -> {
@@ -194,21 +345,77 @@ object ImportParser {
                 autoUpdate = autoUpdate,
                 sourceValue = sourceValue,
                 hiddenUnsupportedNodeCount = hiddenUnsupportedNodeCount,
-            ),
+                hiddenReason = firstHiddenReason(nodes),
+            ) + skippedSummary(skipped) + providerSummary(unreadableProviders),
             hiddenUnsupportedNodeCount = hiddenUnsupportedNodeCount,
         )
     }
+
+    /** Proxy entries of a type no bundled core runs, collected while parsing. */
+    private val skippedTypes: ThreadLocal<MutableList<String>> = ThreadLocal.withInitial { mutableListOf() }
+
+    private val skippedProviders: ThreadLocal<MutableList<String>> = ThreadLocal.withInitial { mutableListOf() }
+
+    private fun providerSummary(names: List<String>): String {
+        if (names.isEmpty()) return ""
+        return " 另有 ${names.size} 个本地文件提供者无法读取（${names.distinct().take(3).joinToString("、")}）。"
+    }
+
+    private fun skippedSummary(types: List<String>): String {
+        if (types.isEmpty()) return ""
+        return " 另有 ${types.size} 个节点的协议暂不支持（${types.distinct().take(3).joinToString("、")}）。"
+    }
+
+    /** Provider files can repeat indexes; keep node ids unique within one import. */
+    private fun withUniqueIds(nodes: List<ServerNode>): List<ServerNode> {
+        val seen = mutableSetOf<String>()
+        return nodes.map { node ->
+            var id = node.id
+            var n = 2
+            while (!seen.add(id)) id = "${node.id}_${n++}"
+            if (id == node.id) node else node.copy(id = id)
+        }
+    }
+
+    /** Downloads the HTTP proxy-providers a Clash config points at (inline ones are parsed directly). */
+    private suspend fun fetchProviderContents(content: String): List<ProviderContent> {
+        if (!Regex("(?m)^proxy-providers\\s*:").containsMatchIn(content)) return emptyList()
+        val providers = runCatching { (Yaml().load<Any?>(content) as? Map<*, *>)?.get("proxy-providers") as? Map<*, *> }
+            .getOrNull() ?: return emptyList()
+        val targets = providers.values.mapNotNull { provider ->
+            val map = provider as? Map<*, *> ?: return@mapNotNull null
+            val url = map["url"]?.toString()?.takeIf { it.startsWith("http://") || it.startsWith("https://") } ?: return@mapNotNull null
+            Triple(url, ProviderFilter.from(map), ProviderOverride.from(map))
+        }.distinctBy { it.first }.take(MAX_PROVIDERS)
+        return withContext(Dispatchers.IO) {
+            targets.mapNotNull { (url, filter, override) ->
+                runCatching {
+                    ResourceFetchClient.fetchText(
+                        url = url,
+                        connectTimeoutMs = SUBSCRIPTION_CONNECT_TIMEOUT_MS,
+                        readTimeoutMs = SUBSCRIPTION_READ_TIMEOUT_MS,
+                        label = "订阅提供者",
+                        requestProfile = ResourceFetchClient.RequestProfile.DEFAULT,
+                    )
+                }.getOrNull()?.let { ProviderContent(it, filter, override) }
+            }
+        }
+    }
+
+    private const val MAX_PROVIDERS = 20
 
     private fun buildImportSummary(
         nodeCount: Int,
         autoUpdate: Boolean,
         sourceValue: String,
         hiddenUnsupportedNodeCount: Int,
+        hiddenReason: String? = null,
     ): String {
         val base = buildString {
             append("解析完成，共检测到 $nodeCount 个可用节点。")
             if (hiddenUnsupportedNodeCount > 0) {
-                append(" 已隐藏 $hiddenUnsupportedNodeCount 个暂不支持的 REALITY + gRPC 节点。")
+                append(" 已隐藏 $hiddenUnsupportedNodeCount 个当前内核无法使用的节点")
+                append(hiddenReason?.let { "（$it）。" } ?: "。")
             }
         }
         if (!sourceValue.startsWith("http", ignoreCase = true) || autoUpdate) {
@@ -218,11 +425,12 @@ object ImportParser {
     }
 
     private fun markHiddenIfUnsupported(node: ServerNode): ServerNode {
-        return if (node.hiddenUnsupported || !node.isUnsupportedGrpcRealityNode()) {
-            node
-        } else {
-            node.copy(hiddenUnsupported = true)
-        }
+        return node.copy(hiddenUnsupported = NodeCompatibility.coreIncompatibility(node) != null)
+    }
+
+    private fun firstHiddenReason(nodes: List<ServerNode>): String? {
+        return nodes.asSequence().filter { it.hiddenUnsupported }
+            .mapNotNull(NodeCompatibility::coreIncompatibility).firstOrNull()
     }
 
     private fun shouldAutoRefreshSubscription(sourceUrl: String): Boolean {
@@ -273,9 +481,12 @@ object ImportParser {
         val payload = normalizeSubscriptionPayload(content)
         parseJsonSubscription(payload, groupId, sourceLabel).takeIf { it.isNotEmpty() }?.let { return it }
         parseYamlSubscription(payload, groupId, sourceLabel).takeIf { it.isNotEmpty() }?.let { return it }
+        val wireGuardSections = MihomoNodes.surgeWireGuardSections(payload)
         return decodeLineBasedSubscription(payload)
             .mapIndexedNotNull { index, raw ->
-                parseNodeLine(raw, groupId = groupId, sourceLabel = sourceLabel, index = index + 1)
+                MihomoNodes.surgeWireGuardLine(raw, wireGuardSections)
+                    ?.let { parseClashProxyMap(it, groupId, sourceLabel, index + 1) }
+                    ?: parseNodeLine(raw, groupId = groupId, sourceLabel = sourceLabel, index = index + 1)
             }
     }
 
@@ -287,7 +498,12 @@ object ImportParser {
             trimmed.contains("://") -> trimmed
             else -> {
                 val cleaned = trimmed.replace("\\s+".toRegex(), "")
-                decodeBase64Flexible(cleaned, "订阅内容")
+                runCatching { decodeBase64Flexible(cleaned, "订阅内容") }.getOrElse { error ->
+                    // Surge / Loon / Quantumult X configs are plain "name = type, …" lines.
+                    val isConf = trimmed.lineSequence().any { MihomoNodes.fromConfLine(it) != null } ||
+                        MihomoNodes.surgeWireGuardSections(trimmed).isNotEmpty()
+                    if (isConf) trimmed else throw error
+                }
             }
         }
     }
@@ -305,7 +521,7 @@ object ImportParser {
             trimmed.startsWith("[") ||
             Regex("(?m)^proxies\\s*:").containsMatchIn(raw) ||
             Regex("(?m)^proxy-providers\\s*:").containsMatchIn(raw) ||
-            Regex("(?m)^outbounds\\s*:").containsMatchIn(raw) ||
+            Regex("(?m)^(outbounds|endpoints)\\s*:").containsMatchIn(raw) ||
             Regex("(?m)^servers\\s*:").containsMatchIn(raw)
     }
 
@@ -316,12 +532,30 @@ object ImportParser {
         index: Int,
     ): ServerNode? {
         return when {
-            raw.startsWith("vmess://", ignoreCase = true) -> parseVmessNode(raw, groupId, sourceLabel, index)
-            raw.startsWith("vless://", ignoreCase = true) -> parseVlessNode(raw, groupId, sourceLabel, index)
+            // Links only mihomo can run (TUIC, AnyTLS, Hysteria v1, WireGuard, SS plugins).
+            MihomoNodes.handlesShareLink(raw) || MihomoNodes.isShadowsocksPluginLink(raw) -> {
+                val map = MihomoNodes.fromShareLink(raw) ?: return null
+                parseClashProxyMap(map, groupId, sourceLabel, index)?.let { node ->
+                    node.copy(id = "${groupId}_${index}_${stableSuffix(raw)}", rawUri = raw.trim())
+                }
+            }
+            raw.startsWith("vmess://", ignoreCase = true) || raw.startsWith("vless://", ignoreCase = true) -> {
+                runCatching {
+                    // Fails here, at import, for links no core can run (e.g. QUIC transport).
+                    ManualNodeFactory.prefillFromShareLink(raw)
+                    if (raw.startsWith("vmess://", ignoreCase = true)) {
+                        parseVmessNode(raw, groupId, sourceLabel, index)
+                    } else {
+                        parseVlessNode(raw, groupId, sourceLabel, index)
+                    }
+                }.getOrElse { skipType(raw.substringBefore("://") + "（" + (it.message ?: "格式错误") + "）"); null }
+            }
             ManualNodeFactory.supportsShareLink(raw) -> {
                 parseShareLinkNode(raw, groupId, sourceLabel, index)
+                    ?: run { skipType(raw.substringBefore("://")); null }
             }
-            else -> null
+            // Surge / Loon / Quantumult X proxy lines.
+            else -> MihomoNodes.fromConfLine(raw)?.let { parseClashProxyMap(it, groupId, sourceLabel, index) }
         }
     }
 
@@ -376,8 +610,35 @@ object ImportParser {
     ): List<ServerNode> {
         val nodes = mutableListOf<ServerNode>()
         root.optJSONArray("servers")?.let { nodes += parseSip008Array(it, groupId, sourceLabel) }
-        root.optJSONArray("proxies")?.let { nodes += parseClashProxyArray(it, groupId, sourceLabel) }
+        root.optJSONArray("proxies")?.let { proxies ->
+            val maps = (0 until proxies.length()).mapNotNull { proxies.optJSONObject(it)?.toMap() }
+            val groups = root.optJSONArray("proxy-groups")?.let { g -> (0 until g.length()).mapNotNull { g.optJSONObject(it)?.toMap() } }.orEmpty()
+            nodes += withClashContext(maps, groups) { parseClashProxyArray(proxies, groupId, sourceLabel) }
+        }
+        // Xray / v2rayN full config: one node per proxy outbound, named by "remarks".
+        val outbounds = root.optJSONArray("outbounds")
+        if (outbounds != null && (0 until outbounds.length()).any { outbounds.optJSONObject(it)?.has("protocol") == true }) {
+            val byTag = mutableMapOf<String, ServerNode>()
+            val dialers = mutableListOf<Pair<ServerNode, String>>()
+            for (i in 0 until outbounds.length()) {
+                val outbound = outbounds.optJSONObject(i) ?: continue
+                val node = parseXrayOutbound(outbound, root.optString("remarks"), groupId, sourceLabel, i + 1) ?: continue
+                nodes += node
+                outbound.optString("tag").takeIf { it.isNotBlank() }?.let { byTag[it] = node }
+                outbound.optJSONObject("streamSettings")?.optJSONObject("sockopt")?.optString("dialerProxy")
+                    ?.takeIf { it.isNotBlank() }?.let { dialers += node to it }
+            }
+            // sockopt.dialerProxy between two proxy outbounds → the app's pre-proxy chain.
+            dialers.forEach { (node, tag) ->
+                val front = byTag[tag] ?: return@forEach
+                val index = nodes.indexOfFirst { it.id == node.id }
+                if (index >= 0 && front.id != node.id) nodes[index] = nodes[index].copy(preProxyNodeId = front.id)
+            }
+            return nodes
+        }
         root.optJSONArray("outbounds")?.let { nodes += parseSingBoxOutboundArray(it, groupId, sourceLabel) }
+        // sing-box 1.11+ keeps WireGuard under "endpoints".
+        root.optJSONArray("endpoints")?.let { nodes += parseSingBoxOutboundArray(it, groupId, sourceLabel) }
         return nodes
     }
 
@@ -391,8 +652,13 @@ object ImportParser {
             when (val item = array.opt(i)) {
                 is String -> parseNodeLine(item, groupId, sourceLabel, i + 1)?.let(nodes::add)
                 is JSONObject -> {
-                    val wrapped = JSONObject().put("proxies", JSONArray().put(item))
-                    nodes += parseJsonRoot(wrapped, groupId, sourceLabel)
+                    // An array of full Xray configs, or of Clash proxy maps.
+                    val wrapped = if (item.has("outbounds")) item else JSONObject().put("proxies", JSONArray().put(item))
+                    val batch = parseJsonRoot(wrapped, groupId, sourceLabel)
+                    val ids = batch.associate { it.id to "${it.id}_$i" }
+                    nodes += batch.map { node ->
+                        node.copy(id = ids.getValue(node.id), preProxyNodeId = ids[node.preProxyNodeId] ?: node.preProxyNodeId)
+                    }
                 }
             }
         }
@@ -404,7 +670,7 @@ object ImportParser {
         groupId: String,
         sourceLabel: String,
     ): List<ServerNode> {
-        if (!Regex("(?m)^(proxies|proxy-providers|outbounds|servers)\\s*:").containsMatchIn(payload)) return emptyList()
+        if (!Regex("(?m)^(proxies|proxy-providers|outbounds|endpoints|servers)\\s*:").containsMatchIn(payload)) return emptyList()
         return runCatching {
             val root = Yaml().load<Any?>(payload)
             when (root) {
@@ -422,8 +688,29 @@ object ImportParser {
     ): List<ServerNode> {
         val nodes = mutableListOf<ServerNode>()
         (root["servers"] as? List<*>)?.let { nodes += parseSip008List(it, groupId, sourceLabel) }
-        (root["proxies"] as? List<*>)?.let { nodes += parseClashProxyList(it, groupId, sourceLabel) }
+        (root["proxies"] as? List<*>)?.let { proxies ->
+            val groups = (root["proxy-groups"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>()
+            nodes += withClashContext(proxies.filterIsInstance<Map<*, *>>(), groups) { parseClashProxyList(proxies, groupId, sourceLabel) }
+        }
+        // Providers with an inline payload; HTTP providers are fetched by fetchProviderContents.
+        (root["proxy-providers"] as? Map<*, *>)?.forEach { (providerName, provider) ->
+            val map = provider as? Map<*, *> ?: return@forEach
+            val url = map["url"]?.toString().orEmpty()
+            if (map["payload"] == null && !url.startsWith("http://") && !url.startsWith("https://")) {
+                // A local file on the machine that wrote the config; not readable here.
+                skippedProviders.get().add(providerName.toString())
+                return@forEach
+            }
+            val filter = ProviderFilter.from(map)
+            val override = ProviderOverride.from(map)
+            (map["payload"] as? List<*>)?.let { payload ->
+                nodes += parseClashProxyList(payload.map { (it as? Map<*, *>)?.let(override::apply) ?: it }, groupId, sourceLabel)
+                    .map { node -> node.copy(name = override.rename(node.name)) }
+                    .filter(filter::keeps)
+            }
+        }
         (root["outbounds"] as? List<*>)?.let { nodes += parseSingBoxOutboundList(it, groupId, sourceLabel) }
+        (root["endpoints"] as? List<*>)?.let { nodes += parseSingBoxOutboundList(it, groupId, sourceLabel) }
         return nodes
     }
 
@@ -524,7 +811,8 @@ object ImportParser {
         index: Int,
     ): ServerNode? {
         val type = item.string("type")?.lowercase(Locale.ROOT) ?: return null
-        val draft = when (type) {
+        if (type in NON_PROXY_TYPES) return null
+        val draft = runCatching { when (type) {
             "ss", "shadowsocks" -> buildClashShadowsocksDraft(item)
             "ssr", "shadowsocksr" -> buildClashShadowsocksRDraft(item)
             "vmess" -> buildClashVmessDraft(item)
@@ -535,8 +823,139 @@ object ImportParser {
             "hysteria2", "hy2" -> buildClashHysteria2Draft(item)
             "wireguard" -> buildClashWireGuardDraft(item)
             else -> null
-        } ?: return null
-        return buildImportedNode(draft, groupId, sourceLabel, index)
+        } }.getOrNull()
+        // Prefer Xray; anything it can't run goes to mihomo as the original Clash map.
+        val xrayNode = draft?.takeUnless { needsMihomo(type, item) }?.let { buildImportedNode(it, groupId, sourceLabel, index) }
+        // (SSR already has its own editable node that runs in the sidecar.)
+        if (xrayNode != null && NodeCompatibility.coreIncompatibility(xrayNode) == null &&
+            (ManualNodeFactory.isSsrNode(xrayNode) || !NodeCompatibility.runsInSidecar(xrayNode))
+        ) {
+            return xrayNode
+        }
+        return buildMihomoNode(item, groupId, sourceLabel, index) ?: xrayNode ?: run { skipType(type); null }
+    }
+
+    /** Clash features Xray can't express: port hopping and dialer-proxy chains. */
+    private fun needsMihomo(type: String, item: Map<*, *>): Boolean =
+        (type in setOf("hysteria2", "hy2") && !item.string("ports").isNullOrBlank()) ||
+            !item.string("dialer-proxy").isNullOrBlank()
+
+    private val NON_PROXY_TYPES = setOf("direct", "reject", "dns", "pass", "compatible", "select", "url-test", "fallback", "load-balance", "relay")
+
+    private fun skipType(type: String) {
+        skippedTypes.get().add(type)
+    }
+
+    /** A node that runs in the mihomo sidecar, from a Clash/mihomo proxy map. */
+    private fun buildMihomoNode(
+        item: Map<*, *>,
+        groupId: String,
+        sourceLabel: String,
+        index: Int,
+    ): ServerNode? {
+        val name = item.string("name").orEmpty().ifBlank { "$sourceLabel #$index" }
+        val config = MihomoNodes.sanitize(item, name) ?: return null
+        item.string("dialer-proxy")?.let { attachDialer(config, it, depth = 0) }
+        val address = config.optString("server")
+        val type = config.optString("type")
+        return ServerNode(
+            id = "${groupId}_${index}_${stableSuffix(name)}",
+            groupId = groupId,
+            name = name,
+            code = buildCode(address, index),
+            subscription = sourceLabel,
+            region = inferRegion(name, address),
+            latencyMs = 0,
+            protocol = MihomoNodes.protocolLabel(type),
+            security = MihomoNodes.securityLabel(config),
+            transport = MihomoNodes.transportLabel(config),
+            description = if (groupId == LOCAL_GROUP_ID) "本地导入单节点" else "来自订阅组 $sourceLabel",
+            address = address,
+            port = config.opt("port")?.toString().orEmpty(),
+            flow = config.optString("flow").ifBlank { "无" },
+            stable = false,
+            favorite = false,
+            rawUri = "",
+            mihomoProxyJson = config.toString(),
+        )
+    }
+
+    /**
+     * Xray's classic `vnext` / `servers` + `users` layout → the flat layout the
+     * app writes (address, port and the first user's fields side by side).
+     */
+    private fun flattenXraySettings(settings: JSONObject): JSONObject {
+        if (settings.has("address")) return settings
+        val endpoint = settings.optJSONArray("vnext")?.optJSONObject(0)
+            ?: settings.optJSONArray("servers")?.optJSONObject(0)
+            ?: return settings
+        val flat = JSONObject()
+        settings.keys().forEach { key -> if (key != "vnext" && key != "servers") flat.put(key, settings.get(key)) }
+        endpoint.keys().forEach { key -> if (key != "users") flat.put(key, endpoint.get(key)) }
+        endpoint.optJSONArray("users")?.optJSONObject(0)?.let { user ->
+            user.keys().forEach { key -> if (!flat.has(key)) flat.put(key, user.get(key)) }
+        }
+        return flat
+    }
+
+    /** Clash proxies and proxy-groups of the config being parsed, for dialer-proxy lookups. */
+    private val clashContext = ThreadLocal<Map<String, Map<*, *>>?>()
+
+    private fun <T> withClashContext(proxies: List<Map<*, *>>, groups: List<Map<*, *>>, block: () -> T): T {
+        val previous = clashContext.get()
+        clashContext.set((groups + proxies).mapNotNull { map -> map.string("name")?.let { it to map } }.toMap())
+        return try { block() } finally { clashContext.set(previous) }
+    }
+
+    /**
+     * Embeds the dialer-proxy front node (a proxy, or a group's first member)
+     * as "pb-dialer"; MihomoProxy expands it into a mihomo chain at run time.
+     */
+    private fun attachDialer(config: JSONObject, frontName: String, depth: Int) {
+        if (depth > 3) return
+        var target = clashContext.get()?.get(frontName) ?: return
+        var hops = 0
+        while (target["proxies"] is List<*> && target["server"] == null && hops++ < 4) {
+            val first = (target["proxies"] as List<*>).firstOrNull()?.toString() ?: return
+            target = clashContext.get()?.get(first) ?: return
+        }
+        val front = MihomoNodes.sanitize(target, "front") ?: return
+        target.string("dialer-proxy")?.let { attachDialer(front, it, depth + 1) }
+        config.put(MihomoProxy.DIALER_KEY, front)
+    }
+
+    /** One outbound of an Xray / v2rayN JSON config. */
+    private fun parseXrayOutbound(
+        outbound: JSONObject,
+        remarks: String,
+        groupId: String,
+        sourceLabel: String,
+        index: Int,
+    ): ServerNode? {
+        val protocol = outbound.optString("protocol").lowercase(Locale.ROOT)
+        if (protocol in setOf("freedom", "blackhole", "dns", "loopback", "")) return null
+        val tag = outbound.optString("tag").takeUnless { it.isBlank() || it in setOf("proxy", "out", "outbound", "agentout") }
+        val name = tag ?: remarks.ifBlank { "$sourceLabel #$index" }
+        val settings = flattenXraySettings(outbound.optJSONObject("settings") ?: JSONObject())
+        val flatOutbound = JSONObject(outbound.toString()).put("settings", settings)
+        val endpoint = if (settings.has("address")) settings else
+            settings.optJSONArray("vnext")?.optJSONObject(0) ?: settings.optJSONArray("servers")?.optJSONObject(0)
+                ?: settings.optJSONArray("peers")?.optJSONObject(0)
+        val endpointAddress = endpoint?.optString("address").orEmpty()
+            .ifBlank { endpoint?.optString("endpoint").orEmpty().substringBeforeLast(':') }
+        val endpointPort = endpoint?.optInt("port")?.takeIf { it > 0 }?.toString()
+            ?: endpoint?.optString("endpoint").orEmpty().substringAfterLast(':', "")
+        val probe = ServerNode(
+            id = "probe", groupId = groupId, name = name, code = "", subscription = sourceLabel, region = "",
+            latencyMs = 0, protocol = protocol.uppercase(Locale.ROOT), security = "", transport = "", description = "",
+            address = endpointAddress, port = endpointPort, flow = "", stable = false, favorite = false, rawUri = "",
+            outboundJson = flatOutbound.toString(),
+        )
+        val xrayNode = runCatching { ManualNodeFactory.prefillFromServerNode(probe) }.getOrNull()
+            ?.let { buildImportedNode(it.copy(nodeName = name), groupId, sourceLabel, index) }
+        if (xrayNode != null && NodeCompatibility.coreIncompatibility(xrayNode) == null) return xrayNode
+        return MihomoNodes.fromXrayOutbound(outbound, name)?.let { buildMihomoNode(it, groupId, sourceLabel, index) }
+            ?: xrayNode ?: run { skipType(protocol); null }
     }
 
     private fun parseSingBoxOutboundArray(
@@ -544,11 +963,8 @@ object ImportParser {
         groupId: String,
         sourceLabel: String,
     ): List<ServerNode> {
-        return buildList {
-            for (i in 0 until outbounds.length()) {
-                parseSingBoxOutboundMap(outbounds.optJSONObject(i)?.toMap() ?: continue, groupId, sourceLabel, i + 1)?.let(::add)
-            }
-        }
+        val items = (0 until outbounds.length()).map { outbounds.optJSONObject(it)?.toMap() }
+        return parseSingBoxOutboundList(items, groupId, sourceLabel)
     }
 
     private fun parseSingBoxOutboundList(
@@ -556,9 +972,13 @@ object ImportParser {
         groupId: String,
         sourceLabel: String,
     ): List<ServerNode> {
+        val byTag = outbounds.mapNotNull { item ->
+            val map = item as? Map<*, *> ?: return@mapNotNull null
+            map["tag"]?.toString()?.let { it to map }
+        }.toMap()
         return buildList {
             outbounds.forEachIndexed { index, item ->
-                parseSingBoxOutboundMap(item as? Map<*, *> ?: return@forEachIndexed, groupId, sourceLabel, index + 1)?.let(::add)
+                parseSingBoxOutboundMap(item as? Map<*, *> ?: return@forEachIndexed, groupId, sourceLabel, index + 1, byTag)?.let(::add)
             }
         }
     }
@@ -568,9 +988,16 @@ object ImportParser {
         groupId: String,
         sourceLabel: String,
         index: Int,
+        byTag: Map<String, Map<*, *>> = emptyMap(),
     ): ServerNode? {
         val type = item.string("type")?.lowercase(Locale.ROOT) ?: return null
-        val draft = when (type) {
+        // Shadowsocks over shadow-tls (detour) and plugins: only mihomo runs these.
+        val detourType = item.string("detour")?.let(byTag::get)?.string("type")
+        val hopping = type == "hysteria2" && (item["server_ports"] as? List<*>)?.isNotEmpty() == true
+        if (hopping || (type == "shadowsocks" && (detourType == "shadowtls" || !item.string("plugin").isNullOrBlank()))) {
+            return MihomoNodes.fromSingBox(item, byTag)?.let { parseClashProxyMap(it, groupId, sourceLabel, index) }
+        }
+        val draft = runCatching { when (type) {
             "shadowsocks" -> buildSingBoxShadowsocksDraft(item)
             "vmess" -> buildSingBoxVmessDraft(item)
             "vless" -> buildSingBoxVlessDraft(item)
@@ -579,8 +1006,10 @@ object ImportParser {
             "http" -> buildSingBoxHttpDraft(item)
             "hysteria2" -> buildSingBoxHysteria2Draft(item)
             "wireguard" -> buildSingBoxWireGuardDraft(item)
+            "shadowtls", "direct", "block", "dns", "selector", "urltest" -> return null
             else -> null
-        } ?: return null
+        } }.getOrNull() ?: return MihomoNodes.fromSingBox(item, byTag)?.let { parseClashProxyMap(it, groupId, sourceLabel, index) }
+            ?: run { skipType(type); null }
         return buildImportedNode(draft, groupId, sourceLabel, index)
     }
 
@@ -752,6 +1181,8 @@ object ImportParser {
             alpn = item.csv("alpn"),
             allowInsecure = item.boolLike("skip-cert-verify") == true,
             pinnedPeerCertSha256 = item.clashCertificatePin(),
+            hysteriaObfsPassword = item.string("obfs-password").orEmpty()
+                .takeIf { item.string("obfs").orEmpty().equals("salamander", ignoreCase = true) }.orEmpty(),
         )
     }
 
@@ -887,21 +1318,31 @@ object ImportParser {
             serverName = tls?.string("server_name").orEmpty(),
             alpn = tls?.csv("alpn").orEmpty(),
             allowInsecure = tls?.boolLike("insecure") == true,
+            hysteriaObfsPassword = item.map("obfs")
+                ?.takeIf { it.string("type").orEmpty().equals("salamander", ignoreCase = true) }
+                ?.string("password").orEmpty(),
         )
     }
 
+    /**
+     * sing-box has three WireGuard layouts: the legacy outbound (server /
+     * server_port / peer_public_key at the top level), the legacy multi-peer
+     * outbound (peers[].server), and the 1.11+ endpoint (`endpoints`, with
+     * address = local addresses and peers[].address / port).
+     */
     private fun buildSingBoxWireGuardDraft(item: Map<*, *>): LocalNodeDraft? {
-        val peers = item.listMaps("peers")
-        val peer = peers.firstOrNull()
+        val peer = item.listMaps("peers").firstOrNull()
+        val isEndpoint = item.string("server").isNullOrBlank() && peer?.string("address") != null
+        val localAddresses = if (isEndpoint) item.list("address") else item.list("local_address")
         return ManualNodeFactory.applyProtocolDefaults(LocalNodeDraft(), LocalNodeProtocol.WIREGUARD).copy(
             nodeName = item.string("tag").orEmpty(),
-            address = peer?.string("server").orEmpty(),
-            port = peer?.intLike("server_port")?.toString().orEmpty(),
+            address = item.string("server") ?: peer?.string("server") ?: peer?.string("address").orEmpty(),
+            port = (item.intLike("server_port") ?: peer?.intLike("server_port") ?: peer?.intLike("port"))?.toString().orEmpty(),
             wireGuardSecretKey = item.string("private_key").orEmpty(),
-            wireGuardPublicKey = peer?.string("public_key").orEmpty(),
-            wireGuardLocalAddresses = item.list("local_address").joinToString(", "),
+            wireGuardPublicKey = item.string("peer_public_key") ?: peer?.string("public_key").orEmpty(),
+            wireGuardLocalAddresses = localAddresses.joinToString(", "),
             wireGuardAllowedIps = peer?.list("allowed_ips")?.joinToString(", ").orEmpty(),
-            wireGuardReserved = peer?.list("reserved")?.joinToString(",").orEmpty(),
+            wireGuardReserved = (peer?.list("reserved")?.takeIf { it.isNotEmpty() } ?: item.list("reserved")).joinToString(","),
             wireGuardMtu = item.intLike("mtu")?.toString().orEmpty(),
         )
     }
@@ -1090,12 +1531,14 @@ object ImportParser {
     }
 
     private fun transportFromType(raw: String?): LocalNodeTransport {
-        return when (raw?.trim()?.lowercase(Locale.ROOT).orEmpty()) {
+        return when (val value = raw?.trim()?.lowercase(Locale.ROOT).orEmpty()) {
             "ws", "websocket" -> LocalNodeTransport.WS
             "grpc" -> LocalNodeTransport.GRPC
             "http", "h2" -> LocalNodeTransport.HTTP2
             "httpupgrade" -> LocalNodeTransport.HTTP_UPGRADE
             "xhttp" -> LocalNodeTransport.XHTTP
+            "kcp", "mkcp" -> LocalNodeTransport.KCP
+            "quic", "h3" -> error("暂不支持 $value 传输方式")
             else -> LocalNodeTransport.TCP
         }
     }

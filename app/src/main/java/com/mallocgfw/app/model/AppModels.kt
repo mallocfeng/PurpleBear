@@ -156,6 +156,8 @@ data class ServerNode(
     val favorite: Boolean,
     val rawUri: String,
     val outboundJson: String = "",
+    /** Clash/mihomo proxy map (JSON) for nodes that run in the mihomo sidecar. */
+    val mihomoProxyJson: String = "",
     val hiddenUnsupported: Boolean = false,
     val preProxyNodeId: String = "",
     val fallbackNodeId: String = "",
@@ -218,11 +220,6 @@ fun List<ServerNode>.mergedSubscriptionGroupNodes(targetGroupId: String): List<S
     }
 
     return merged
-}
-
-fun ServerNode.isUnsupportedGrpcRealityNode(): Boolean {
-    return security.equals("REALITY", ignoreCase = true) &&
-        transport.equals("GRPC", ignoreCase = true)
 }
 
 fun ServerNode.ssrCompatibilityLabel(): String? {

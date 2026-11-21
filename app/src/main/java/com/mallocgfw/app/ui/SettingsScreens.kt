@@ -1068,7 +1068,7 @@ internal fun MediaRoutingGroupCard(
                 section.servers.forEach { node ->
                     MediaRoutingNodeRow(
                         title = node.name,
-                        subtitle = "${node.subscription} · ${node.region}",
+                        subtitle = "${uiText(node.subscription)} · ${uiText(node.region)}",
                         selected = selectedServerId == node.id,
                         onClick = { onSelectServer(node.id) },
                     )

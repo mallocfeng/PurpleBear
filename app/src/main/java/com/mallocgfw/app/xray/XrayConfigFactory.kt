@@ -1,6 +1,7 @@
 package com.mallocgfw.app.xray
 
 import com.mallocgfw.app.model.ManualNodeFactory
+import com.mallocgfw.app.model.NodeCompatibility
 import com.mallocgfw.app.model.SsrMihomoConfigFactory
 import com.mallocgfw.app.model.AppGeoRoutingRegion
 import com.mallocgfw.app.model.AppLanguage
@@ -69,9 +70,11 @@ object XrayConfigFactory {
             put(
                 "outbounds",
                 JSONArray().apply {
-                    buildOutboundChain(node, "proxy", availableServers, localProxy).forEach(::put)
+                    // Nodes that run in the mihomo sidecar, each on its own listener slot.
+                    val sidecarNodes = SsrMihomoConfigFactory.sidecarNodes(node, additionalOutbounds.map { it.node })
+                    buildOutboundChain(node, "proxy", availableServers, localProxy, sidecarNodes).forEach(::put)
                     additionalOutbounds.forEach { outbound ->
-                        buildOutboundChain(outbound.node, outbound.tag, availableServers, localProxy).forEach(::put)
+                        buildOutboundChain(outbound.node, outbound.tag, availableServers, localProxy, sidecarNodes).forEach(::put)
                     }
                     tailscale?.let { put(tailscaleOutbound(it)) }
                     put(JSONObject().apply {
@@ -150,9 +153,11 @@ object XrayConfigFactory {
             put(
                 "outbounds",
                 JSONArray().apply {
-                    buildOutboundChain(node, "proxy", availableServers, localProxy).forEach(::put)
+                    // Nodes that run in the mihomo sidecar, each on its own listener slot.
+                    val sidecarNodes = SsrMihomoConfigFactory.sidecarNodes(node, additionalOutbounds.map { it.node })
+                    buildOutboundChain(node, "proxy", availableServers, localProxy, sidecarNodes).forEach(::put)
                     additionalOutbounds.forEach { outbound ->
-                        buildOutboundChain(outbound.node, outbound.tag, availableServers, localProxy).forEach(::put)
+                        buildOutboundChain(outbound.node, outbound.tag, availableServers, localProxy, sidecarNodes).forEach(::put)
                     }
                     tailscale?.let { put(tailscaleOutbound(it)) }
                     put(JSONObject().apply {
@@ -451,12 +456,19 @@ object XrayConfigFactory {
         }
     }
 
-    private fun proxyOutbound(node: ServerNode, tag: String, localProxy: LocalProxyAllocation): JSONObject {
-        // SSR runs in the mihomo sidecar; point the outbound at this run's
-        // authenticated loopback listener rather than a fixed port.
-        val outbound = if (ManualNodeFactory.isSsrNode(node)) {
-            SsrMihomoConfigFactory.localSocksOutbound(localProxy.ssr)
+    private fun proxyOutbound(
+        node: ServerNode,
+        tag: String,
+        localProxy: LocalProxyAllocation,
+        sidecarNodes: List<ServerNode>,
+    ): JSONObject {
+        // Nodes Xray can't run (see NodeCompatibility) live in the mihomo sidecar;
+        // point the outbound at that node's authenticated loopback listener. The
+        // sidecar is started from the same node list, so the two never disagree.
+        val outbound = if (NodeCompatibility.runsInSidecar(node)) {
+            SsrMihomoConfigFactory.localSocksOutbound(SsrMihomoConfigFactory.endpointFor(node, sidecarNodes, localProxy))
         } else {
+            NodeCompatibility.coreIncompatibility(node)?.let { reason -> error("${node.name}：$reason。") }
             ManualNodeFactory.buildOutboundConfig(node)
         }
         return outbound?.apply {
@@ -469,9 +481,10 @@ object XrayConfigFactory {
         tag: String,
         availableServers: List<ServerNode>,
         localProxy: LocalProxyAllocation,
+        sidecarNodes: List<ServerNode>,
         visitedNodeIds: Set<String> = emptySet(),
     ): List<JSONObject> {
-        val outbound = proxyOutbound(node, tag, localProxy)
+        val outbound = proxyOutbound(node, tag, localProxy, sidecarNodes)
         val nextVisited = visitedNodeIds + node.id
         val preProxyNode = resolvePreProxyNode(
             node = node,
@@ -482,7 +495,7 @@ object XrayConfigFactory {
         attachDialerProxy(outbound, preProxyTag)
         return buildList {
             add(outbound)
-            addAll(buildOutboundChain(preProxyNode, preProxyTag, availableServers, localProxy, nextVisited))
+            addAll(buildOutboundChain(preProxyNode, preProxyTag, availableServers, localProxy, sidecarNodes, nextVisited))
         }
     }
 

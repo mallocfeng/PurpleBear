@@ -1,9 +1,11 @@
 package com.mallocgfw.app.model
 
+import com.mallocgfw.app.xray.LocalProxyAllocation
 import com.mallocgfw.app.xray.LocalProxyEndpoint
 import com.mallocgfw.app.xray.LocalProxyRuntime
 import java.net.URLDecoder
 import java.util.Base64
+import org.json.JSONArray
 import org.json.JSONObject
 
 /** Placeholder port for SSR outbound previews; real runs use a random port. */
@@ -106,43 +108,56 @@ object SsrLinkCodec {
 }
 
 object SsrMihomoConfigFactory {
-    fun buildConfig(endpoint: SsrEndpoint, listener: LocalProxyEndpoint): String {
+    fun buildConfig(endpoint: SsrEndpoint, listener: LocalProxyEndpoint): String =
+        buildConfig(NodeCompatibility.ssrProxy(endpoint), listener)
+
+    fun buildConfig(proxy: MihomoProxy, listener: LocalProxyEndpoint): String =
+        buildConfig(listOf(proxy to listener))
+
+    /**
+     * Sidecar config: each proxy gets its own authenticated loopback listener
+     * whose TCP and UDP traffic goes straight to that proxy.
+     */
+    fun buildConfig(proxies: List<Pair<MihomoProxy, LocalProxyEndpoint>>): String {
+        require(proxies.isNotEmpty()) { "mihomo sidecar 没有可运行的节点。" }
         return buildString {
-            appendLine("mixed-port: ${listener.port}")
             appendLine("allow-lan: false")
-            appendLine("bind-address: ${yamlQuote(listener.host)}")
-            // Require credentials from every client, loopback included, so other
-            // apps on the device cannot reuse the SSR sidecar.
-            appendLine("authentication:")
-            appendLine("  - ${yamlQuote("${listener.username}:${listener.password}")}")
-            appendLine("skip-auth-prefixes: []")
-            appendLine("mode: global")
+            appendLine("bind-address: ${yamlQuote(LocalProxyRuntime.LOOPBACK_HOST)}")
+            appendLine("mode: rule")
             appendLine("log-level: warning")
             appendLine("ipv6: true")
+            appendLine("unified-delay: true")
             appendLine("proxies:")
-            appendLine("  - name: ${yamlQuote(endpoint.name.ifBlank { "ssr" })}")
-            appendLine("    type: ssr")
-            appendLine("    server: ${yamlQuote(endpoint.server)}")
-            appendLine("    port: ${endpoint.port}")
-            appendLine("    cipher: ${yamlQuote(endpoint.method)}")
-            appendLine("    password: ${yamlQuote(endpoint.password)}")
-            appendLine("    obfs: ${yamlQuote(endpoint.obfs)}")
-            appendLine("    protocol: ${yamlQuote(endpoint.protocol)}")
-            endpoint.obfsParam.takeIf { it.isNotBlank() }?.let {
-                appendLine("    obfs-param: ${yamlQuote(it)}")
+            proxies.forEach { (proxy, _) -> proxy.yamlLines.forEach(::appendLine) }
+            appendLine("listeners:")
+            proxies.forEachIndexed { index, (proxy, listener) ->
+                // Credentials are required from every client, loopback included,
+                // so other apps on the device cannot reuse the sidecar.
+                val entry = JSONObject().apply {
+                    put("name", "pb-in-$index")
+                    put("type", "mixed")
+                    put("listen", listener.host)
+                    put("port", listener.port)
+                    put("udp", true)
+                    put("users", JSONArray().put(JSONObject().put("username", listener.username).put("password", listener.password)))
+                    put("proxy", proxy.name)
+                }
+                appendLine("  - $entry")
             }
-            endpoint.protocolParam.takeIf { it.isNotBlank() }?.let {
-                appendLine("    protocol-param: ${yamlQuote(it)}")
-            }
-            appendLine("    udp: ${endpoint.udp}")
-            appendLine("proxy-groups:")
-            appendLine("  - name: GLOBAL")
-            appendLine("    type: select")
-            appendLine("    proxies:")
-            appendLine("      - ${yamlQuote(endpoint.name.ifBlank { "ssr" })}")
             appendLine("rules:")
-            appendLine("  - MATCH,GLOBAL")
+            appendLine("  - MATCH,REJECT")
         }
+    }
+
+    /** Sidecar nodes of one run, in listener-slot order: main node first. */
+    fun sidecarNodes(main: ServerNode, others: List<ServerNode>): List<ServerNode> =
+        (listOf(main) + others).distinctBy { it.id }.filter(NodeCompatibility::runsInSidecar)
+
+    fun endpointFor(node: ServerNode, sidecarNodes: List<ServerNode>, allocation: LocalProxyAllocation): LocalProxyEndpoint {
+        val index = sidecarNodes.indexOfFirst { it.id == node.id }
+        require(index >= 0) { "${node.name} 需要兼容内核运行，但没有为它启动兼容内核。" }
+        return allocation.sidecar.getOrNull(index)
+            ?: error("同时使用的兼容内核节点过多（最多 ${allocation.sidecar.size} 个），请减少分流规则里的此类节点。")
     }
 
     /**

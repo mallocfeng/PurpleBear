@@ -800,7 +800,7 @@ fun MallocGfwApp(
                 val name = context.resolveDisplayName(uri) ?: "附件导入"
                 val content = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
                     ?: error("无法读取文件内容。")
-                ImportParser.buildFilePreview(name, content)
+                ImportParser.buildFilePreviewWithProviders(name, content)
             }.onSuccess {
                 pendingImport = it
                 navigateSecondary(AppScreen.ConfirmImport)
@@ -983,6 +983,10 @@ fun MallocGfwApp(
 
     fun openLocalNodeEditor(nodeId: String) {
         val server = servers.firstOrNull { it.id == nodeId } ?: return
+        if (server.mihomoProxyJson.isNotBlank()) {
+            runtimeMessage = "${server.protocol} 节点由兼容内核运行，暂不支持在 App 内编辑；如需修改，请删除后重新导入。"
+            return
+        }
         runCatching {
             ManualNodeFactory.prefillFromServerNode(server)
         }.onSuccess { draft ->
@@ -2221,7 +2225,8 @@ fun MallocGfwApp(
                         listState = homeListState,
                         connectionStatus = connectionStatus,
                         vpnSnapshot = vpnSnapshot,
-                        proxyMode = proxyMode,
+                        // The Rules page's global switch overrides routing (see XrayVpnService).
+                        proxyMode = if (appSettings.globalProxyEnabled) ProxyMode.Global else proxyMode,
                         currentServer = homeDisplayedServer,
                         pendingServer = homePendingServer,
                         focusPendingSwitchNonce = homeSwitchFocusNonce,
@@ -2868,8 +2873,10 @@ fun MallocGfwApp(
                         .align(Alignment.BottomCenter)
                         .padding(horizontal = 20.dp, vertical = 96.dp),
                     onClick = {
-                        homeSwitchFocusNonce += 1
-                        goToMain(MainTab.Home)
+                        // The banner says "Switch": switch right away instead of
+                        // sending the user to Home to tap a second Switch.
+                        pendingHomeSwitchPromptServerId = null
+                        connectOrSwitchServer(promptServer, navigateHomeAfterStart = true)
                     },
                 )
                 }

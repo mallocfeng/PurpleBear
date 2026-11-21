@@ -41,7 +41,12 @@ data class LocalProxyAllocation(
     val socks: LocalProxyEndpoint,
     val http: LocalProxyEndpoint,
     val ssr: LocalProxyEndpoint,
+    /** Further mihomo sidecar listeners, for runs that use several sidecar nodes. */
+    val extraSidecar: List<LocalProxyEndpoint> = emptyList(),
 ) {
+    /** One loopback listener per sidecar node slot; [ssr] is the first. */
+    val sidecar: List<LocalProxyEndpoint> get() = listOf(ssr) + extraSidecar
+
     companion object {
         /** A throwaway allocation for config previews and tests; never registered. */
         fun ephemeral(): LocalProxyAllocation = LocalProxyRuntime.newAllocation(LocalProxyRuntime::pickFreePorts)
@@ -61,6 +66,9 @@ object LocalProxyRuntime {
     // Well-known defaults of PurpleBear and other clients; never reuse them.
     private val RESERVED_PORTS = listOf(1080, 7890, 7891, 10808, 10809, 17891)
     private const val SECRET_BYTES = 24
+
+    /** Sidecar nodes one run can use at once (main node + rule/streaming nodes). */
+    const val SIDECAR_SLOTS = 6
     private val random = SecureRandom()
 
     @Volatile
@@ -79,14 +87,17 @@ object LocalProxyRuntime {
     }
 
     internal fun newAllocation(portPicker: (count: Int, excluded: List<Int>) -> List<Int>): LocalProxyAllocation {
-        val ports = portPicker(3, RESERVED_PORTS)
-        require(ports.size == 3 && ports.distinct().size == 3 && ports.all { it in 1..65535 }) {
+        val count = 2 + SIDECAR_SLOTS
+        val ports = portPicker(count, RESERVED_PORTS)
+        require(ports.size == count && ports.distinct().size == count && ports.all { it in 1..65535 }) {
             "无法分配本地代理端口。"
         }
+        val sidecar = ports.drop(2).map { LocalProxyEndpoint(it, randomSecret(8), randomSecret(SECRET_BYTES)) }
         return LocalProxyAllocation(
             socks = LocalProxyEndpoint(ports[0], randomSecret(8), randomSecret(SECRET_BYTES)),
             http = LocalProxyEndpoint(ports[1], randomSecret(8), randomSecret(SECRET_BYTES)),
-            ssr = LocalProxyEndpoint(ports[2], randomSecret(8), randomSecret(SECRET_BYTES)),
+            ssr = sidecar.first(),
+            extraSidecar = sidecar.drop(1),
         )
     }
 

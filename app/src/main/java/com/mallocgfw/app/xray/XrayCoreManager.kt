@@ -5,6 +5,7 @@ import android.os.Build
 import android.util.Log
 import com.mallocgfw.app.model.AppStateStore
 import com.mallocgfw.app.model.ServerNode
+import com.mallocgfw.app.model.SsrMihomoConfigFactory
 import com.mallocgfw.app.model.XrayNamedOutbound
 import com.mallocgfw.app.model.XrayRoutingRule
 import java.io.File
@@ -172,7 +173,11 @@ object XrayCoreManager {
                 // Fresh random ports and credentials for every run; see LocalProxyRuntime.
                 val localProxy = LocalProxyRuntime.allocate(::freePortsFromCore)
                 val configJson = buildConfigJson(localProxy)
-                SsrRuntimeManager.startIfNeeded(context, server, localProxy.ssr).getOrElse { throw it }
+                SsrRuntimeManager.startIfNeeded(
+                    context,
+                    SsrMihomoConfigFactory.sidecarNodes(server, additionalOutbounds.map { it.node }),
+                    localProxy,
+                ).getOrElse { throw it }
                 _snapshot.value = _snapshot.value.copy(
                     status = XrayCoreStatus.Starting,
                     message = message,

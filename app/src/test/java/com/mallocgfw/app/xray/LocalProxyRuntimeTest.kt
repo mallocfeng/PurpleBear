@@ -133,9 +133,12 @@ class LocalProxyRuntimeTest {
         )
 
         val yaml = SsrMihomoConfigFactory.buildConfig(endpoint, allocation.ssr)
-        assertTrue(yaml.contains("mixed-port: ${allocation.ssr.port}"))
-        assertTrue(yaml.contains("\"${allocation.ssr.username}:${allocation.ssr.password}\""))
-        assertTrue(yaml.contains("skip-auth-prefixes: []"))
+        // One authenticated listener per sidecar node, bound to loopback.
+        assertTrue(yaml.contains("\"port\":${allocation.ssr.port}"))
+        assertTrue(yaml.contains("\"username\":\"${allocation.ssr.username}\""))
+        assertTrue(yaml.contains("\"password\":\"${allocation.ssr.password}\""))
+        assertTrue(yaml.contains("\"listen\":\"127.0.0.1\""))
+        assertFalse(yaml.contains("mixed-port"))
 
         val ssrNode = ManualNodeFactory.buildNodeFromShareLink(ssrLink())
         assertFalse("stored node must not hold runtime credentials", ssrNode.outboundJson.contains("\"pass\""))

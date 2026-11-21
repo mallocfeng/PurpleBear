@@ -840,6 +840,11 @@ internal fun buildNodeParameterRows(server: ServerNode): List<Pair<String, Strin
     rows += "来源" to server.subscription
     server.flow.takeIf { it.isNotBlank() }?.let { rows += "Flow / 附加字段" to it }
     server.rawUri.takeIf { it.isNotBlank() }?.let { rows += "分享链接" to it }
+    if (server.mihomoProxyJson.isNotBlank()) {
+        rows += "运行内核" to "mihomo（兼容内核）"
+        runCatching { flattenJsonParameters(prefix = "配置", value = JSONObject(server.mihomoProxyJson), rows = rows) }
+        return rows
+    }
     if (server.outboundJson.isBlank()) {
         return rows
     }

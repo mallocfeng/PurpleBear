@@ -124,6 +124,8 @@ internal fun ConfirmImportScreen(
 ) {
     val isLocalImport = preview?.group?.type == ServerGroupType.Local
     val localNode = preview?.nodes?.firstOrNull()
+    val isBatchLocalImport = isLocalImport && (preview?.nodes?.size ?: 0) > 1
+    val localNodeCount = preview?.nodes?.count { !it.hiddenUnsupported } ?: 0
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -150,7 +152,9 @@ internal fun ConfirmImportScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Eyebrow(if (isLocalImport) "当前导入节点" else "订阅名称")
                         Text(
-                            text = if (isLocalImport) {
+                            text = if (isBatchLocalImport) {
+                                uiText("$localNodeCount 个节点", "$localNodeCount nodes")
+                            } else if (isLocalImport) {
                                 localNode?.name?.let { uiText(it) } ?: uiText("暂无可导入数据")
                             } else {
                                 preview?.group?.name?.let { uiText(it) } ?: uiText("暂无可导入数据")
@@ -171,7 +175,13 @@ internal fun ConfirmImportScreen(
                 Spacer(modifier = Modifier.height(16.dp))
                 TwoColumnInfoGrid(
                     items = buildList {
-                        if (isLocalImport) {
+                        if (isBatchLocalImport) {
+                            add("节点数量" to uiText("$localNodeCount 个节点", "$localNodeCount nodes"))
+                            if ((preview?.hiddenUnsupportedNodeCount ?: 0) > 0) {
+                                add("已隐藏节点" to uiText("已隐藏 ${preview?.hiddenUnsupportedNodeCount ?: 0} 个", "${preview?.hiddenUnsupportedNodeCount ?: 0} hidden"))
+                            }
+                            add("目标分组" to (preview?.group?.name?.let { uiText(it) } ?: "Local"))
+                        } else if (isLocalImport) {
                             add("协议" to (localNode?.protocol ?: "--"))
                             add("地址" to (localNode?.address ?: "--"))
                             add("端口" to (localNode?.port ?: "--"))

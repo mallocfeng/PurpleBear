@@ -3,7 +3,7 @@ package com.mallocgfw.app.xray
 import android.content.Context
 import android.os.Build
 import android.util.Log
-import com.mallocgfw.app.model.ManualNodeFactory
+import com.mallocgfw.app.model.NodeCompatibility
 import com.mallocgfw.app.model.ServerNode
 import com.mallocgfw.app.model.SsrMihomoConfigFactory
 import java.io.File
@@ -19,17 +19,24 @@ object SsrRuntimeManager {
 
     suspend fun startIfNeeded(
         context: Context,
-        server: ServerNode,
-        listener: LocalProxyEndpoint,
+        nodes: List<ServerNode>,
+        allocation: LocalProxyAllocation,
     ): Result<Unit> {
         return withContext(Dispatchers.IO) {
-            val endpoint = ManualNodeFactory.ssrEndpointFromServer(server)
-            if (endpoint == null) {
+            // Every node of this run that Xray can't run itself (see NodeCompatibility).
+            val proxies = runCatching {
+                nodes.map { node ->
+                    val proxy = NodeCompatibility.mihomoProxy(node) ?: error("${node.name} 无法转换为兼容内核配置。")
+                    proxy to SsrMihomoConfigFactory.endpointFor(node, nodes, allocation)
+                }
+            }.getOrElse { return@withContext Result.failure(it) }
+            if (proxies.isEmpty()) {
                 stopNow()
                 return@withContext Result.success(Unit)
             }
-            // Restart the sidecar whenever this run's port or credentials change.
-            val configKey = "$endpoint|${listener.port}|${listener.username}|${listener.password.hashCode()}"
+            val config = SsrMihomoConfigFactory.buildConfig(proxies)
+            // Restart the sidecar whenever this run's nodes, ports or credentials change.
+            val configKey = config.hashCode().toString() + "|" + config.length
             synchronized(runtimeLock) {
                 val currentProcess = process
                 if (activeConfigKey == configKey && currentProcess?.isAlive == true) {
@@ -39,9 +46,7 @@ object SsrRuntimeManager {
                 runCatching {
                     val runtimeDir = File(context.filesDir, "mihomo-runtime").apply { mkdirs() }
                     val binary = resolveNativeBinary(context)
-                    val configFile = File(runtimeDir, "ssr.yaml").apply {
-                        writeText(SsrMihomoConfigFactory.buildConfig(endpoint, listener))
-                    }
+                    val configFile = File(runtimeDir, "ssr.yaml").apply { writeText(config) }
                     val started = ProcessBuilder(
                         binary.absolutePath,
                         "-d",
@@ -89,7 +94,7 @@ object SsrRuntimeManager {
         requireArm64SidecarAbi()
         val binary = File(context.applicationInfo.nativeLibraryDir, NATIVE_LIBRARY_NAME)
         if (!binary.isFile) {
-            error("SSR 需要打包 mihomo sidecar：请将可执行文件放到 jniLibs/arm64-v8a/$NATIVE_LIBRARY_NAME。")
+            error("兼容内核需要打包 mihomo sidecar：请将可执行文件放到 jniLibs/arm64-v8a/$NATIVE_LIBRARY_NAME。")
         }
         if (!binary.canExecute()) {
             error("mihomo sidecar 没有执行权限，请确认 native library 已解压安装。")

@@ -35,6 +35,7 @@ enum class LocalNodeTransport(
     HTTP2("http", "HTTP/2"),
     HTTP_UPGRADE("httpupgrade", "HTTPUpgrade"),
     XHTTP("xhttp", "XHTTP"),
+    KCP("kcp", "mKCP"),
 }
 
 enum class LocalNodeSecurity(
@@ -98,6 +99,9 @@ data class LocalNodeDraft(
     val realityPublicKey: String = "",
     val realityShortId: String = "",
     val realitySpiderX: String = "",
+    /** mKCP packet header disguise (none, srtp, utp, wechat-video, dtls, wireguard, dns). */
+    val kcpHeaderType: String = "none",
+    val kcpSeed: String = "",
     val shadowsocksMethod: LocalNodeShadowsocksMethod = LocalNodeShadowsocksMethod.CHACHA20_POLY1305,
     val shadowsocksUot: Boolean = false,
     val shadowsocksUotVersion: String = "2",
@@ -121,6 +125,8 @@ data class LocalNodeDraft(
     val wireGuardNoKernelTun: Boolean = false,
     val hysteriaAuth: String = "",
     val hysteriaUdpIdleTimeout: String = "60",
+    /** Salamander obfuscation password (Hysteria2 `obfs=salamander`). */
+    val hysteriaObfsPassword: String = "",
 )
 
 object ManualNodeFactory {
@@ -215,7 +221,8 @@ object ManualNodeFactory {
             LocalNodeProtocol.VMESS,
             LocalNodeProtocol.TROJAN,
             LocalNodeProtocol.SHADOWSOCKS,
-            -> LocalNodeTransport.entries.toList()
+            // HTTP/2 transport was removed from Xray 26; it can only be imported (and is then flagged).
+            -> LocalNodeTransport.entries.filter { it != LocalNodeTransport.HTTP2 }
 
             else -> emptyList()
         }
@@ -225,6 +232,19 @@ object ManualNodeFactory {
 
     fun supportsStreamSecurity(protocol: LocalNodeProtocol): Boolean {
         return protocol !in listOf(LocalNodeProtocol.WIREGUARD)
+    }
+
+    /**
+     * The node's outbound as stored, with "skip certificate verification"
+     * still marked (allowInsecure) and no migration applied. For deciding how
+     * a node can run; never hand this to Xray.
+     */
+    fun inspectOutbound(server: ServerNode): JSONObject? {
+        val raw = buildRawOutboundConfig(server) ?: return null
+        if (shareLinkRequestsInsecureTls(server)) {
+            raw.optJSONObject("streamSettings")?.optJSONObject("tlsSettings")?.put("allowInsecure", true)
+        }
+        return raw
     }
 
     fun buildOutboundConfig(server: ServerNode): JSONObject? {
@@ -244,7 +264,7 @@ object ManualNodeFactory {
      * over TCP.
      */
     fun insecureTlsTarget(server: ServerNode): TlsPinTarget? {
-        if (server.hiddenUnsupported || isSsrNode(server)) return null
+        if (server.hiddenUnsupported || isSsrNode(server) || NodeCompatibility.runsInSidecar(server)) return null
         val raw = buildRawOutboundConfig(server) ?: return null
         val stream = raw.optJSONObject("streamSettings") ?: return null
         if (stream.optString("security") != "tls") return null
@@ -383,7 +403,8 @@ object ManualNodeFactory {
     }
 
     fun supportsPreProxy(server: ServerNode): Boolean {
-        return !server.hiddenUnsupported && buildOutboundConfig(server) != null
+        // Sidecar nodes are reached through a loopback listener, which can't be chained.
+        return !server.hiddenUnsupported && !NodeCompatibility.runsInSidecar(server) && buildOutboundConfig(server) != null
     }
 
     fun buildServerNode(draft: LocalNodeDraft): ServerNode {
@@ -501,7 +522,7 @@ object ManualNodeFactory {
                 require(draft.wireGuardSecretKey.trim().isNotBlank()) { "WireGuard 需要填写客户端私钥。" }
                 require(draft.wireGuardPublicKey.trim().isNotBlank()) { "WireGuard 需要填写对端公钥。" }
                 parsePort(draft.port, field = "对端端口")
-                draft.wireGuardLocalAddresses.trim().takeIf { it.isNotBlank() }?.let { validateIpList(it, requireCidr = true, field = "本地地址列表") }
+                draft.wireGuardLocalAddresses.trim().takeIf { it.isNotBlank() }?.let { validateIpList(withHostPrefixes(it), requireCidr = true, field = "本地地址列表") }
                 draft.wireGuardAllowedIps.trim().takeIf { it.isNotBlank() }?.let { validateIpList(it, requireCidr = true, field = "Allowed IPs") }
                 draft.wireGuardReserved.trim().takeIf { it.isNotBlank() }?.let { parseReserved(it) }
                 draft.wireGuardMtu.trim().takeIf { it.isNotBlank() }?.let { value ->
@@ -807,7 +828,7 @@ object ManualNodeFactory {
                 LocalNodeTransport.HTTP_UPGRADE -> httpUpgradeSettings?.optString("host").orEmpty()
                 LocalNodeTransport.XHTTP -> xhttpSettings?.optString("host").orEmpty()
                 LocalNodeTransport.GRPC -> authority.ifBlank { serverName }
-                LocalNodeTransport.TCP -> ""
+                LocalNodeTransport.TCP, LocalNodeTransport.KCP -> ""
             },
             path = when (transport) {
                 LocalNodeTransport.WS -> wsSettings?.optString("path").orEmpty()
@@ -826,6 +847,9 @@ object ManualNodeFactory {
             realityPublicKey = realitySettings?.optString("publicKey").orEmpty(),
             realityShortId = realitySettings?.optString("shortId").orEmpty(),
             realitySpiderX = realitySettings?.optString("spiderX").orEmpty(),
+            kcpHeaderType = streamSettings?.optJSONObject("kcpSettings")?.optJSONObject("header")?.optString("type")
+                ?.ifBlank { null } ?: "none",
+            kcpSeed = streamSettings?.optJSONObject("kcpSettings")?.optString("seed").orEmpty(),
         )
 
         return when (protocol) {
@@ -893,8 +917,20 @@ object ManualNodeFactory {
                 serverName = tlsSettings?.optString("serverName").orEmpty().ifBlank { server.address },
                 hysteriaAuth = hysteriaSettings?.optString("auth").orEmpty(),
                 hysteriaUdpIdleTimeout = jsonNumberToString(hysteriaSettings, "udpIdleTimeout", "60"),
+                hysteriaObfsPassword = salamanderPassword(streamSettings).orEmpty(),
             )
         }
+    }
+
+    private fun salamanderPassword(streamSettings: JSONObject?): String? {
+        val masks = streamSettings?.optJSONObject("finalmask")?.optJSONArray("udp") ?: return null
+        for (i in 0 until masks.length()) {
+            val mask = masks.optJSONObject(i) ?: continue
+            if (mask.optString("type") == "salamander") {
+                return mask.optJSONObject("settings")?.optString("password")?.takeIf { it.isNotBlank() }
+            }
+        }
+        return null
     }
 
     fun requiresCompatibilityEditWarning(server: ServerNode): Boolean {
@@ -1120,7 +1156,7 @@ object ManualNodeFactory {
                 "settings",
                 JSONObject().apply {
                     put("secretKey", secretKey)
-                    val addresses = parseList(draft.wireGuardLocalAddresses)
+                    val addresses = parseList(withHostPrefixes(draft.wireGuardLocalAddresses))
                     if (addresses.isNotEmpty()) {
                         put(
                             "address",
@@ -1200,6 +1236,19 @@ object ManualNodeFactory {
                             draft.hysteriaUdpIdleTimeout.trim().toIntOrNull()?.takeIf { it > 0 }?.let { put("udpIdleTimeout", it) }
                         },
                     )
+                    draft.hysteriaObfsPassword.trim().takeIf { it.isNotBlank() }?.let { password ->
+                        put(
+                            "finalmask",
+                            JSONObject().put(
+                                "udp",
+                                JSONArray().put(
+                                    JSONObject()
+                                        .put("type", "salamander")
+                                        .put("settings", JSONObject().put("password", password)),
+                                ),
+                            ),
+                        )
+                    }
                 },
             )
         }
@@ -1256,6 +1305,14 @@ object ManualNodeFactory {
                     JSONObject().apply {
                         draft.host.trim().takeIf { it.isNotBlank() }?.let { put("host", it) }
                         draft.path.trim().takeIf { it.isNotBlank() }?.let { put("path", it) }
+                    },
+                )
+
+                LocalNodeTransport.KCP -> put(
+                    "kcpSettings",
+                    JSONObject().apply {
+                        put("header", JSONObject().put("type", draft.kcpHeaderType.trim().ifBlank { "none" }))
+                        draft.kcpSeed.trim().takeIf { it.isNotBlank() }?.let { put("seed", it) }
                     },
                 )
 
@@ -1392,6 +1449,8 @@ object ManualNodeFactory {
             realityPublicKey = query["pbk"].orEmpty(),
             realityShortId = query["sid"].orEmpty(),
             realitySpiderX = query["spx"].orEmpty(),
+            kcpHeaderType = query["headerType"]?.ifBlank { null } ?: "none",
+            kcpSeed = query["seed"] ?: query["path"].orEmpty().takeIf { query["type"].equals("kcp", ignoreCase = true) }.orEmpty(),
         )
     }
 
@@ -1419,6 +1478,12 @@ object ManualNodeFactory {
                 path = json.optString("path"),
                 serviceName = json.optString("path").takeIf { transportFrom(json.optString("net"), LocalNodeTransport.TCP) == LocalNodeTransport.GRPC }
                     .orEmpty(),
+                // v2rayN keeps the mKCP header in "type" and the seed in "path".
+                kcpHeaderType = json.optString("type").takeIf { json.optString("net").equals("kcp", ignoreCase = true) }
+                    ?.ifBlank { null } ?: "none",
+                kcpSeed = json.optString("seed").ifBlank {
+                    json.optString("path").takeIf { json.optString("net").equals("kcp", ignoreCase = true) }.orEmpty()
+                },
                 serverName = json.optString("sni"),
                 fingerprint = json.optString("fp"),
                 alpn = json.optString("alpn"),
@@ -1477,6 +1542,8 @@ object ManualNodeFactory {
             allowInsecure = query.requestsInsecureTls(),
             pinnedPeerCertSha256 = query["pcs"].orEmpty(),
             verifyPeerCertByName = query["vcn"].orEmpty(),
+            kcpHeaderType = query["headerType"]?.ifBlank { null } ?: "none",
+            kcpSeed = query["seed"].orEmpty(),
         )
     }
 
@@ -1490,7 +1557,9 @@ object ManualNodeFactory {
             val encodedUserInfo = mainPart.substringBefore("@")
             val hostPort = mainPart.substringAfter("@")
             val userInfo = if (encodedUserInfo.contains(":")) {
-                encodedUserInfo
+                // SIP002 (required for 2022 ciphers): method:password, percent-encoded.
+                // Keep a literal '+' (base64 keys) instead of decoding it to a space.
+                URLDecoder.decode(encodedUserInfo.replace("+", "%2B"), "UTF-8")
             } else {
                 decodeBase64Flexible(encodedUserInfo, "Shadowsocks 分享链接")
             }
@@ -1513,7 +1582,9 @@ object ManualNodeFactory {
         )
         val pluginSpec = query["plugin"].orEmpty()
         if (pluginSpec.isBlank()) return baseDraft
-        return applyShadowsocksPlugin(baseDraft, pluginSpec) ?: baseDraft
+        // Other plugins (obfs, shadow-tls…) run in the mihomo sidecar; see MihomoNodes.
+        return applyShadowsocksPlugin(baseDraft, pluginSpec)
+            ?: error("Shadowsocks 插件 ${pluginSpec.substringBefore(';')} 需要兼容内核运行。")
     }
 
     private fun parseShadowsocksRDraft(raw: String): LocalNodeDraft {
@@ -1577,7 +1648,15 @@ object ManualNodeFactory {
 
     private fun parseProxyDraft(raw: String, protocol: LocalNodeProtocol): LocalNodeDraft {
         val uri = URI(raw)
-        val userInfo = uri.userInfo.orEmpty()
+        // v2rayN writes socks://base64(user:pass)@host:port; others use user:pass.
+        val userInfo = uri.userInfo.orEmpty().let { info ->
+            if (info.isNotBlank() && ':' !in info) {
+                runCatching { decodeBase64Flexible(info, "代理认证信息") }.getOrNull()
+                    ?.takeIf { ':' in it } ?: info
+            } else {
+                info
+            }
+        }
         return applyProtocolDefaults(LocalNodeDraft(), protocol).copy(
             nodeName = decodeFragment(uri.rawFragment),
             address = uri.host.orEmpty(),
@@ -1602,7 +1681,9 @@ object ManualNodeFactory {
             hysteriaAuth = uri.userInfo.orEmpty().ifBlank { query["auth"] ?: query["password"].orEmpty() },
             serverName = query["sni"] ?: query["peer"].orEmpty(),
             alpn = query["alpn"].orEmpty(),
-            allowInsecure = query["insecure"] == "1" || query["insecure"] == "true",
+            allowInsecure = query.requestsInsecureTls(),
+            // Official URI: obfs=salamander&obfs-password=...
+            hysteriaObfsPassword = (query["obfs-password"] ?: query["obfs_password"] ?: query["obfsPassword"]).orEmpty(),
             // Hysteria2's pinSHA256 pins the leaf certificate; Xray's pcs accepts
             // the chain when any certificate hash matches, which covers it.
             pinnedPeerCertSha256 = query["pcs"] ?: query["pinSHA256"].orEmpty(),
@@ -1665,7 +1746,10 @@ object ManualNodeFactory {
     private fun transportFrom(raw: String?, fallback: LocalNodeTransport): LocalNodeTransport {
         val value = raw?.trim()?.lowercase(Locale.ROOT).orEmpty()
         return when (value) {
-            "", "tcp", "none" -> fallback
+            "", "tcp", "raw", "none" -> fallback
+            // No bundled core speaks these for VMess/VLESS/Trojan; never fall back to TCP silently.
+            "kcp", "mkcp" -> LocalNodeTransport.KCP
+            "quic", "h3" -> error("暂不支持 $value 传输方式")
             "ws", "websocket" -> LocalNodeTransport.WS
             "grpc" -> LocalNodeTransport.GRPC
             "http", "h2" -> LocalNodeTransport.HTTP2
@@ -1761,6 +1845,17 @@ object ManualNodeFactory {
         }
         require(values.size == 3) { "WireGuard reserved 需要刚好三个数字，例如 1,2,3。" }
         return values
+    }
+
+    /** "10.0.0.2" -> "10.0.0.2/32", "fd00::2" -> "fd00::2/128"; entries with a prefix stay as they are. */
+    internal fun withHostPrefixes(raw: String): String {
+        return parseList(raw).joinToString(", ") { entry ->
+            when {
+                '/' in entry -> entry
+                ':' in entry -> "$entry/128"
+                else -> "$entry/32"
+            }
+        }
     }
 
     private fun parseList(raw: String): List<String> {

@@ -76,7 +76,8 @@ internal fun LocalNodeBuilderScreen(
     val securityChoices = ManualNodeFactory.securityOptions(protocol).map {
         BuilderDropdownOption(it, it.displayName)
     }
-    val shadowsocksChoices = LocalNodeShadowsocksMethod.entries.map {
+    // "none" is not accepted by Xray 26; it stays in the enum only to read old nodes.
+    val shadowsocksChoices = LocalNodeShadowsocksMethod.entries.filter { it != LocalNodeShadowsocksMethod.NONE }.map {
         BuilderDropdownOption(it, it.displayName)
     }
     val wireGuardStrategyChoices = LocalNodeWireGuardDomainStrategy.entries.map {
@@ -381,6 +382,14 @@ internal fun LocalNodeBuilderScreen(
                                 placeholder = "默认 60",
                                 helper = "可留空。默认按 Xray 的 60 秒。",
                             )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            BuilderTextField(
+                                label = "混淆密码（salamander）",
+                                value = draft.hysteriaObfsPassword,
+                                onValueChange = { onDraftChange(draft.copy(hysteriaObfsPassword = it)) },
+                                placeholder = "未启用混淆时留空",
+                                helper = "服务端开启 salamander 混淆时填写。",
+                            )
                         }
                     }
                 }
@@ -459,6 +468,25 @@ internal fun LocalNodeBuilderScreen(
                                 onValueChange = { onDraftChange(draft.copy(serviceName = it)) },
                                 placeholder = "gRPC serviceName",
                                 helper = "可留空。只有服务端配置了 gRPC 时才需要填。",
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
+
+                        LocalNodeTransport.KCP -> {
+                            BuilderTextField(
+                                label = "mKCP 伪装类型",
+                                value = draft.kcpHeaderType,
+                                onValueChange = { onDraftChange(draft.copy(kcpHeaderType = it.trim())) },
+                                placeholder = "none",
+                                helper = "与服务端一致：none / srtp / utp / wechat-video / dtls / wireguard / dns。",
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            BuilderTextField(
+                                label = "mKCP 混淆密码（seed）",
+                                value = draft.kcpSeed,
+                                onValueChange = { onDraftChange(draft.copy(kcpSeed = it)) },
+                                placeholder = "服务端未设置时留空",
+                                helper = "服务端设置了 seed 时填写。",
                             )
                             Spacer(modifier = Modifier.height(12.dp))
                         }

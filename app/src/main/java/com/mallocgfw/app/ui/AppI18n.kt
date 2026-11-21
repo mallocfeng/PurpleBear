@@ -71,6 +71,7 @@ private fun translatedText(language: ResolvedLanguage, raw: String): String? {
 
 private fun translateDynamic(raw: String, language: ResolvedLanguage): String {
     translatedText(language, raw)?.let { return it }
+    translateImportText(raw, language)?.let { return it }
     if (language == ResolvedLanguage.Russian) {
         return translateDynamicRussian(raw)
     }
@@ -337,7 +338,105 @@ private fun translateDynamicRussian(raw: String): String {
     }
 }
 
+/**
+ * Import summaries and the reasons a node can't run with the bundled core
+ * (see NodeCompatibility); they also appear inside connection errors.
+ */
+private fun translateImportText(raw: String, language: ResolvedLanguage): String? {
+    val ru = language == ResolvedLanguage.Russian
+    var text = raw
+    val reasons = listOf(
+        Regex("QUIC 传输已被 Xray 内核移除") to { _: MatchResult ->
+            if (ru) "транспорт QUIC удалён из ядра Xray" else "the Xray core removed the QUIC transport"
+        },
+        Regex("HTTP/2 传输已被 Xray 内核移除，请改用 XHTTP") to { _: MatchResult ->
+            if (ru) "транспорт HTTP/2 удалён из ядра Xray, используйте XHTTP" else "the Xray core removed the HTTP/2 transport, use XHTTP instead"
+        },
+        Regex("旧版 XTLS 流控（(.+?)）已被 Xray 内核移除") to { m: MatchResult ->
+            if (ru) "устаревший XTLS flow (${m.groupValues[1]}) удалён из ядра Xray" else "the Xray core removed the legacy XTLS flow (${m.groupValues[1]})"
+        },
+        Regex("未加密的 (VLESS|Trojan) 不能连接公网服务器（Xray 安全限制）") to { m: MatchResult ->
+            if (ru) "${m.groupValues[1]} без шифрования не может подключаться к публичному серверу (ограничение Xray)"
+            else "unencrypted ${m.groupValues[1]} can't connect to a public server (Xray security rule)"
+        },
+        Regex("Trojan 的 flow 已被 Xray 内核移除") to { _: MatchResult ->
+            if (ru) "flow для Trojan удалён из ядра Xray" else "the Xray core removed flow for Trojan"
+        },
+        Regex("Xray 内核不支持 Shadowsocks 加密方式 (\\S+)") to { m: MatchResult ->
+            if (ru) "ядро Xray не поддерживает шифр Shadowsocks ${m.groupValues[1]}" else "the Xray core doesn't support the Shadowsocks cipher ${m.groupValues[1]}"
+        },
+    )
+    reasons.forEach { (regex, replace) -> text = regex.replace(text, replace) }
+    Regex("解析完成，共检测到 (\\d+) 个可用节点。").find(text)?.let { m ->
+        val n = m.groupValues[1]
+        text = text.replace(m.value, if (ru) "Разбор завершён: найдено доступных узлов — $n." else "Parsed: $n usable node${if (n == "1") "" else "s"} found.")
+    }
+    Regex(" 已隐藏 (\\d+) 个当前内核无法使用的节点(?:（(.+?)）)?。").find(text)?.let { m ->
+        val n = m.groupValues[1]
+        val why = m.groupValues[2].takeIf { it.isNotBlank() }
+        text = text.replace(
+            m.value,
+            if (ru) " Скрыто узлов, которые не работают с текущим ядром: $n" + (why?.let { " ($it)" } ?: "") + "."
+            else " Hid $n node${if (n == "1") "" else "s"} the current core can't run" + (why?.let { " ($it)" } ?: "") + ".",
+        )
+    }
+    text = text.replace(
+        " 该链接包含时效签名，已按静态快照导入，不参与后续刷新。",
+        if (ru) " Ссылка содержит подпись со сроком действия, импортирован статический снимок без обновлений."
+        else " This link has a time-limited signature, so it was imported as a static snapshot and won't refresh.",
+    )
+    // Nodes no bundled core runs (ImportParser skippedSummary) and sidecar messages.
+    text = Regex("（暂不支持 (\\S+) 传输方式）").replace(text) { m ->
+        if (ru) " (транспорт ${m.groupValues[1]} не поддерживается)" else " (unsupported ${m.groupValues[1]} transport)"
+    }
+    text = Regex(" 另有 (\\d+) 个节点的协议暂不支持（(.+?)）。").replace(text) { m ->
+        val list = m.groupValues[2].replace("、", ", ")
+        if (ru) " Пропущено узлов с неподдерживаемым протоколом: ${m.groupValues[1]} ($list)."
+        else " Skipped ${m.groupValues[1]} node${if (m.groupValues[1] == "1") "" else "s"} with unsupported protocols ($list)."
+    }
+    text = Regex(" 另有 (\\d+) 个本地文件提供者无法读取（(.+?)）。").replace(text) { m ->
+        val list = m.groupValues[2].replace("、", ", ")
+        if (ru) " Не удалось прочитать локальных файловых провайдеров: ${m.groupValues[1]} ($list)."
+        else " Couldn't read ${m.groupValues[1]} local file provider${if (m.groupValues[1] == "1") "" else "s"} ($list)."
+    }
+    text = Regex("^没有可用节点：(\\d+) 个节点的协议暂不支持（(.+?)）。$").replace(text) { m ->
+        val list = m.groupValues[2].replace("、", ", ")
+        if (ru) "Нет доступных узлов: у ${m.groupValues[1]} узлов неподдерживаемый протокол ($list)."
+        else "No usable nodes: ${m.groupValues[1]} node${if (m.groupValues[1] == "1") " uses an" else "s use"} unsupported protocol ($list)."
+    }
+    text = Regex("^(.+) 节点由兼容内核运行，暂不支持在 App 内编辑；如需修改，请删除后重新导入。$").replace(text) { m ->
+        if (ru) "Узлы ${m.groupValues[1]} работают через совместимое ядро и не редактируются в приложении; удалите и импортируйте заново."
+        else "${m.groupValues[1]} nodes run in the compatibility core and can't be edited in the app. Delete and import again to change them."
+    }
+    text = Regex("同时使用的兼容内核节点过多（最多 (\\d+) 个），请减少分流规则里的此类节点。").replace(text) { m ->
+        if (ru) "Слишком много узлов совместимого ядра одновременно (не более ${m.groupValues[1]}); уберите часть из правил маршрутизации."
+        else "Too many compatibility-core nodes at once (up to ${m.groupValues[1]}). Use fewer of them in routing rules."
+    }
+    text = text.replace("节点配置无法解析", if (ru) "не удалось разобрать конфигурацию узла" else "the node config can't be parsed")
+    if (text == raw) return null
+    // "<node>：<reason>。" from a refused connection.
+    return text.replace("：", ": ").let { if (it.endsWith("。")) it.removeSuffix("。") + "." else it }
+}
+
 private val englishText = mapOf(
+    // Protocol check (2026-11)
+    "混淆密码（salamander）" to "Obfuscation password (salamander)",
+    "未启用混淆时留空" to "Leave empty if obfuscation is off",
+    "服务端开启 salamander 混淆时填写。" to "Fill in when the server turns on salamander obfuscation.",
+    "当前导入节点" to "Node to import",
+    "地址" to "Address",
+    "传输" to "Transport",
+    "安全" to "Security",
+    "未标注" to "Unlabeled",
+    "mKCP 伪装类型" to "mKCP header type",
+    "与服务端一致：none / srtp / utp / wechat-video / dtls / wireguard / dns。" to "Must match the server: none / srtp / utp / wechat-video / dtls / wireguard / dns.",
+    "mKCP 混淆密码（seed）" to "mKCP seed",
+    "服务端未设置时留空" to "Leave empty if the server has none",
+    "服务端设置了 seed 时填写。" to "Fill in when the server sets a seed.",
+    "订阅地址返回的是网页而不是节点列表，请确认复制的是订阅链接（而不是订阅页面地址）。" to "The subscription address returned a web page, not a node list. Make sure you copied the subscription link, not the subscription page address.",
+    "内建加密" to "Built-in encryption",
+    "mihomo（兼容内核）" to "mihomo (compatibility core)",
+    "运行内核" to "Core",
     // Redesign (2026-11)
     "一键开启加密连接" to "Connect securely in one tap",
     "点一下即可连接，再点一下断开。" to "Tap once to connect, again to disconnect.",
@@ -1093,6 +1192,20 @@ private val englishText = mapOf(
 )
 
 private val russianText = mapOf(
+    // Protocol check (2026-11)
+    "混淆密码（salamander）" to "Пароль обфускации (salamander)",
+    "未启用混淆时留空" to "Оставьте пустым, если обфускация выключена",
+    "服务端开启 salamander 混淆时填写。" to "Заполните, если на сервере включена обфускация salamander.",
+    "未标注" to "Без региона",
+    "mKCP 伪装类型" to "Тип заголовка mKCP",
+    "与服务端一致：none / srtp / utp / wechat-video / dtls / wireguard / dns。" to "Должен совпадать с сервером: none / srtp / utp / wechat-video / dtls / wireguard / dns.",
+    "mKCP 混淆密码（seed）" to "Seed для mKCP",
+    "服务端未设置时留空" to "Оставьте пустым, если на сервере его нет",
+    "服务端设置了 seed 时填写。" to "Заполните, если на сервере задан seed.",
+    "订阅地址返回的是网页而不是节点列表，请确认复制的是订阅链接（而不是订阅页面地址）。" to "Адрес подписки вернул веб-страницу, а не список узлов. Убедитесь, что скопирована ссылка подписки, а не адрес страницы подписки.",
+    "内建加密" to "Встроенное шифрование",
+    "mihomo（兼容内核）" to "mihomo (совместимое ядро)",
+    "运行内核" to "Ядро",
     // Redesign (2026-11)
     "一键开启加密连接" to "Защищённое подключение одним касанием",
     "点一下即可连接，再点一下断开。" to "Нажмите, чтобы подключиться, и ещё раз — чтобы отключиться.",

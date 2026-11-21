@@ -25,6 +25,9 @@ object NodeLatencyTester {
     private const val TAG = "NodeLatencyTester"
     private val processBindingLock = Any()
 
+    /** UDP-based protocols: a TCP connect to their port proves nothing. */
+    private val UDP_PROTOCOLS = setOf("HYSTERIA", "HYSTERIA2", "TUIC", "WIREGUARD", "SHADOWQUIC", "MASQUE")
+
     suspend fun measure(context: Context, node: ServerNode): Int = withContext(Dispatchers.IO) {
         withTimeout(TOTAL_TIMEOUT_MS) {
             if (requiresCoreProbe(node)) {
@@ -49,7 +52,7 @@ object NodeLatencyTester {
     fun requiresCoreProbe(node: ServerNode): Boolean {
         val protocol = node.protocol.trim().uppercase()
         val transport = node.transport.trim().uppercase()
-        if (protocol in setOf("HYSTERIA", "HYSTERIA2")) return true
+        if (protocol in UDP_PROTOCOLS) return true
         if (transport in setOf("GRPC", "KCP", "MKCP")) return true
         if ("HYSTERIA" in transport || "QUIC" in transport) return true
         return false
@@ -64,7 +67,7 @@ object NodeLatencyTester {
     private fun requiresUdpLikeProbe(node: ServerNode): Boolean {
         val protocol = node.protocol.trim().uppercase()
         val transport = node.transport.trim().uppercase()
-        return protocol in setOf("HYSTERIA", "HYSTERIA2") ||
+        return protocol in UDP_PROTOCOLS ||
             transport in setOf("KCP", "MKCP") ||
             "HYSTERIA" in transport ||
             "QUIC" in transport

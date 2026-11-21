@@ -49,7 +49,9 @@ PurpleBear 通过 Android 系统 VPN 接入 Xray 内核，把订阅管理、节�
 
 ### 节点与订阅
 
-- 导入 `http` / `https` 订阅、单节点分享链接、二维码（相机或相册）和本地文件。
+- 导入 `http` / `https` 订阅、单节点分享链接（可一次粘贴多条）、二维码（相机或相册）和本地文件。
+- 订阅格式：Base64 / 明文链接列表、Clash / Clash Meta（含 `proxy-providers` 的过滤与覆盖、`dialer-proxy` 链式代理）、sing-box、SIP008、Xray / v2rayN JSON、Surge、Loon、Quantumult X。
+- 获取订阅时同时以普通方式和 Clash Meta 方式请求，自动采用节点更完整的一份；面板返回网页或错误时也能拿到节点。
 - 订阅分组和 Local 本地分组，可折叠；支持收藏置顶、搜索和按地区、低延迟筛选。
 - 一键测速整组节点，延迟按快慢显示绿、黄、红。
 - 订阅手动刷新，或在非计费网络下每日自动更新；同来源节点自动去重和覆盖。
@@ -60,15 +62,17 @@ PurpleBear 通过 Android 系统 VPN 接入 Xray 内核，把订阅管理、节�
 
 | 协议 | 说明 |
 | --- | --- |
-| VLESS | 支持 TLS、REALITY、Vision 等 |
-| VMess | 支持 TCP、WebSocket、gRPC 等 |
-| Trojan | 支持 TLS 及各类传输 |
-| Shadowsocks | 支持 2022 与 AEAD 加密 |
-| Hysteria2 | 基于 QUIC |
+| VLESS | TLS、REALITY、Vision；TCP / WebSocket / gRPC / XHTTP / HTTPUpgrade / mKCP |
+| VMess | TCP、WebSocket、gRPC、mKCP 等 |
+| Trojan | TLS 及各类传输 |
+| Shadowsocks | 2022 与 AEAD 加密；obfs / shadow-tls / restls 插件 |
+| Hysteria2 | 基于 QUIC，支持 salamander 混淆和端口跳跃 |
 | SOCKS / HTTP | 现成的 SOCKS5 或 HTTP 代理 |
-| SSR / ShadowsocksR | 通过内置的 mihomo sidecar 桥接 |
+| WireGuard | 链接、Clash、sing-box、Surge 均可导入 |
+| TUIC / AnyTLS / Hysteria v1 / Snell / Mieru / SSH | 通过内置 mihomo 兼容内核运行 |
+| SSR / ShadowsocksR | 通过内置 mihomo 兼容内核运行 |
 
-实际可用性取决于节点参数、服务端配置和网络环境。
+Xray 能运行的节点交给 Xray；Xray 不支持的协议和配置（包括新版 Xray 已移除的 HTTP/2 传输、旧版 XTLS 流控、旧式 SS 加密等）自动交给内置的 mihomo 运行。两个内核都不支持的节点（如 naive、旧 V2Ray 的 QUIC 传输）会在导入时说明原因。实际可用性取决于节点参数、服务端配置和网络环境。
 
 ### 线路组合
 
@@ -100,7 +104,7 @@ PurpleBear 通过 Android 系统 VPN 接入 Xray 内核，把订阅管理、节�
 
 ### 安全
 
-- **本地代理认证**：Xray 的 SOCKS / HTTP 入站和 SSR 用的 mihomo 端口每次连接都随机分配，并带随机账号密码，其他应用无法借用本地代理绕过分应用设置或探测出口 IP。
+- **本地代理认证**：Xray 的 SOCKS / HTTP 入站和兼容内核（mihomo）的端口每次连接都随机分配，并带随机账号密码，其他应用无法借用本地代理绕过分应用设置或探测出口 IP。
 - **证书固定**：新版 Xray 已移除 `allowInsecure`。节点链接中标记跳过证书校验时（`allowInsecure` / `insecure` / `skip-cert-verify`），应用会在连接前获取服务器证书并固定其 SHA-256 指纹；也可以在节点中手动填写证书指纹（`pcs`）或按名称校验（`vcn`）。
 
 ### 诊断与设置
@@ -153,7 +157,7 @@ Release 包输出在 `app/build/outputs/apk/release/app-release.apk`。签名读
 | 组件 | 位置 | 说明 |
 | --- | --- | --- |
 | Xray-core / libXray | `app/libs/libXray.aar` | 代理核心，用 gomobile 构建 |
-| mihomo | `app/src/main/jniLibs/arm64-v8a/libmihomo.so` | SSR 桥接 sidecar，GPL-3.0；缺失时其它协议不受影响 |
+| mihomo | `app/src/main/jniLibs/arm64-v8a/libmihomo.so` | 兼容内核 sidecar（SSR、TUIC、AnyTLS 等），GPL-3.0；缺失时 Xray 协议不受影响 |
 | Tailscale bridge | `app/src/main/jniLibs/arm64-v8a/libtailscalebridge*.so` | 由 `tailscale-bridge/build-android.sh` 构建 |
 
 各组件的版本、源码地址和校验值记录在 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
@@ -192,7 +196,7 @@ Release 包输出在 `app/build/outputs/apk/release/app-release.apk`。签名读
 ## 致谢
 
 - [Xray-core](https://github.com/XTLS/Xray-core) 与 [libXray](https://github.com/XTLS/libXray)：代理核心
-- [mihomo](https://github.com/MetaCubeX/mihomo)：SSR 桥接（GPL-3.0）
+- [mihomo](https://github.com/MetaCubeX/mihomo)：兼容内核，运行 Xray 不支持的协议（GPL-3.0）
 - [Tailscale](https://github.com/tailscale/tailscale)：Tailnet 组网（BSD-3-Clause）
 - [AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass)：液态玻璃效果（Apache-2.0）
 - [v2fly geoip](https://github.com/v2fly/geoip) 与 [domain-list-community](https://github.com/v2fly/domain-list-community)：Geo 数据

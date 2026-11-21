@@ -151,11 +151,10 @@ object AppStateStore {
         val filteredServers = normalizedServers
             .filter { server -> server.groupId in validGroupIds }
             .map { server ->
-                if (server.hiddenUnsupported || !server.isUnsupportedGrpcRealityNode()) {
-                    server
-                } else {
-                    server.copy(hiddenUnsupported = true)
-                }
+                // Re-evaluated on every load: the bundled core decides what can run
+                // (this also re-shows REALITY + gRPC nodes hidden by older versions).
+                val hidden = NodeCompatibility.coreIncompatibility(server) != null
+                if (server.hiddenUnsupported == hidden) server else server.copy(hiddenUnsupported = hidden)
             }
         val visibleServers = filteredServers.filterNot { it.hiddenUnsupported }
         val visibleServerMap = visibleServers.associateBy { it.id }
@@ -303,6 +302,7 @@ object AppStateStore {
                         put("favorite", server.favorite)
                         put("rawUri", server.rawUri)
                         put("outboundJson", server.outboundJson)
+                        put("mihomoProxyJson", server.mihomoProxyJson)
                         put("hiddenUnsupported", server.hiddenUnsupported)
                         put("preProxyNodeId", server.preProxyNodeId)
                         put("fallbackNodeId", server.fallbackNodeId)
@@ -468,6 +468,7 @@ object AppStateStore {
                 favorite = item.optBoolean("favorite", false),
                 rawUri = item.optString("rawUri", ""),
                 outboundJson = item.optString("outboundJson", ""),
+                mihomoProxyJson = item.optString("mihomoProxyJson", ""),
                 hiddenUnsupported = item.optBoolean("hiddenUnsupported", false),
                 preProxyNodeId = item.optString("preProxyNodeId", ""),
                 fallbackNodeId = item.optString("fallbackNodeId", ""),

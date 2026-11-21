@@ -2,6 +2,24 @@
 
 PurpleBear 各版本的完整更新记录。安装包见 [GitHub Releases](https://github.com/mallocfeng/PurpleBear/releases)。
 
+## 0.8.2
+
+1. 订阅兼容性大幅提升：新增 Surge、Loon、Quantumult X、Xray / v2rayN JSON 配置导入；Clash 支持 `proxy-providers`（网络与内联，含 `filter` / `exclude-filter` / `exclude-type` / `override`）和 `dialer-proxy` 链式代理；sing-box 支持 1.11+ 的 `endpoints`、shadow-tls 组合与端口跳跃；导入框可一次粘贴多条链接。
+
+2. 新增协议：TUIC、AnyTLS、Hysteria v1、Snell（v1–v6）、Mieru、SSH，以及 Shadowsocks 的 obfs / shadow-tls / restls 插件，由内置的 mihomo 兼容内核运行；Hysteria2 支持端口跳跃；新增 mKCP 传输（含伪装类型与 seed），可在节点编辑页填写。
+
+3. 新版 Xray 已不支持的节点（HTTP/2 传输、旧版 XTLS 流控、发往公网的未加密 VLESS / Trojan、`none` 与旧式 SS 加密等）不再隐藏，自动改由兼容内核运行；两个内核都不支持的节点（naive、旧 V2Ray 的 QUIC 传输等）会在导入摘要中说明原因，不再被悄悄当成 TCP 导入。
+
+4. 修复部分订阅无法导入：获取订阅时固定发送 `Accept: */*`，并同时以 Clash Meta 方式请求、自动采用节点更完整的一份；面板返回 403 / 5xx、网页或精简列表时也能拿到完整节点。
+
+5. 修复多项导入问题：SS2022 明文密钥解析错误、`socks://` 的 Base64 认证信息丢失、Clash WireGuard 节点被丢弃、sing-box WireGuard 无法导入、Hysteria2 salamander 混淆被忽略、REALITY + gRPC 节点被误隐藏、SS 链接的 obfs 插件被忽略。
+
+6. 兼容内核可同时运行多个节点：主节点、规则分流和流媒体分流里的此类节点各自使用独立的本地端口（最多 6 个）；修复此前流媒体或规则分流选中 SSR 类节点时无法连接的问题。
+
+7. 修复连接中在节点页点“切换”只跳回首页、需再点一次才切换的问题；全局代理模式下首页正确显示“全局代理”；补齐导入页、节点列表等处的英文与俄文翻译。
+
+8. 更新版本号到 `0.8.2`，`versionCode` 更新为 `277`。
+
 ## 0.8.1
 
 1. 修复液态玻璃导航的回归问题：在节点详情、添加节点、订阅管理等子页面点击当前高亮的标签，现在会正常回到该标签的主页面。
