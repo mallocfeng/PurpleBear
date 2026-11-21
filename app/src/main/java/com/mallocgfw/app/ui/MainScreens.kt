@@ -70,6 +70,7 @@ import androidx.compose.ui.unit.dp
 import com.mallocgfw.app.model.ConnectionStatus
 import com.mallocgfw.app.model.ProxyMode
 import com.mallocgfw.app.model.ServerGroup
+import com.mallocgfw.app.model.NodeFlags
 import com.mallocgfw.app.model.ServerNode
 import com.mallocgfw.app.model.ServerGroupType
 import com.mallocgfw.app.model.ssrCompatibilityLabel
@@ -432,7 +433,10 @@ private fun CurrentNodeCard(
             NodeAvatar(server = server)
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = server.name,
+                    // Same as the node list: a leading flag is shown by the avatar only.
+                    text = leadingFlagEmoji(server.name)
+                        ?.let { server.name.removePrefix(it).trimStart().ifBlank { null } }
+                        ?: server.name,
                     color = TextPrimary,
                     fontSize = TypeScale.ListTitle,
                     lineHeight = TypeScale.ListTitleLine,
@@ -442,7 +446,7 @@ private fun CurrentNodeCard(
                 )
                 Text(
                     text = listOfNotNull(
-                        server.protocol.takeIf { it.isNotBlank() },
+                        server.protocol.takeIf { it.isNotBlank() }?.let(::protocolDisplayName),
                         hint?.let { uiText(it) } ?: uiText(server.subscription).takeIf { it.isNotBlank() },
                     ).joinToString(" · "),
                     color = TextSecondary,
@@ -511,17 +515,20 @@ private fun NodeQuickAction(
     }
 }
 
-/** Round initial badge for a node (first letter/emoji of its name). */
+/**
+ * Round badge for a node: the country flag when one can be told from the name
+ * (see NodeFlags), otherwise the first letter / emoji of the name.
+ */
 @Composable
 internal fun NodeAvatar(server: ServerNode, size: androidx.compose.ui.unit.Dp = 40.dp) {
-    val label = server.name.trim().let { name ->
-        val codePoint = name.codePointAt(0).takeIf { name.isNotEmpty() }
-        when {
-            codePoint == null -> "?"
-            // Regional-indicator flag emoji take two code points.
-            codePoint in 0x1F1E6..0x1F1FF && name.length >= 4 -> name.substring(0, 4)
-            Character.isLetterOrDigit(codePoint) -> String(Character.toChars(codePoint)).uppercase()
-            else -> String(Character.toChars(codePoint))
+    val label = remember(server.name) {
+        NodeFlags.flagFor(server.name) ?: server.name.trim().let { name ->
+            val codePoint = name.codePointAt(0).takeIf { name.isNotEmpty() }
+            when {
+                codePoint == null -> "?"
+                Character.isLetterOrDigit(codePoint) -> String(Character.toChars(codePoint)).uppercase()
+                else -> String(Character.toChars(codePoint))
+            }
         }
     }
     Box(
