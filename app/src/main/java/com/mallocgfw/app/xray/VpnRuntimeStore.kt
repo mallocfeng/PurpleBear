@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONObject
+import com.mallocgfw.app.model.tr
 
 data class VpnRuntimeSnapshot(
     val status: ConnectionStatus = ConnectionStatus.Disconnected,
@@ -204,7 +205,7 @@ object VpnRuntimeStore {
         return VpnRuntimeSnapshot(
             status = ConnectionStatus.Disconnected,
             activeServerId = null,
-            message = "检测到系统 VPN 当前未连接，已同步为未连接状态。",
+            message = tr("检测到系统 VPN 当前未连接，已同步为未连接状态。", "The system VPN isn't connected; status updated to disconnected.", "Системный VPN не подключён, статус обновлён на «отключено»."),
             speedTestInFlight = false,
             speedTestTimedOut = false,
         )

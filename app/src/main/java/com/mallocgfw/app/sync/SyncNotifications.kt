@@ -11,6 +11,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.content.ContextCompat
 import com.mallocgfw.app.MainActivity
+import com.mallocgfw.app.model.tr
 
 object SyncNotifications {
     private const val CHANNEL_ID = "mallocgfw_sync_updates"
@@ -53,7 +54,7 @@ object SyncNotifications {
         manager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID,
-                "PurpleBear 更新通知",
+                tr("PurpleBear 更新通知", "PurpleBear update notifications", "Уведомления об обновлениях PurpleBear"),
                 NotificationManager.IMPORTANCE_DEFAULT,
             ),
         )

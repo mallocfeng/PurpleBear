@@ -15,6 +15,7 @@ import java.util.zip.InflaterInputStream
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
+import com.mallocgfw.app.model.tr
 
 object ResourceFetchClient {
     enum class RequestProfile {
@@ -48,10 +49,10 @@ object ResourceFetchClient {
     ): String {
         val response = fetchResponse(url, connectTimeoutMs, readTimeoutMs, requestProfile)
         if (response.code !in 200..299) {
-            error("$label 返回 HTTP ${response.code}。")
+            error(tr("$label 返回 HTTP ${response.code}。", "$label returned HTTP ${response.code}.", "$label: ответ HTTP ${response.code}."))
         }
         return response.body.toString(Charsets.UTF_8).also {
-            if (it.isBlank()) error("$label 返回为空。")
+            if (it.isBlank()) error(tr("$label 返回为空。", "$label returned nothing.", "$label: пустой ответ."))
         }
     }
 
@@ -64,10 +65,10 @@ object ResourceFetchClient {
     ): ByteArray {
         val response = fetchResponse(url, connectTimeoutMs, readTimeoutMs, requestProfile)
         if (response.code !in 200..299) {
-            error("$label 返回 HTTP ${response.code}。")
+            error(tr("$label 返回 HTTP ${response.code}。", "$label returned HTTP ${response.code}.", "$label: ответ HTTP ${response.code}."))
         }
         return response.body.also {
-            if (it.isEmpty()) error("$label 返回为空。")
+            if (it.isEmpty()) error(tr("$label 返回为空。", "$label returned nothing.", "$label: пустой ответ."))
         }
     }
 
@@ -84,7 +85,7 @@ object ResourceFetchClient {
         requestProfile: RequestProfile,
         redirectCount: Int = 0,
     ): HttpResponse {
-        require(redirectCount <= MAX_REDIRECTS) { "订阅链接重定向次数过多。" }
+        require(redirectCount <= MAX_REDIRECTS) { tr("订阅链接重定向次数过多。", "The subscription link redirected too many times.", "Слишком много перенаправлений ссылки подписки.") }
         return when (requestProfile) {
             RequestProfile.DEFAULT,
             RequestProfile.CLASH_META_SUBSCRIPTION,
@@ -151,11 +152,11 @@ object ResourceFetchClient {
             val statusCode = rawResponse.statusLine.substringAfter(' ', "")
                 .substringBefore(' ')
                 .toIntOrNull()
-                ?: error("订阅链接返回了无法识别的状态行：${rawResponse.statusLine}")
+                ?: error(tr("订阅链接返回了无法识别的状态行：${rawResponse.statusLine}", "The subscription link returned an unrecognized status line: ${rawResponse.statusLine}", "Ссылка подписки вернула нераспознанную строку состояния: ${rawResponse.statusLine}"))
 
             if (statusCode in 300..399) {
                 val location = rawResponse.headers["location"].orEmpty()
-                require(location.isNotBlank()) { "订阅链接返回重定向，但没有 location。" }
+                require(location.isNotBlank()) { tr("订阅链接返回重定向，但没有 location。", "The subscription link returned a redirect without a location.", "Ссылка подписки вернула перенаправление без location.") }
                 return fetchResponseWithShadowrocketHttp1(
                     url = URL(target, location).toString(),
                     connectTimeoutMs = connectTimeoutMs,
@@ -204,7 +205,7 @@ object ResourceFetchClient {
         val headerText = String(headerBytes, StandardCharsets.ISO_8859_1)
         val headerLines = headerText.split("\r\n")
         val statusLine = headerLines.firstOrNull()?.takeIf { it.isNotBlank() }
-            ?: error("订阅链接未返回状态行。")
+            ?: error(tr("订阅链接未返回状态行。", "The subscription link returned no status line.", "Ссылка подписки не вернула строку состояния."))
         val headers = headerLines.drop(1)
             .mapNotNull { line ->
                 val separator = line.indexOf(':')
@@ -295,9 +296,9 @@ object ResourceFetchClient {
         val statusCode = statusLine.substringAfter(' ', "")
             .substringBefore(' ')
             .toIntOrNull()
-            ?: error("本地 HTTP 代理返回了无法识别的 CONNECT 响应：$statusLine")
+            ?: error(tr("本地 HTTP 代理返回了无法识别的 CONNECT 响应：$statusLine", "The local HTTP proxy returned an unrecognized CONNECT response: $statusLine", "Локальный HTTP-прокси вернул нераспознанный ответ CONNECT: $statusLine"))
         if (statusCode !in 200..299) {
-            error("本地 HTTP 代理 CONNECT 返回 HTTP $statusCode。")
+            error(tr("本地 HTTP 代理 CONNECT 返回 HTTP $statusCode。", "The local HTTP proxy CONNECT returned HTTP $statusCode.", "CONNECT через локальный HTTP-прокси вернул HTTP $statusCode."))
         }
     }
 
@@ -306,11 +307,11 @@ object ResourceFetchClient {
         var matchIndex = 0
         while (true) {
             val next = input.read()
-            if (next < 0) throw EOFException("订阅链接响应头意外结束。")
+            if (next < 0) throw EOFException(tr("订阅链接响应头意外结束。", "The subscription response headers ended unexpectedly.", "Заголовки ответа подписки неожиданно оборвались."))
             val byte = next.toByte()
             buffer.write(byte.toInt())
             if (buffer.size() > MAX_HEADER_BYTES) {
-                error("订阅链接响应头过大。")
+                error(tr("订阅链接响应头过大。", "The subscription response headers are too large.", "Заголовки ответа подписки слишком велики."))
             }
             if (byte == HEADER_SEPARATOR[matchIndex]) {
                 matchIndex += 1
@@ -333,7 +334,7 @@ object ResourceFetchClient {
                 return output.toByteArray()
             }
             if (output.size() + size > MAX_RESPONSE_BYTES) {
-                error("订阅链接响应体过大。")
+                error(tr("订阅链接响应体过大。", "The subscription response is too large.", "Ответ подписки слишком велик."))
             }
             output.write(readFixedLengthBody(input, size))
             readAsciiLine(input)
@@ -342,13 +343,13 @@ object ResourceFetchClient {
 
     private fun readFixedLengthBody(input: InputStream, length: Int): ByteArray {
         if (length > MAX_RESPONSE_BYTES) {
-            error("订阅链接响应体过大。")
+            error(tr("订阅链接响应体过大。", "The subscription response is too large.", "Ответ подписки слишком велик."))
         }
         val buffer = ByteArray(length)
         var offset = 0
         while (offset < length) {
             val count = input.read(buffer, offset, length - offset)
-            if (count < 0) throw EOFException("订阅链接响应体长度不足。")
+            if (count < 0) throw EOFException(tr("订阅链接响应体长度不足。", "The subscription response is shorter than expected.", "Ответ подписки короче ожидаемого."))
             offset += count
         }
         return buffer
@@ -358,9 +359,9 @@ object ResourceFetchClient {
         val output = ByteArrayOutputStream()
         while (true) {
             val next = input.read()
-            if (next < 0) throw EOFException("订阅链接响应行意外结束。")
+            if (next < 0) throw EOFException(tr("订阅链接响应行意外结束。", "A subscription response line ended unexpectedly.", "Строка ответа подписки неожиданно оборвалась."))
             if (output.size() > MAX_LINE_BYTES) {
-                error("订阅链接响应行过长。")
+                error(tr("订阅链接响应行过长。", "A subscription response line is too long.", "Строка ответа подписки слишком длинная."))
             }
             if (next == '\r'.code) {
                 val lineFeed = input.read()
@@ -382,7 +383,7 @@ object ResourceFetchClient {
             val read = input.read(buffer)
             if (read < 0) return output.toByteArray()
             if (output.size() + read > maxBytes) {
-                error("订阅链接响应体过大。")
+                error(tr("订阅链接响应体过大。", "The subscription response is too large.", "Ответ подписки слишком велик."))
             }
             output.write(buffer, 0, read)
         }

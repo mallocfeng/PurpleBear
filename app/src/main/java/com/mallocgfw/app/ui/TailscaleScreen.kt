@@ -181,7 +181,7 @@ internal fun TailscaleScreen(
                 SettingInfoRow(
                     title = "MagicDNS",
                     subtitle = uiText("Tailnet 设备名称（如 nas.xxx.ts.net）在 VPN 内可直接访问；其他域名的 DNS 保持原有设置。") +
-                        snapshot.magicDnsSuffix?.let { suffix -> "\n" + uiText("当前 Tailnet 后缀：$suffix", "Tailnet suffix: $suffix") }.orEmpty(),
+                        snapshot.magicDnsSuffix?.let { suffix -> "\n" + uiText("当前 Tailnet 后缀：$suffix", "Tailnet suffix: $suffix", "Суффикс tailnet: $suffix") }.orEmpty(),
                 )
             }
         }
@@ -202,7 +202,7 @@ internal fun TailscaleScreen(
                     Spacer(Modifier.height(10.dp))
                     SettingToggleRow(
                         title = route,
-                        subtitle = uiText("由 ${owners.joinToString()} 公布", "Advertised by ${owners.joinToString()}"),
+                        subtitle = uiText("由 ${owners.joinToString()} 公布", "Advertised by ${owners.joinToString()}", "Объявлено: ${owners.joinToString()}"),
                         checked = route in selectedSubnetRoutes,
                         onToggle = {
                             onSubnetRoutesChange(
@@ -326,7 +326,7 @@ internal fun TailscaleScreen(
                     modifier = Modifier.padding(top = 4.dp),
                 )
                 if (peer.routes.isNotEmpty()) {
-                    Text(uiText("子网路由：", "Subnet routes: ") + peer.routes.joinToString(), color = TextSecondary, modifier = Modifier.padding(top = 4.dp))
+                    Text(uiText("子网路由：", "Subnet routes: ", "Маршруты подсетей: ") + peer.routes.joinToString(), color = TextSecondary, modifier = Modifier.padding(top = 4.dp))
                 }
             }
         }

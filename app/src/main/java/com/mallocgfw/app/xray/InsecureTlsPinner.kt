@@ -24,6 +24,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
+import com.mallocgfw.app.model.tr
 
 /**
  * Turns `allowInsecure` nodes into certificate-pinned ones right before the
@@ -147,7 +148,7 @@ object InsecureTlsPinner {
                 }
                 socket.startHandshake()
                 val leaf = socket.session.peerCertificates.firstOrNull()
-                    ?: error("服务器未返回证书")
+                    ?: error(tr("服务器未返回证书", "The server returned no certificate", "Сервер не вернул сертификат"))
                 return MessageDigest.getInstance("SHA-256").digest(leaf.encoded)
                     .joinToString("") { "%02x".format(it) }
             }

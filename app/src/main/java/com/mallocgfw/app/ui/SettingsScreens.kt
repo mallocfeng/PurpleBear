@@ -369,20 +369,14 @@ internal fun SettingsScreen(
                 Spacer(modifier = Modifier.height(12.dp))
                 SettingActionRow(
                     title = "备用节点心跳",
-                    subtitle = uiText(
-                        settings.heartbeatSummary(),
-                        "Check every ${settings.heartbeatIntervalMinutes.takeIf { it in HeartbeatIntervalOptionsMinutes } ?: 5} min. Switch after 3 failures.",
-                    ),
+                    subtitle = settings.heartbeatSummary(),
                     actionText = "设置",
                     onAction = { showHeartbeatDialog = true },
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 SettingActionRow(
                     title = "VPN MTU",
-                    subtitle = uiText(
-                        settings.vpnMtuSummary(),
-                        "Current ${com.mallocgfw.app.model.normalizedAppVpnMtu(settings.vpnMtu)}. Lower values can help mobile, PPPoE, and QUIC links.",
-                    ),
+                    subtitle = settings.vpnMtuSummary(),
                     actionText = "设置",
                     onAction = { showMtuDialog = true },
                 )
@@ -435,14 +429,14 @@ internal fun SettingsScreen(
             SettingsGroup(title = "高级设置") {
                 SettingActionRow(
                     title = "自定义 DNS",
-                    subtitle = uiText("当前 ${settings.dnsSummary()}。", "Current ${uiText(settings.dnsSummary())}."),
+                    subtitle = uiText("当前 ${settings.dnsSummary()}。", "Current ${uiText(settings.dnsSummary())}.", "Сейчас ${uiText(settings.dnsSummary())}."),
                     actionText = "编辑",
                     onAction = { showDnsDialog = true },
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 SettingDualActionRow(
                     title = "日志级别",
-                    subtitle = uiText("当前 ${settings.logLevel.displayName}。", "Current ${settings.logLevel.displayName}."),
+                    subtitle = uiText("当前 ${settings.logLevel.displayName}。", "Current ${settings.logLevel.displayName}.", "Сейчас ${settings.logLevel.displayName}."),
                     primaryActionText = "调整",
                     onPrimaryAction = { showLogLevelDialog = true },
                     secondaryActionText = "查看",
@@ -714,7 +708,7 @@ private fun UpdateStatusContent(
         subtitle = if (info == null) {
             uiText(
                 "当前 $currentVersionName · versionCode $currentVersionCode",
-                "Current $currentVersionName · versionCode $currentVersionCode",
+                "Current $currentVersionName · versionCode $currentVersionCode", "Текущая версия $currentVersionName · versionCode $currentVersionCode",
             )
         } else {
             "${info.releaseName} · ${info.tagName}" +
@@ -753,9 +747,9 @@ private fun ReleaseNotes(
     SettingsGroup(title = uiText(if (isCurrentVersion) "当前版本描述" else "更新版本描述")) {
         SettingInfoRow(
             title = if (isCurrentVersion) {
-                uiText("当前已安装：${info.releaseName}", "Installed: ${info.releaseName}")
+                uiText("当前已安装：${info.releaseName}", "Installed: ${info.releaseName}", "Установлено: ${info.releaseName}")
             } else {
-                uiText("可升级到：${info.releaseName}", "Available: ${info.releaseName}")
+                uiText("可升级到：${info.releaseName}", "Available: ${info.releaseName}", "Доступно: ${info.releaseName}")
             },
             subtitle = buildString {
                 append(publishedPrefix)
@@ -951,12 +945,12 @@ internal fun MediaRoutingNodePickerScreen(
             ScreenHeader(
                 title = uiText(
                     "选择 ${service?.name ?: "流媒体"} 出口",
-                    "Select ${service?.name ?: "media"} exit",
+                    "Select ${service?.name ?: "media"} exit", "Выход для ${service?.name ?: "медиа"}",
                 ),
                 subtitle = service?.let {
                     uiText(
                         "${uiText(it.suggestedRegion)} · 未指定则走默认线路。",
-                        "${uiText(it.suggestedRegion)} · Uses default node when unset.",
+                        "${uiText(it.suggestedRegion)} · Uses default node when unset.", "${uiText(it.suggestedRegion)} · Если не задано, используется узел по умолчанию.",
                     )
                 } ?: uiText("选择一个出口节点。"),
             )

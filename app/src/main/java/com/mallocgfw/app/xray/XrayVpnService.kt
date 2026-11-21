@@ -20,6 +20,8 @@ import android.util.Log
 import com.mallocgfw.app.MainActivity
 import com.mallocgfw.app.model.AppDnsMode
 import com.mallocgfw.app.model.AppStateStore
+import com.mallocgfw.app.model.AppTextLanguage
+import com.mallocgfw.app.model.tr
 import com.mallocgfw.app.model.ConnectionStatus
 import com.mallocgfw.app.model.ManualNodeFactory
 import com.mallocgfw.app.model.ProxyMode
@@ -67,7 +69,8 @@ class XrayVpnService : VpnService() {
     private var failbackPrimarySuccessCount = 0
     private var publishDisconnectedOnDestroy = false
     private var cleanupCompleted = false
-    private var destroyMessage = "VPN 已断开"
+    /** Set when the reason for stopping is known; otherwise the plain "disconnected" text. */
+    private var destroyMessage: String? = null
     private val tailscaleRecoveryTimes = ArrayDeque<Long>()
 
     /** Whether the current tunnel was built with Tailnet routing. */
@@ -161,17 +164,17 @@ class XrayVpnService : VpnService() {
         when (intent?.action) {
             ACTION_CONNECT -> {
                 publishDisconnectedOnDestroy = false
-                destroyMessage = "VPN 已断开"
+                destroyMessage = null
                 val serverId = intent.getStringExtra(EXTRA_SERVER_ID).orEmpty()
                 AppLogManager.append(applicationContext, TAG, "收到连接请求，serverId=$serverId")
                 VpnRuntimeStore.reset(
                     applicationContext,
                     status = ConnectionStatus.Connecting,
                     activeServerId = serverId,
-                    message = "正在建立系统 VPN 隧道…",
+                    message = tr("正在建立系统 VPN 隧道…", "Setting up the system VPN tunnel…", "Создание системного VPN-туннеля…"),
                 )
                 VpnQuickSettingsTileHelper.requestRefresh(applicationContext)
-                startServiceForeground(buildNotification("正在建立 VPN 隧道…"))
+                startServiceForeground(buildNotification(tr("正在建立 VPN 隧道…", "Setting up the VPN tunnel…", "Создание VPN-туннеля…")))
                 scope.launch {
                     operationMutex.withLock {
                         cleanupCompleted = false
@@ -183,7 +186,7 @@ class XrayVpnService : VpnService() {
                                     applicationContext,
                                     status = ConnectionStatus.Connected,
                                     activeServerId = serverId,
-                                    message = "系统 VPN 已建立，Xray 正在运行",
+                                    message = tr("系统 VPN 已建立，Xray 正在运行", "System VPN is up and Xray is running", "Системный VPN установлен, Xray работает"),
                                     connectedAtMs = connectedAtMs,
                                     interfaceName = null,
                                 )
@@ -191,7 +194,7 @@ class XrayVpnService : VpnService() {
                                 startSpeedMeasurement()
                                 startLogMaintenance()
                                 startHeartbeatMonitor()
-                                val notification = buildNotification("VPN 已连接")
+                                val notification = buildNotification(tr("VPN 已连接", "VPN connected", "VPN подключён"))
                                 val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                                 manager.notify(NOTIFICATION_ID, notification)
                             }
@@ -200,7 +203,7 @@ class XrayVpnService : VpnService() {
                                 publishDisconnectedOnDestroy = false
                                 val failureMessage = XrayCoreManager.snapshot.value.message
                                     ?: error.message
-                                    ?: "VPN 建立失败。"
+                                    ?: tr("VPN 建立失败。", "Couldn't set up the VPN.", "Не удалось установить VPN.")
                                 AppLogManager.append(applicationContext, TAG, "VPN 连接失败：$failureMessage", error)
                                 Log.e(TAG, "VPN connect failed: $failureMessage", error)
                                 VpnRuntimeStore.reset(
@@ -225,7 +228,7 @@ class XrayVpnService : VpnService() {
                         runCatching { switchActiveServer(serverId) }
                             .onSuccess {
                                 val server = AppStateStore.load(applicationContext).servers.firstOrNull { it.id == serverId }
-                                val message = server?.let { "已切换到 ${it.name}" } ?: "已切换线路"
+                                val message = server?.let { tr("已切换到 ${it.name}", "Switched to ${it.name}", "Переключено на ${it.name}") } ?: tr("已切换线路", "Node switched", "Узел переключён")
                                 AppLogManager.append(applicationContext, TAG, message)
                                 resetFailoverState()
                                 VpnRuntimeStore.updateConnection(
@@ -241,7 +244,7 @@ class XrayVpnService : VpnService() {
                             .onFailure { error ->
                                 if (error is CancellationException) return@onFailure
                                 val activeServerId = VpnRuntimeStore.snapshot.value.activeServerId
-                                val failureMessage = error.message ?: "切换线路失败。"
+                                val failureMessage = error.message ?: tr("切换线路失败。", "Couldn't switch nodes.", "Не удалось переключить узел.")
                                 AppLogManager.append(applicationContext, TAG, failureMessage, error)
                                 VpnRuntimeStore.updateConnection(
                                     applicationContext,
@@ -257,7 +260,7 @@ class XrayVpnService : VpnService() {
 
             ACTION_DISCONNECT -> {
                 publishDisconnectedOnDestroy = true
-                destroyMessage = "VPN 已断开"
+                destroyMessage = null
                 AppLogManager.append(applicationContext, TAG, "收到断开请求")
                 VpnRuntimeStore.reset(
                     applicationContext,
@@ -269,7 +272,7 @@ class XrayVpnService : VpnService() {
                 VpnQuickSettingsTileHelper.requestRefresh(applicationContext)
                 scope.launch {
                     operationMutex.withLock {
-                        disconnect(updateRuntime = false, message = destroyMessage)
+                        disconnect(updateRuntime = false, message = destroyMessage ?: tr("VPN 已断开", "VPN disconnected", "VPN отключён"))
                         stopSelf()
                     }
                 }
@@ -298,7 +301,7 @@ class XrayVpnService : VpnService() {
         scope.cancel()
         disconnectNow(
             updateRuntime = publishDisconnectedOnDestroy,
-            message = destroyMessage,
+            message = destroyMessage ?: tr("VPN 已断开", "VPN disconnected", "VPN отключён"),
         )
         VpnQuickSettingsTileHelper.requestRefresh(applicationContext)
         super.onDestroy()
@@ -306,11 +309,11 @@ class XrayVpnService : VpnService() {
 
     override fun onRevoke() {
         publishDisconnectedOnDestroy = true
-        destroyMessage = "VPN 权限已撤销，连接已断开"
+        destroyMessage = tr("VPN 权限已撤销，连接已断开", "VPN permission was revoked; disconnected", "Разрешение VPN отозвано, соединение разорвано")
         AppLogManager.append(applicationContext, TAG, "VPN 权限被系统撤销")
         scope.launch {
             operationMutex.withLock {
-                disconnect(updateRuntime = false, message = destroyMessage)
+                disconnect(updateRuntime = false, message = destroyMessage ?: tr("VPN 已断开", "VPN disconnected", "VPN отключён"))
                 stopSelf()
             }
         }
@@ -329,6 +332,8 @@ class XrayVpnService : VpnService() {
         resetFailoverState()
         AppLogManager.trimAllLogs(applicationContext)
         val state = AppStateStore.load(applicationContext)
+        // The service may run with no UI open (Quick Settings, auto reconnect).
+        AppTextLanguage.apply(state.settings.language)
         AppLogManager.append(applicationContext, TAG, "连接启动，DNS 模式：${state.settings.dnsMode.name}")
         if (state.settings.tailscaleEnabled) {
             awaitTailscaleForConnect(state.settings)
@@ -388,7 +393,7 @@ class XrayVpnService : VpnService() {
 
         if (state.proxyMode == ProxyMode.PerApp && !globalProxyEnabled) {
             val allowedPackages = state.protectedApps.filter { it.enabled }.map { it.id }.distinct()
-            require(allowedPackages.isNotEmpty()) { "请先选择需要代理的应用。" }
+            require(allowedPackages.isNotEmpty()) { tr("请先选择需要代理的应用。", "Choose the apps to proxy first.", "Сначала выберите приложения для прокси.") }
             var installedAllowedPackageCount = 0
             allowedPackages.forEach { pkg ->
                 try {
@@ -399,7 +404,7 @@ class XrayVpnService : VpnService() {
                 }
             }
             require(installedAllowedPackageCount > 0) {
-                "所选代理应用均未安装，请重新选择后再连接。"
+                tr("所选代理应用均未安装，请重新选择后再连接。", "None of the selected apps are installed. Choose again before connecting.", "Ни одно из выбранных приложений не установлено. Выберите заново перед подключением.")
             }
         } else {
             // Smart mode and the global-proxy rule mode keep the app's own outbound traffic
@@ -423,8 +428,8 @@ class XrayVpnService : VpnService() {
             .onFailure { Log.w(TAG, "Unable to stop previous Xray before reconnect", it) }
 
         vpnInterface?.close()
-        vpnInterface = builder.establish() ?: error("无法建立系统 VPN 接口。")
-        val tunFd = vpnInterface?.fd ?: error("无法获取 TUN fd。")
+        vpnInterface = builder.establish() ?: error(tr("无法建立系统 VPN 接口。", "Couldn't create the system VPN interface.", "Не удалось создать системный VPN-интерфейс."))
+        val tunFd = vpnInterface?.fd ?: error(tr("无法获取 TUN fd。", "Couldn't get the TUN fd.", "Не удалось получить TUN fd."))
         dnsEndpoint?.let(::installProcessDns)
 
         XrayCoreManager.startVpn(
@@ -442,8 +447,8 @@ class XrayVpnService : VpnService() {
     private suspend fun switchActiveServer(serverId: String) {
         val state = AppStateStore.load(applicationContext)
         val server = state.servers.firstOrNull { it.id == serverId }
-            ?: error("未找到要切换的节点。")
-        val tunFd = vpnInterface?.fd ?: error("系统 VPN 还没有建立，无法热切换线路。")
+            ?: error(tr("未找到要切换的节点。", "Couldn't find the node to switch to.", "Узел для переключения не найден."))
+        val tunFd = vpnInterface?.fd ?: error(tr("系统 VPN 还没有建立，无法热切换线路。", "The system VPN isn't up yet, so nodes can't be hot-switched.", "Системный VPN ещё не установлен, горячее переключение узла невозможно."))
         val vpnMtu = normalizedAppVpnMtu(state.settings.vpnMtu)
         val dnsEndpoint = resolveDnsEndpoint(applicationContext, state.settings)
         val globalProxyEnabled = state.settings.globalProxyEnabled
@@ -480,7 +485,7 @@ class XrayVpnService : VpnService() {
 
     private suspend fun disconnect(
         updateRuntime: Boolean = true,
-        message: String = "VPN 已断开",
+        message: String = tr("VPN 已断开", "VPN disconnected", "VPN отключён"),
     ) {
         withContext(Dispatchers.IO) {
             disconnectNow(updateRuntime = updateRuntime, message = message)
@@ -489,7 +494,7 @@ class XrayVpnService : VpnService() {
 
     private fun disconnectNow(
         updateRuntime: Boolean = true,
-        message: String = "VPN 已断开",
+        message: String = tr("VPN 已断开", "VPN disconnected", "VPN отключён"),
     ) {
         val disconnectStartedAt = System.currentTimeMillis()
         if (cleanupCompleted) {
@@ -579,7 +584,7 @@ class XrayVpnService : VpnService() {
                     switchToFallback(
                         source = activeNode,
                         fallback = fallbackNode,
-                        reason = "心跳连续 3 次检测失败",
+                        reason = tr("心跳连续 3 次检测失败", "3 fallback checks failed in a row", "3 проверки подряд не прошли"),
                     )
                     return@launch
                 }
@@ -669,7 +674,7 @@ class XrayVpnService : VpnService() {
                 AppLogManager.append(
                     applicationContext,
                     "HEARTBEAT",
-                    "节点心跳失败(${attempt + 1}/3)：${server.name}，${error.message ?: "未知错误"}",
+                    "节点心跳失败(${attempt + 1}/3)：${server.name}，${error.message ?: tr("未知错误", "Unknown error", "Неизвестная ошибка")}",
                     error,
                 )
             }
@@ -692,7 +697,7 @@ class XrayVpnService : VpnService() {
             val latestFallback = fallbackNodeFor(latestSource, latestState.servers) ?: return
             if (latestFallback.id != fallback.id) return
 
-            val switchingMessage = "$reason，正在切换到备用节点 ${latestFallback.name}…"
+            val switchingMessage = tr("$reason，正在切换到备用节点 ${latestFallback.name}…", "$reason. Switching to fallback node ${latestFallback.name}…", "$reason. Переключение на резервный узел ${latestFallback.name}…")
             AppLogManager.append(
                 applicationContext,
                 "FALLBACK",
@@ -712,7 +717,7 @@ class XrayVpnService : VpnService() {
 
             runCatching { switchActiveServer(latestFallback.id) }
                 .onSuccess {
-                    val message = "已切换到备用节点 ${latestFallback.name}"
+                    val message = tr("已切换到备用节点 ${latestFallback.name}", "Switched to fallback node ${latestFallback.name}", "Переключено на резервный узел ${latestFallback.name}")
                     AppLogManager.append(applicationContext, TAG, message)
                     VpnRuntimeStore.updateConnection(
                         applicationContext,
@@ -727,7 +732,7 @@ class XrayVpnService : VpnService() {
                 .onFailure { error ->
                     if (error is CancellationException) return@onFailure
                     resetFailoverState()
-                    val failureMessage = error.message ?: "备用节点切换失败。"
+                    val failureMessage = error.message ?: tr("备用节点切换失败。", "Couldn't switch to the fallback node.", "Не удалось переключиться на резервный узел.")
                     AppLogManager.append(applicationContext, TAG, failureMessage, error)
                     VpnRuntimeStore.updateConnection(
                         applicationContext,
@@ -753,7 +758,7 @@ class XrayVpnService : VpnService() {
                 resetFailoverState()
                 return
             }
-            val switchingMessage = "主节点 ${latestPrimary.name} 已恢复，正在切回主节点…"
+            val switchingMessage = tr("主节点 ${latestPrimary.name} 已恢复，正在切回主节点…", "Primary node ${latestPrimary.name} is back; switching back…", "Основной узел ${latestPrimary.name} снова доступен, возврат на него…")
             AppLogManager.append(
                 applicationContext,
                 "FAILBACK",
@@ -770,7 +775,7 @@ class XrayVpnService : VpnService() {
 
             runCatching { switchActiveServer(latestPrimary.id) }
                 .onSuccess {
-                    val message = "已切回主节点 ${latestPrimary.name}"
+                    val message = tr("已切回主节点 ${latestPrimary.name}", "Switched back to primary node ${latestPrimary.name}", "Возврат на основной узел ${latestPrimary.name}")
                     AppLogManager.append(applicationContext, TAG, message)
                     resetFailoverState()
                     VpnRuntimeStore.updateConnection(
@@ -786,7 +791,7 @@ class XrayVpnService : VpnService() {
                 .onFailure { error ->
                     if (error is CancellationException) return@onFailure
                     failbackPrimarySuccessCount = 0
-                    val failureMessage = error.message ?: "主节点切回失败。"
+                    val failureMessage = error.message ?: tr("主节点切回失败。", "Couldn't switch back to the primary node.", "Не удалось вернуться на основной узел.")
                     AppLogManager.append(applicationContext, TAG, failureMessage, error)
                     VpnRuntimeStore.updateConnection(
                         applicationContext,
@@ -919,7 +924,7 @@ class XrayVpnService : VpnService() {
         // Authenticated SOCKS inbound of this run (forced to the proxy outbound);
         // LocalProxyRuntime's scoped Authenticator supplies the credentials.
         return LocalProxyRuntime.current()?.socks?.socksProxy()
-            ?: error("本地测速入口尚未就绪。")
+            ?: error(tr("本地测速入口尚未就绪。", "The local speed test entry isn't ready.", "Локальная точка проверки скорости не готова."))
     }
 
     private inline fun <T> HttpsURLConnection.useAndDisconnect(block: HttpsURLConnection.() -> T): T {

@@ -104,6 +104,7 @@ internal fun AppScaffold(
     onOpenSettings: () -> Unit,
     onOpenScan: () -> Unit,
     onOpenImport: () -> Unit = { onSelectTab(MainTab.Import) },
+    onBack: () -> Unit = {},
     content: @Composable (PaddingValues) -> Unit,
 ) {
     // Everything under the tab bar is recorded so the glass can refract it.
@@ -125,6 +126,7 @@ internal fun AppScaffold(
                         onOpenSettings = onOpenSettings,
                         onOpenScan = onOpenScan,
                         onOpenImport = onOpenImport,
+                        onBack = onBack,
                     )
                 }
             }
@@ -238,6 +240,7 @@ internal fun FixedMainTopBar(
     onOpenSettings: () -> Unit,
     onOpenScan: () -> Unit,
     onOpenImport: () -> Unit,
+    onBack: () -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -249,6 +252,7 @@ internal fun FixedMainTopBar(
             onOpenSettings = onOpenSettings,
             onOpenScan = onOpenScan,
             onOpenImport = onOpenImport,
+            onBack = onBack,
         )
     }
 }
@@ -260,6 +264,7 @@ internal fun MainTopBar(
     onOpenSettings: () -> Unit,
     onOpenScan: () -> Unit,
     onOpenImport: () -> Unit,
+    onBack: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val brandLogo = remember(context) {
@@ -281,6 +286,12 @@ internal fun MainTopBar(
             .padding(start = 20.dp, end = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // "Add nodes" used to be a tab; it is now opened from the Nodes page's
+        // "+", so it needs a way back like any other sub-page.
+        if (screen == AppScreen.Import) {
+            IconButtonCard(icon = Icons.AutoMirrored.Rounded.ArrowBack, onClick = onBack)
+            Spacer(modifier = Modifier.width(12.dp))
+        }
         if (screen == AppScreen.Home && brandLogo != null) {
             Box(
                 modifier = Modifier

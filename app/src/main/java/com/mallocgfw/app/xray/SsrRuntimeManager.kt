@@ -10,6 +10,7 @@ import java.io.File
 import java.net.Socket
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.mallocgfw.app.model.tr
 
 object SsrRuntimeManager {
     private const val TAG = "SsrRuntimeManager"
@@ -30,7 +31,7 @@ object SsrRuntimeManager {
             // Every node of this run that Xray can't run itself (see NodeCompatibility).
             val proxies = runCatching {
                 nodes.map { node ->
-                    val proxy = NodeCompatibility.mihomoProxy(node) ?: error("${node.name} 无法转换为兼容内核配置。")
+                    val proxy = NodeCompatibility.mihomoProxy(node) ?: error(tr("${node.name} 无法转换为兼容内核配置。", "${node.name} can't be converted to a compatibility-core config.", "${node.name} нельзя преобразовать в конфигурацию ядра совместимости."))
                     proxy to SsrMihomoConfigFactory.endpointFor(node, nodes, allocation)
                 }
             }.getOrElse { return@withContext Result.failure(it) }
@@ -68,7 +69,7 @@ object SsrRuntimeManager {
                     if (!started.isAlive) {
                         activeConfigKey = null
                         process = null
-                        error("mihomo sidecar 启动后立即退出。")
+                        error(tr("mihomo sidecar 启动后立即退出。", "The mihomo sidecar exited right after starting.", "mihomo sidecar завершился сразу после запуска."))
                     }
                     // Callers may dial a listener right away (the certificate fetch
                     // through a sidecar pre-proxy does), so wait until they accept.
@@ -117,17 +118,17 @@ object SsrRuntimeManager {
         requireArm64SidecarAbi()
         val binary = File(context.applicationInfo.nativeLibraryDir, NATIVE_LIBRARY_NAME)
         if (!binary.isFile) {
-            error("兼容内核需要打包 mihomo sidecar：请将可执行文件放到 jniLibs/arm64-v8a/$NATIVE_LIBRARY_NAME。")
+            error(tr("兼容内核需要打包 mihomo sidecar：请将可执行文件放到 jniLibs/arm64-v8a/$NATIVE_LIBRARY_NAME。", "The compatibility core needs the bundled mihomo sidecar: put the executable at jniLibs/arm64-v8a/$NATIVE_LIBRARY_NAME.", "Для ядра совместимости нужен mihomo sidecar: поместите исполняемый файл в jniLibs/arm64-v8a/$NATIVE_LIBRARY_NAME."))
         }
         if (!binary.canExecute()) {
-            error("mihomo sidecar 没有执行权限，请确认 native library 已解压安装。")
+            error(tr("mihomo sidecar 没有执行权限，请确认 native library 已解压安装。", "The mihomo sidecar isn't executable. Make sure native libraries are extracted on install.", "mihomo sidecar не исполняемый. Убедитесь, что нативные библиотеки распакованы при установке."))
         }
         return binary
     }
 
     private fun requireArm64SidecarAbi() {
         if ("arm64-v8a" !in Build.SUPPORTED_ABIS) {
-            error("当前设备 ABI 暂未打包 mihomo sidecar。")
+            error(tr("当前设备 ABI 暂未打包 mihomo sidecar。", "No mihomo sidecar is bundled for this device's ABI.", "Для ABI этого устройства mihomo sidecar не включён."))
         }
     }
 

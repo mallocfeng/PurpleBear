@@ -9,6 +9,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.mallocgfw.app.model.AppStateStore
+import com.mallocgfw.app.model.AppTextLanguage
 import com.mallocgfw.app.xray.AppLogManager
 import java.util.concurrent.TimeUnit
 
@@ -19,6 +20,7 @@ class DailySyncWorker(
     override suspend fun doWork(): Result {
         return runCatching {
             val state = AppStateStore.load(applicationContext)
+            AppTextLanguage.apply(state.settings.language)
             val report = BackgroundSyncManager.syncAll(applicationContext, state)
             val saved = AppStateStore.saveBackgroundSync(
                 context = applicationContext,

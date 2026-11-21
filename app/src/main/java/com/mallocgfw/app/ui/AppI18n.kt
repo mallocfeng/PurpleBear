@@ -39,6 +39,16 @@ internal fun uiText(zh: String, en: String): String {
     }
 }
 
+/** For text with variables: each language written out, nothing to look up. */
+@Composable
+internal fun uiText(zh: String, en: String, ru: String): String {
+    return when (LocalAppLanguage.current) {
+        ResolvedLanguage.Chinese -> zh
+        ResolvedLanguage.English -> en
+        ResolvedLanguage.Russian -> ru
+    }
+}
+
 @Composable
 internal fun uiText(raw: String): String {
     return translate(raw, LocalAppLanguage.current)
@@ -53,6 +63,14 @@ internal fun appText(zh: String, en: String, language: ResolvedLanguage): String
         ResolvedLanguage.Chinese -> zh
         ResolvedLanguage.English -> en
         ResolvedLanguage.Russian -> russianText[zh] ?: translateDynamic(zh, language).takeIf { it != zh } ?: en
+    }
+}
+
+internal fun appText(zh: String, en: String, ru: String, language: ResolvedLanguage): String {
+    return when (language) {
+        ResolvedLanguage.Chinese -> zh
+        ResolvedLanguage.English -> en
+        ResolvedLanguage.Russian -> ru
     }
 }
 
@@ -928,7 +946,7 @@ private val englishText = mapOf(
     "请输入规则文本。" to "Enter rule text.",
     "请输入规则 URL。" to "Enter rule URL.",
     "规则 URL 必须以 http:// 或 https:// 开头。" to "Rule URL must start with http:// or https://.",
-    "前置代理重新连接后生效；备用节点会在当前连接节点检测失败后自动阻断操作并切换。" to "Pre-proxy applies after reconnect. Fallback blocks input and switches when the active node fails checks.",
+    "前置代理重新连接后生效；备用节点会在当前连接节点检测失败后自动阻断操作并切换。" to "Pre-proxy applies after reconnecting. If the active node fails checks, the app switches to the fallback automatically.",
     "选择任意可用节点作为跳板。" to "Choose any available node as a hop.",
     "当前节点检测失败时，会自动断开并切换到备用节点。" to "When the active node fails checks, disconnect and switch to fallback.",
     "不使用前置代理" to "No pre-proxy",
@@ -1272,7 +1290,53 @@ private val englishText = mapOf(
     "退出 Tailscale 失败。" to "Couldn't log out of Tailscale.",
     "所选设备" to "selected device",
     "无加密" to "None",
+    // Translation audit (2026-11)
+    "VPN 已断开" to "VPN disconnected",
+    "VPN 已连接" to "VPN connected",
+    "系统 VPN 已建立，Xray 正在运行" to "System VPN is up and Xray is running",
+    "正在建立系统 VPN 隧道…" to "Setting up the system VPN tunnel…",
+    "VPN 权限已撤销，连接已断开" to "VPN permission was revoked; disconnected",
+    "已切换线路" to "Node switched",
+    "检测到系统 VPN 当前未连接，已同步为未连接状态。" to "The system VPN isn't connected; status updated to disconnected.",
+    "开源许可" to "Open-source licenses",
+    "查看 Xray、mihomo 与 GPL-3.0 说明。" to "View Xray, mihomo and GPL-3.0 notices.",
+    "第三方组件" to "Third-party components",
+    "PurpleBear 是开源软件；第三方组件保留各自许可证。" to "PurpleBear is open-source software; third-party components keep their own licenses.",
+    "GPL-3.0 全文已随 APK 打包在 assets/licenses/GPL-3.0.txt，并在源码仓库的 LICENSES/GPL-3.0.txt 提供。" to "The full GPL-3.0 text ships in the APK at assets/licenses/GPL-3.0.txt and in the source repository at LICENSES/GPL-3.0.txt.",
+    "下载更新" to "Download update",
+    "测速超时" to "Speed test timed out",
+    "安装包下载完成，点击“安装”继续升级。" to "APK downloaded. Tap “Install” to continue.",
+    "安装包下载失败，请稍后重试。" to "APK download failed. Try again later.",
+    "请稍后重试。" to "Try again later.",
+    "SSR 通过本地 mihomo sidecar 接入，Xray 会连接本机 SOCKS 端口。" to "SSR runs through a local mihomo sidecar; Xray connects to its local SOCKS port.",
+    "例如 aes-256-cfb" to "e.g. aes-256-cfb",
+    "例如 auth_sha1_v4" to "e.g. auth_sha1_v4",
+    "例如 tls1.2_ticket_auth" to "e.g. tls1.2_ticket_auth",
+    "例如 32:password" to "e.g. 32:password",
+    "混淆" to "Obfs",
+    "协议参数" to "Protocol param",
+    "可留空。按服务端提供值填写。" to "Optional. Use the value your provider gives.",
+    "混淆参数" to "Obfs param",
+    "可留空。常见值是伪装域名。" to "Optional. Usually a disguise domain.",
+    "允许 mihomo 为 SSR 节点启用 UDP 转发。" to "Let mihomo forward UDP for SSR nodes.",
+    "SSR 的协议与混淆参数在上方填写。" to "Set the SSR protocol and obfs parameters above.",
+    "未知格式" to "Unknown format",
+    "密码鉴权" to "Password auth",
+    "无鉴权" to "No auth",
+    "系统" to "System",
+    "导入文件" to "Imported file",
     // Keys that only had a Russian entry, so English showed Chinese (2026-11)
+    "适合 TLS / REALITY / Vision 一类节点" to "For TLS / REALITY / Vision nodes",
+    "兼容旧订阅体系，支持常见 TCP / WS / gRPC" to "Works with older subscriptions; TCP / WS / gRPC",
+    "基于 TLS 的密码节点，适合伪装成普通 HTTPS" to "Password-based over TLS, looks like regular HTTPS",
+    "适合传统机场节点，支持 2022 和 AEAD" to "Classic provider nodes; 2022 and AEAD ciphers",
+    "通过本地 mihomo sidecar 兼容 ShadowsocksR" to "ShadowsocksR via the bundled mihomo core",
+    "对接现成 Socks5 代理，通常只支持 TCP / UDP 转发" to "An existing SOCKS5 proxy; TCP / UDP forwarding",
+    "对接现成 HTTP 代理，通常只适合 TCP" to "An existing HTTP proxy; usually TCP only",
+    "内建 WireGuard 出站，适合直连隧道型节点" to "Built-in WireGuard outbound for tunnel nodes",
+    "Xray 的 hysteria 出站，底层走 QUIC 传输" to "Xray's Hysteria outbound over QUIC",
+    "手动添加节点" to "Add a node manually",
+    "逐项填写协议、地址和密钥" to "Enter protocol, address and keys yourself",
     "无" to "None",
     "兼容内核运行的协议暂不支持" to "Not available for compatibility-core protocols",
     "Flow / 附加字段" to "Flow / extra fields",
@@ -1421,7 +1485,7 @@ private val russianText = mapOf(
     "文本" to "Текст",
     "全部流量走代理，局域网除外" to "Весь трафик через прокси, кроме LAN",
     "按规则与 Geo 数据分流" to "Маршрутизация по правилам и Geo",
-    "直连地区" to "Прямой регион",
+    "直连地区" to "Регион прямого доступа",
     "Geo 数据" to "Geo-данные",
     "更新中…" to "Обновление…",
     "更新" to "Обновить",
@@ -1652,7 +1716,7 @@ private val russianText = mapOf(
     "线路信息" to "Информация об узле",
     "当前没有可查看的节点信息。" to "Нет информации об узле.",
     "前置代理节点" to "Предварительный прокси",
-    "选择可用节点作为跳板" to "Использовать другой узел как переход",
+    "选择可用节点作为跳板" to "Использовать другой узел как промежуточный",
     "未设置" to "Не задано",
     "备用节点" to "Резервный узел",
     "当前线路检测失败时自动切换" to "Переключаться при сбое текущего узла",
@@ -1850,7 +1914,7 @@ private val russianText = mapOf(
     "请输入规则 URL。" to "Введите URL правил.",
     "规则 URL 必须以 http:// 或 https:// 开头。" to "URL правил должен начинаться с http:// или https://.",
     "前置代理重新连接后生效；备用节点会在当前连接节点检测失败后自动阻断操作并切换。" to "Предварительный прокси действует после переподключения. Резервный узел переключается при сбое текущего.",
-    "选择任意可用节点作为跳板。" to "Выберите доступный узел как переход.",
+    "选择任意可用节点作为跳板。" to "Выберите любой доступный узел как промежуточный.",
     "当前节点检测失败时，会自动断开并切换到备用节点。" to "При сбое текущего узла приложение отключится и переключится на резервный.",
     "不使用前置代理" to "Без предварительного прокси",
     "不使用备用节点" to "Без резервного узла",
@@ -1887,7 +1951,7 @@ private val russianText = mapOf(
     "32 字节 WireGuard 私钥" to "32-байтный приватный ключ WireGuard",
     "对端公钥" to "Публичный ключ пира",
     "32 字节 WireGuard 公钥" to "32-байтный публичный ключ WireGuard",
-    "预共享密钥" to "Предварительный ключ",
+    "预共享密钥" to "Общий ключ (PSK)",
     "认证口令" to "Пароль авторизации",
     "例如 hy2-password" to "Например hy2-password",
     "UDP 空闲超时（秒）" to "Тайм-аут UDP (сек)",
@@ -1898,7 +1962,7 @@ private val russianText = mapOf(
     "/ 或其他路径" to "/ или другой путь",
     "可留空。HTTP 类传输常用。" to "Необязательно. Часто используется для HTTP-транспорта.",
     "可留空。只有服务端配置了 gRPC 时才需要填。" to "Необязательно. Нужно только если сервер использует gRPC.",
-    "指纹 fingerprint" to "Отпечаток fingerprint",
+    "指纹 fingerprint" to "Отпечаток (fingerprint)",
     "例如 chrome / safari" to "Например chrome / safari",
     "可留空。uTLS / REALITY 常见。" to "Необязательно. Часто для uTLS / REALITY.",
     "例如 h2,http/1.1" to "Например h2,http/1.1",
@@ -2154,7 +2218,7 @@ private val russianText = mapOf(
     "可留空。部分 REALITY 配置会要求。" to "Необязательно. Требуется некоторыми конфигурациями REALITY.",
     "收起高级选项" to "Скрыть дополнительные параметры",
     "展开高级选项" to "Показать дополнительные параметры",
-    "WireGuard 进阶" to "Расширенные WireGuard",
+    "WireGuard 进阶" to "Расширенные параметры WireGuard",
     "保存修改" to "Сохранить изменения",
     "保存到 Local" to "Сохранить в Local",
     "分享链接预填失败。" to "Не удалось заполнить из ссылки.",
@@ -2176,7 +2240,7 @@ private val russianText = mapOf(
     "文件导入失败。" to "Импорт файла не удался.",
     "旧版 Local 节点，建议谨慎编辑。" to "Старый Local-узел; редактируйте осторожно.",
     "当前 Local 节点暂时无法编辑。" to "Этот Local-узел пока нельзя редактировать.",
-    "所选节点" to "Выбранный узел",
+    "所选节点" to "выбранный узел",
     "保存节点失败，请检查必填项。" to "Не удалось сохранить узел. Проверьте обязательные поля.",
     "新建节点失败，请检查必填项。" to "Не удалось создать узел. Проверьте обязательные поля.",
     "订阅已同步，正在重新连接当前线路…" to "Подписка синхронизирована. Переподключение текущего узла...",
@@ -2280,4 +2344,50 @@ private val russianText = mapOf(
     "无" to "Нет",
     "使用中" to "Используется",
     "最快" to "Быстрейший",
+    "手动添加节点" to "Добавить узел вручную",
+    "逐项填写协议、地址和密钥" to "Укажите протокол, адрес и ключи вручную",
+    "适合 TLS / REALITY / Vision 一类节点" to "Для узлов TLS / REALITY / Vision",
+    "兼容旧订阅体系，支持常见 TCP / WS / gRPC" to "Для старых подписок; TCP / WS / gRPC",
+    "基于 TLS 的密码节点，适合伪装成普通 HTTPS" to "Пароль поверх TLS, выглядит как обычный HTTPS",
+    "适合传统机场节点，支持 2022 和 AEAD" to "Классические узлы провайдеров; шифры 2022 и AEAD",
+    "通过本地 mihomo sidecar 兼容 ShadowsocksR" to "ShadowsocksR через встроенное ядро mihomo",
+    "对接现成 Socks5 代理，通常只支持 TCP / UDP 转发" to "Готовый прокси SOCKS5; пересылка TCP / UDP",
+    "对接现成 HTTP 代理，通常只适合 TCP" to "Готовый HTTP-прокси; обычно только TCP",
+    "内建 WireGuard 出站，适合直连隧道型节点" to "Встроенный WireGuard для туннельных узлов",
+    "Xray 的 hysteria 出站，底层走 QUIC 传输" to "Исходящий Hysteria в Xray поверх QUIC",
+    // Translation audit (2026-11)
+    "VPN 已断开" to "VPN отключён",
+    "VPN 已连接" to "VPN подключён",
+    "系统 VPN 已建立，Xray 正在运行" to "Системный VPN установлен, Xray работает",
+    "正在建立系统 VPN 隧道…" to "Создание системного VPN-туннеля…",
+    "VPN 权限已撤销，连接已断开" to "Разрешение VPN отозвано, соединение разорвано",
+    "已切换线路" to "Узел переключён",
+    "检测到系统 VPN 当前未连接，已同步为未连接状态。" to "Системный VPN не подключён, статус обновлён на «отключено».",
+    "开源许可" to "Лицензии открытого ПО",
+    "查看 Xray、mihomo 与 GPL-3.0 说明。" to "Сведения о Xray, mihomo и GPL-3.0.",
+    "第三方组件" to "Сторонние компоненты",
+    "PurpleBear 是开源软件；第三方组件保留各自许可证。" to "PurpleBear — программа с открытым исходным кодом; сторонние компоненты распространяются под своими лицензиями.",
+    "GPL-3.0 全文已随 APK 打包在 assets/licenses/GPL-3.0.txt，并在源码仓库的 LICENSES/GPL-3.0.txt 提供。" to "Полный текст GPL-3.0 входит в APK (assets/licenses/GPL-3.0.txt) и есть в репозитории исходного кода (LICENSES/GPL-3.0.txt).",
+    "下载更新" to "Скачать обновление",
+    "测速超时" to "Тайм-аут проверки",
+    "安装包下载完成，点击“安装”继续升级。" to "APK загружен. Нажмите «Установить», чтобы продолжить.",
+    "安装包下载失败，请稍后重试。" to "Не удалось загрузить APK. Повторите попытку позже.",
+    "请稍后重试。" to "Повторите попытку позже.",
+    "SSR 通过本地 mihomo sidecar 接入，Xray 会连接本机 SOCKS 端口。" to "SSR работает через локальный mihomo sidecar; Xray подключается к его локальному порту SOCKS.",
+    "例如 aes-256-cfb" to "напр. aes-256-cfb",
+    "例如 auth_sha1_v4" to "напр. auth_sha1_v4",
+    "例如 tls1.2_ticket_auth" to "напр. tls1.2_ticket_auth",
+    "例如 32:password" to "напр. 32:password",
+    "混淆" to "Обфускация",
+    "协议参数" to "Параметр протокола",
+    "可留空。按服务端提供值填写。" to "Необязательно. Укажите значение от провайдера.",
+    "混淆参数" to "Параметр обфускации",
+    "可留空。常见值是伪装域名。" to "Необязательно. Обычно это домен для маскировки.",
+    "允许 mihomo 为 SSR 节点启用 UDP 转发。" to "Разрешить mihomo пересылать UDP для узлов SSR.",
+    "SSR 的协议与混淆参数在上方填写。" to "Протокол и обфускация SSR задаются выше.",
+    "未知格式" to "Неизвестный формат",
+    "密码鉴权" to "Аутентификация по паролю",
+    "无鉴权" to "Без аутентификации",
+    "系统" to "Системные",
+    "导入文件" to "Импортированный файл",
 )

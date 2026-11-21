@@ -62,6 +62,7 @@ import com.mallocgfw.app.ui.theme.SurfaceLow
 import com.mallocgfw.app.ui.theme.TextPrimary
 import com.mallocgfw.app.ui.theme.TextSecondary
 import java.util.concurrent.Executors
+import com.mallocgfw.app.model.tr
 
 @androidx.annotation.OptIn(markerClass = [ExperimentalGetImage::class])
 @Composable
@@ -126,7 +127,7 @@ internal fun QrScannerScreen(
                         detections = detections,
                     )
                     selectedGalleryIndex = 0
-                    scanStatusMessage = "已识别 ${detections.size} 个二维码，请点选一个继续导入。"
+                    scanStatusMessage = tr("已识别 ${detections.size} 个二维码，请点选一个继续导入。", "Found ${detections.size} QR codes. Tap one to continue importing.", "Найдено QR-кодов: ${detections.size}. Нажмите на один, чтобы продолжить импорт.")
                     scanStatusIsError = false
                 }
             },
@@ -264,7 +265,7 @@ internal fun QrScannerScreen(
                     Text(
                         text = uiText(
                             "已识别 ${currentGallerySelection.detections.size} 个二维码，请选择一个导入。",
-                            "Found ${currentGallerySelection.detections.size} QR codes. Choose one to import.",
+                            "Found ${currentGallerySelection.detections.size} QR codes. Choose one to import.", "Найдено QR-кодов: ${currentGallerySelection.detections.size}. Выберите один для импорта.",
                         ),
                         color = TextPrimary,
                         fontWeight = FontWeight.Bold,
@@ -284,7 +285,7 @@ internal fun QrScannerScreen(
                     ) {
                         currentGallerySelection.detections.forEachIndexed { index, _ ->
                             ModeChip(
-                                text = "二维码 ${index + 1}",
+                                text = uiText("二维码 ${index + 1}", "QR code ${index + 1}", "QR-код ${index + 1}"),
                                 selected = selectedGalleryIndex == index,
                                 onClick = {
                                     selectedGalleryIndex = index

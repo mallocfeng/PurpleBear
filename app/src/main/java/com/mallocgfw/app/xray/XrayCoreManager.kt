@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import libXray.LibXray
 import org.json.JSONObject
+import com.mallocgfw.app.model.tr
 
 enum class XrayCoreStatus {
     Idle,
@@ -71,13 +72,13 @@ object XrayCoreManager {
         // would `stopInternal()` the active VPN's core mid-tunnel.
         if (XrayVpnService.isRunning()) {
             return Result.failure(
-                IllegalStateException("当前已连接 VPN，请先断开后再启动独立 Xray 实例。"),
+                IllegalStateException(tr("当前已连接 VPN，请先断开后再启动独立 Xray 实例。", "VPN is connected. Disconnect before starting a separate Xray instance.", "VPN подключён. Отключитесь, прежде чем запускать отдельный экземпляр Xray.")),
             )
         }
         return startWithConfig(
             context = context,
             server = server,
-            message = "正在启动 Xray 内核…",
+            message = tr("正在启动 Xray 内核…", "Starting the Xray core…", "Запуск ядра Xray…"),
             tunFd = null,
             additionalOutbounds = additionalOutbounds,
         ) { localProxy ->
@@ -111,7 +112,7 @@ object XrayCoreManager {
         return startWithConfig(
             context = context,
             server = server,
-            message = "正在建立系统 VPN 隧道…",
+            message = tr("正在建立系统 VPN 隧道…", "Setting up the system VPN tunnel…", "Создание системного VPN-туннеля…"),
             tunFd = tunFd,
             additionalOutbounds = additionalOutbounds,
         ) { localProxy ->
@@ -242,7 +243,7 @@ object XrayCoreManager {
                     )
                 }
                 if (!response.success) {
-                    val failureMessage = response.error ?: "Xray 启动失败。"
+                    val failureMessage = response.error ?: tr("Xray 启动失败。", "Xray failed to start.", "Не удалось запустить Xray.")
                     Log.e(TAG, "Unable to start Xray: $failureMessage")
                     SsrRuntimeManager.stopNow()
                     LocalProxyRuntime.clear()
@@ -262,7 +263,7 @@ object XrayCoreManager {
                 // resource refreshes while PurpleBear itself is excluded from the VPN.
                 val isRunning = waitForRunningState()
                 if (!isRunning) {
-                    val failureMessage = "Xray 启动后未进入运行状态，本地 HTTP 代理不可用。"
+                    val failureMessage = tr("Xray 启动后未进入运行状态，本地 HTTP 代理不可用。", "Xray didn't reach the running state after starting; the local HTTP proxy is unavailable.", "После запуска Xray не перешёл в рабочее состояние, локальный HTTP-прокси недоступен.")
                     Log.e(TAG, failureMessage)
                     synchronized(coreLock) {
                         stopInternal()
@@ -284,9 +285,9 @@ object XrayCoreManager {
                     abi = prepared.assetAbi,
                     version = xrayVersion(),
                     message = if (tunFd == null) {
-                        "Xray 已启动，本地 SOCKS ${localProxy.socks.port} / HTTP ${localProxy.http.port}（需认证）"
+                        tr("Xray 已启动，本地 SOCKS ${localProxy.socks.port} / HTTP ${localProxy.http.port}（需认证）", "Xray started, local SOCKS ${localProxy.socks.port} / HTTP ${localProxy.http.port} (auth required)", "Xray запущен, локальный SOCKS ${localProxy.socks.port} / HTTP ${localProxy.http.port} (с аутентификацией)")
                     } else {
-                        "系统 VPN 已建立，Xray 正在运行"
+                        tr("系统 VPN 已建立，Xray 正在运行", "System VPN is up and Xray is running", "Системный VPN установлен, Xray работает")
                     },
                     localSocksPort = localProxy.socks.port,
                     localHttpPort = localProxy.http.port,
@@ -302,7 +303,7 @@ object XrayCoreManager {
                 LocalProxyRuntime.clear()
                 _snapshot.value = _snapshot.value.copy(
                     status = XrayCoreStatus.Failed,
-                    message = error.message ?: "Xray 启动失败。",
+                    message = error.message ?: tr("Xray 启动失败。", "Xray failed to start.", "Не удалось запустить Xray."),
                     activeServerName = null,
                 )
                 Result.failure(error)
@@ -324,7 +325,7 @@ object XrayCoreManager {
         LocalProxyRuntime.clear()
         _snapshot.value = _snapshot.value.copy(
             status = if (_snapshot.value.version == null) XrayCoreStatus.Idle else XrayCoreStatus.Ready,
-            message = "Xray 已停止",
+            message = tr("Xray 已停止", "Xray stopped", "Xray остановлен"),
             activeServerName = null,
         )
     }
@@ -338,7 +339,7 @@ object XrayCoreManager {
     }
 
     private suspend fun prepareRuntime(context: Context): PreparedRuntime {
-        _snapshot.value = _snapshot.value.copy(status = XrayCoreStatus.Preparing, message = "正在准备官方 Xray 资产…")
+        _snapshot.value = _snapshot.value.copy(status = XrayCoreStatus.Preparing, message = tr("正在准备官方 Xray 资产…", "Preparing the official Xray assets…", "Подготовка официальных ресурсов Xray…"))
         val assetAbi = resolveAssetAbi()
         val runtimeDir = File(context.filesDir, "xray-runtime/$assetAbi").apply { mkdirs() }
         GeoDataManager.installIntoRuntime(
@@ -362,7 +363,7 @@ object XrayCoreManager {
                 "arm64-v8a" -> "arm64-v8a"
                 else -> null
             }
-        } ?: error("当前设备 ABI 暂未打包官方 Xray 资产。")
+        } ?: error(tr("当前设备 ABI 暂未打包官方 Xray 资产。", "No official Xray assets are bundled for this device's ABI.", "Для ABI этого устройства официальные ресурсы Xray не включены."))
     }
 
     private suspend fun waitForRunningState(
@@ -447,7 +448,7 @@ object XrayCoreManager {
                 error = json.optString("error").takeIf { it.isNotBlank() },
             )
         }.getOrElse { error ->
-            LibXrayCallResponse(success = false, error = error.message ?: "libXray 响应解析失败")
+            LibXrayCallResponse(success = false, error = error.message ?: tr("libXray 响应解析失败", "Couldn't parse the libXray response", "Не удалось разобрать ответ libXray"))
         }
     }
 

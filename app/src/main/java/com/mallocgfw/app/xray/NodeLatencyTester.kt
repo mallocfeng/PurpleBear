@@ -15,6 +15,7 @@ import javax.net.ssl.HttpsURLConnection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
+import com.mallocgfw.app.model.tr
 
 object NodeLatencyTester {
     private const val CONNECT_TIMEOUT_MS = 5_000
@@ -61,7 +62,7 @@ object NodeLatencyTester {
     fun supportsHeartbeatFallback(node: ServerNode): Boolean = !requiresUdpLikeProbe(node)
 
     fun heartbeatFallbackUnsupportedMessage(node: ServerNode): String {
-        return "当前 ${node.protocol}/${node.transport} 节点无法在连接中后台做可靠心跳，因此不支持自动切备用节点。"
+        return tr("当前 ${node.protocol}/${node.transport} 节点无法在连接中后台做可靠心跳，因此不支持自动切备用节点。", "${node.protocol}/${node.transport} nodes can't be checked reliably in the background while connected, so automatic fallback isn't supported.", "Узлы ${node.protocol}/${node.transport} нельзя надёжно проверять в фоне во время подключения, поэтому автоматическое переключение на резервный узел не поддерживается.")
     }
 
     private fun requiresUdpLikeProbe(node: ServerNode): Boolean {
@@ -75,7 +76,7 @@ object NodeLatencyTester {
 
     private suspend fun measureViaTemporaryXray(context: Context, node: ServerNode): Int {
         if (VpnServiceController.isActuallyRunning(context)) {
-            error("当前已连接 VPN，这类节点请先断开当前连接后再检测。")
+            error(tr("当前已连接 VPN，这类节点请先断开当前连接后再检测。", "VPN is connected. Disconnect first to test this kind of node.", "VPN подключён. Чтобы проверить такой узел, сначала отключитесь."))
         }
         val startedAt = System.nanoTime()
         XrayCoreManager.start(context, node).getOrElse { throw it }
@@ -83,7 +84,7 @@ object NodeLatencyTester {
             // Authenticated SOCKS inbound of the temporary core; the JDK SOCKS
             // client gets credentials from LocalProxyRuntime's scoped Authenticator.
             val proxy = LocalProxyRuntime.current()?.socks?.socksProxy()
-                ?: error("临时 Xray 的本地代理未就绪。")
+                ?: error(tr("临时 Xray 的本地代理未就绪。", "The temporary Xray local proxy isn't ready.", "Локальный прокси временного Xray не готов."))
             val connection = (URL(PROXY_PROBE_URL).openConnection(proxy) as HttpsURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = CONNECT_TIMEOUT_MS
@@ -93,7 +94,7 @@ object NodeLatencyTester {
             try {
                 val responseCode = connection.responseCode
                 if (responseCode !in 200..399) {
-                    error("代理探测返回异常状态码：$responseCode")
+                    error(tr("代理探测返回异常状态码：$responseCode", "The proxy probe returned an unexpected status code: $responseCode", "Проверка прокси вернула неожиданный код: $responseCode"))
                 }
             } finally {
                 connection.disconnect()
@@ -108,7 +109,7 @@ object NodeLatencyTester {
         val startedAt = System.nanoTime()
         val host = node.address.trim().trim('[', ']')
         val port = node.port.trim().toIntOrNull()?.takeIf { it in 1..65535 }
-            ?: error("节点端口无效：${node.port}")
+            ?: error(tr("节点端口无效：${node.port}", "Invalid node port: ${node.port}", "Неверный порт узла: ${node.port}"))
         val vpnRunning = VpnServiceController.isActuallyRunning(context)
         val directNetwork = if (vpnRunning) findDirectNetwork(context) else null
         val targets = resolveTargets(context, host, directNetwork, vpnRunning)
@@ -126,7 +127,7 @@ object NodeLatencyTester {
                 } else {
                     Socket().apply {
                         if (vpnRunning && !VpnServiceController.protectSocket(this)) {
-                            error("无法绕过当前 VPN 进行节点检测。")
+                            error(tr("无法绕过当前 VPN 进行节点检测。", "Couldn't bypass the current VPN to test the node.", "Не удалось обойти текущий VPN для проверки узла."))
                         }
                     }
                 }
@@ -145,7 +146,7 @@ object NodeLatencyTester {
                 lastError = it
             }
         }
-        throw (lastError ?: IllegalStateException("无法建立到节点的 TCP 连接。"))
+        throw (lastError ?: IllegalStateException(tr("无法建立到节点的 TCP 连接。", "Couldn't open a TCP connection to the node.", "Не удалось установить TCP-соединение с узлом.")))
     }
 
     private suspend fun findDirectNetwork(context: Context): Network? {
@@ -163,7 +164,7 @@ object NodeLatencyTester {
             return listOf(InetAddress.getByName(address))
         }
         if (vpnRunning && directNetwork == null) {
-            error("当前未找到可用于直连的底层网络，无法在 VPN 开启时直连解析节点域名。")
+            error(tr("当前未找到可用于直连的底层网络，无法在 VPN 开启时直连解析节点域名。", "No underlying network for direct connections, so the node domain can't be resolved while VPN is on.", "Нет базовой сети для прямого подключения: при включённом VPN домен узла разрешить нельзя."))
         }
         val resolved = runCatching {
             (directNetwork?.getAllByName(address) ?: InetAddress.getAllByName(address)).toList()
@@ -172,7 +173,7 @@ object NodeLatencyTester {
             Log.w(TAG, "Direct network DNS lookup failed for $address, retrying with process binding", error)
             resolveByTemporarilyBindingProcess(context, directNetwork, address)
         }.getOrThrow()
-        if (resolved.isEmpty()) error("无法解析节点域名。")
+        if (resolved.isEmpty()) error(tr("无法解析节点域名。", "Couldn't resolve the node domain.", "Не удалось разрешить домен узла."))
         return resolved.sortedByDescending { it is Inet4Address }
     }
 
@@ -182,13 +183,13 @@ object NodeLatencyTester {
         address: String,
     ): List<InetAddress> {
         val connectivityManager = context.getSystemService(ConnectivityManager::class.java)
-            ?: error("无法访问系统网络服务。")
+            ?: error(tr("无法访问系统网络服务。", "Couldn't access the system network service.", "Нет доступа к сетевой службе системы."))
         synchronized(processBindingLock) {
             val originalNetwork = connectivityManager.boundNetworkForProcess
             val changed = originalNetwork != network
             try {
                 if (changed && !connectivityManager.bindProcessToNetwork(network)) {
-                    error("无法切换到直连网络进行域名解析。")
+                    error(tr("无法切换到直连网络进行域名解析。", "Couldn't switch to the direct network to resolve the domain.", "Не удалось переключиться на прямую сеть для разрешения домена."))
                 }
                 return InetAddress.getAllByName(address).toList()
             } finally {

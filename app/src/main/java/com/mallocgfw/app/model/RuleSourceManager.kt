@@ -154,7 +154,7 @@ object RuleSourceManager {
                 if (it.skippedRules > 0) {
                     RuleValidationResult(
                         valid = false,
-                        message = "有 ${it.skippedRules} 条规则无法识别，请修正后再保存。",
+                        message = tr("有 ${it.skippedRules} 条规则无法识别，请修正后再保存。", "${it.skippedRules} rules couldn't be recognized. Fix them before saving.", "Не распознано правил: ${it.skippedRules}. Исправьте их перед сохранением."),
                         errorLineNumbers = it.skippedLineNumbers.toSet(),
                     )
                 } else {
@@ -164,7 +164,7 @@ object RuleSourceManager {
             onFailure = { error ->
                 RuleValidationResult(
                     valid = false,
-                    message = error.message ?: "规则格式有错误，请修正后再保存。",
+                    message = error.message ?: tr("规则格式有错误，请修正后再保存。", "The rules have format errors. Fix them before saving.", "В правилах есть ошибки формата. Исправьте их перед сохранением."),
                     errorLineNumbers = (error as? RuleParseException)?.lineNumbers.orEmpty(),
                 )
             },
@@ -268,7 +268,7 @@ object RuleSourceManager {
             url = url,
             connectTimeoutMs = CONNECT_TIMEOUT_MS,
             readTimeoutMs = READ_TIMEOUT_MS,
-            label = "规则源",
+            label = tr("规则源", "Rule source", "Источник правил"),
         )
     }
 
@@ -290,12 +290,12 @@ object RuleSourceManager {
             .toList()
 
         if (lines.isEmpty()) {
-            throw RuleParseException("规则文件为空。")
+            throw RuleParseException(tr("规则文件为空。", "The rule file is empty.", "Файл правил пуст."))
         }
 
         lines.firstOrNull { it.text.startsWith("payload:", ignoreCase = true) || it.text.startsWith("rules:", ignoreCase = true) }?.let {
             throw RuleParseException(
-                message = "当前只支持 Shadowrocket / Surge 文本规则，不支持 YAML。",
+                message = tr("当前只支持 Shadowrocket / Surge 文本规则，不支持 YAML。", "Only Shadowrocket / Surge text rules are supported, not YAML.", "Поддерживаются только текстовые правила Shadowrocket / Surge, YAML не поддерживается."),
                 lineNumbers = setOf(it.lineNumber),
             )
         }
@@ -447,7 +447,7 @@ object RuleSourceManager {
         }
         val convertedRules = convertedRuleEntries
         if (convertedRules == 0) {
-            throw RuleParseException("未识别到可转换的 Shadowrocket / Surge 规则。")
+            throw RuleParseException(tr("未识别到可转换的 Shadowrocket / Surge 规则。", "No convertible Shadowrocket / Surge rules were found.", "Не найдено правил Shadowrocket / Surge, которые можно преобразовать."))
         }
 
         return CompiledRuleSet(

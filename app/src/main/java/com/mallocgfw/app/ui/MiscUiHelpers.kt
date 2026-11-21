@@ -57,6 +57,7 @@ import com.mallocgfw.app.ui.theme.TextPrimary
 import com.mallocgfw.app.ui.theme.TextSecondary
 import com.mallocgfw.app.xray.XrayCoreStatus
 import java.util.Locale
+import com.mallocgfw.app.model.tr
 
 @Composable
 internal fun ActionListRow(
@@ -147,11 +148,11 @@ internal fun AppSettings.dnsSummary(): String {
 
 internal fun AppSettings.heartbeatSummary(): String {
     val minutes = heartbeatIntervalMinutes.takeIf { it in HeartbeatIntervalOptionsMinutes } ?: 5
-    return "每 $minutes 分钟检测一次，连续 3 次失败切换备用节点。"
+    return tr("每 $minutes 分钟检测一次，连续 3 次失败切换备用节点。", "Checks every $minutes min and switches to the fallback after 3 failures in a row.", "Проверка каждые $minutes мин; после 3 неудач подряд включается резервный узел.")
 }
 
 internal fun AppSettings.vpnMtuSummary(): String {
-    return "当前 ${normalizedAppVpnMtu(vpnMtu)}，更低值可改善移动网、PPPoE 和 QUIC 节点稳定性。"
+    return tr("当前 ${normalizedAppVpnMtu(vpnMtu)}，更低值可改善移动网、PPPoE 和 QUIC 节点稳定性。", "Currently ${normalizedAppVpnMtu(vpnMtu)}. Lower values can make mobile data, PPPoE and QUIC nodes more stable.", "Сейчас ${normalizedAppVpnMtu(vpnMtu)}. Меньшее значение может повысить стабильность в мобильной сети, PPPoE и для узлов QUIC.")
 }
 
 @ExperimentalGetImage

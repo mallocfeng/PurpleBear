@@ -5,6 +5,7 @@ import android.os.Build
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.mallocgfw.app.model.tr
 
 enum class GeoDataStatus {
     Idle,
@@ -103,7 +104,7 @@ object GeoDataManager {
             url = url,
             connectTimeoutMs = CONNECT_TIMEOUT_MS,
             readTimeoutMs = READ_TIMEOUT_MS,
-            label = "Geo 资源",
+            label = tr("Geo 资源", "Geo data", "Данные Geo"),
         )
     }
 

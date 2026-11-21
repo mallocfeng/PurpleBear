@@ -17,6 +17,7 @@ import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import com.mallocgfw.app.model.tr
 
 enum class AppUpdateStatus {
     Idle,
@@ -134,7 +135,7 @@ object AppUpdateManager {
             val connection = openMetadataConnection(LATEST_RELEASE_URL)
             try {
                 val code = connection.responseCode
-                if (code !in 200..299) error("GitHub Release 返回 HTTP $code。")
+                if (code !in 200..299) error(tr("GitHub Release 返回 HTTP $code。", "GitHub Release returned HTTP $code.", "GitHub Release вернул HTTP $code."))
                 connection.inputStream.bufferedReader().use { it.readText() }
             } finally {
                 connection.disconnect()
@@ -164,11 +165,11 @@ object AppUpdateManager {
             }
             partial.delete()
 
-            if (info.apkDownloadUrl.isBlank()) error("GitHub Release 没有 APK 下载链接。")
+            if (info.apkDownloadUrl.isBlank()) error(tr("GitHub Release 没有 APK 下载链接。", "The GitHub release has no APK download link.", "В релизе GitHub нет ссылки на APK."))
             val connection = openDownloadConnection(info.apkDownloadUrl)
             try {
                 val code = connection.responseCode
-                if (code !in 200..299) error("安装包下载返回 HTTP $code。")
+                if (code !in 200..299) error(tr("安装包下载返回 HTTP $code。", "APK download returned HTTP $code.", "Загрузка APK вернула HTTP $code."))
                 val expectedBytes = info.apkSizeBytes.takeIf { it > 0L }
                     ?: connection.contentLengthLong.takeIf { it > 0L }
                     ?: 0L
@@ -201,7 +202,7 @@ object AppUpdateManager {
                     error("安装包校验失败，请重新下载。")
                 }
                 if (!isPackageForCurrentApp(context, partial)) {
-                    error("下载的安装包不属于当前应用，请检查 GitHub Release 资源。")
+                    error(tr("下载的安装包不属于当前应用，请检查 GitHub Release 资源。", "The downloaded APK is not for this app. Check the GitHub release files.", "Загруженный APK не относится к этому приложению. Проверьте файлы релиза на GitHub."))
                 }
                 if (target.exists()) target.delete()
                 if (!partial.renameTo(target)) {

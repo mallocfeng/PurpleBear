@@ -364,7 +364,7 @@ object ManualNodeFactory {
         if (values.isEmpty()) return null
         values.forEach { value ->
             require(value.length == 64 && value.all { it in '0'..'9' || it in 'a'..'f' }) {
-                "证书指纹需要是 64 位十六进制 SHA-256，多个值用逗号分隔。"
+                tr("证书指纹需要是 64 位十六进制 SHA-256，多个值用逗号分隔。", "Certificate fingerprints must be 64-character hex SHA-256 values, separated by commas.", "Отпечатки сертификата должны быть SHA-256 из 64 шестнадцатеричных символов, через запятую.")
             }
         }
         return values.joinToString(",")
@@ -384,7 +384,7 @@ object ManualNodeFactory {
                 buildOutboundConfig(
                     draft = draft,
                     address = draft.address.trim(),
-                    port = parsePort(draft.port, field = "端口"),
+                    port = parsePort(draft.port, field = tr("端口", "Port", "Порт")),
                 )
             }.getOrNull()
         }
@@ -397,7 +397,7 @@ object ManualNodeFactory {
             buildOutboundConfig(
                 draft = draft,
                 address = draft.address.trim(),
-                port = parsePort(draft.port, field = "端口"),
+                port = parsePort(draft.port, field = tr("端口", "Port", "Порт")),
             )
         }.getOrNull()
     }
@@ -427,8 +427,8 @@ object ManualNodeFactory {
             "${draft.protocol.displayName} ${draft.address.trim().ifBlank { "节点" }}"
         }
         val address = draft.address.trim()
-        val port = parsePort(draft.port, field = "端口")
-        require(address.isNotBlank()) { "请填写服务端地址。" }
+        val port = parsePort(draft.port, field = tr("端口", "Port", "Порт"))
+        require(address.isNotBlank()) { tr("请填写服务端地址。", "Enter the server address.", "Укажите адрес сервера.") }
 
         val outboundJson = buildOutboundConfig(draft, address, port)
 
@@ -474,7 +474,7 @@ object ManualNodeFactory {
             buildSsrEndpoint(
                 draft = draft.copy(nodeName = server.name),
                 address = server.address,
-                port = parsePort(server.port, field = "端口"),
+                port = parsePort(server.port, field = tr("端口", "Port", "Порт")),
                 name = server.name,
             )
         }.getOrNull()
@@ -500,23 +500,23 @@ object ManualNodeFactory {
 
     fun validateDraft(draft: LocalNodeDraft) {
         val address = draft.address.trim()
-        require(address.isNotBlank()) { "请填写服务端地址。" }
-        parsePort(draft.port, field = "端口")
+        require(address.isNotBlank()) { tr("请填写服务端地址。", "Enter the server address.", "Укажите адрес сервера.") }
+        parsePort(draft.port, field = tr("端口", "Port", "Порт"))
 
         when (draft.protocol) {
             LocalNodeProtocol.VLESS,
             LocalNodeProtocol.VMESS,
             -> validateUuid(draft.userId)
 
-            LocalNodeProtocol.TROJAN -> require(draft.password.trim().isNotBlank()) { "Trojan 需要填写密码。" }
+            LocalNodeProtocol.TROJAN -> require(draft.password.trim().isNotBlank()) { tr("Trojan 需要填写密码。", "Trojan needs a password.", "Для Trojan нужен пароль.") }
             LocalNodeProtocol.SHADOWSOCKS -> {
-                require(draft.password.trim().isNotBlank()) { "Shadowsocks 需要填写密码或密钥。" }
+                require(draft.password.trim().isNotBlank()) { tr("Shadowsocks 需要填写密码或密钥。", "Shadowsocks needs a password or key.", "Для Shadowsocks нужен пароль или ключ.") }
             }
             LocalNodeProtocol.SHADOWSOCKSR -> {
-                require(draft.password.trim().isNotBlank()) { "SSR 需要填写密码。" }
-                require(draft.ssrMethod.trim().isNotBlank()) { "SSR 需要填写加密方法。" }
-                require(draft.ssrProtocol.trim().isNotBlank()) { "SSR 需要填写协议参数。" }
-                require(draft.ssrObfs.trim().isNotBlank()) { "SSR 需要填写混淆参数。" }
+                require(draft.password.trim().isNotBlank()) { tr("SSR 需要填写密码。", "SSR needs a password.", "Для SSR нужен пароль.") }
+                require(draft.ssrMethod.trim().isNotBlank()) { tr("SSR 需要填写加密方法。", "SSR needs an encryption method.", "Для SSR нужен метод шифрования.") }
+                require(draft.ssrProtocol.trim().isNotBlank()) { tr("SSR 需要填写协议参数。", "SSR needs a protocol.", "Для SSR нужен протокол.") }
+                require(draft.ssrObfs.trim().isNotBlank()) { tr("SSR 需要填写混淆参数。", "SSR needs an obfs method.", "Для SSR нужен метод обфускации (obfs).") }
             }
 
             LocalNodeProtocol.SOCKS,
@@ -525,7 +525,7 @@ object ManualNodeFactory {
                 val username = draft.username.trim()
                 val password = draft.password.trim()
                 require((username.isBlank() && password.isBlank()) || (username.isNotBlank() && password.isNotBlank())) {
-                    "HTTP / SOCKS 认证需要用户名和密码一起填写，或者都留空。"
+                    tr("HTTP / SOCKS 认证需要用户名和密码一起填写，或者都留空。", "HTTP / SOCKS authentication needs both a username and a password, or leave both empty.", "Для аутентификации HTTP / SOCKS укажите и имя пользователя, и пароль или оставьте оба поля пустыми.")
                 }
                 if (draft.protocol == LocalNodeProtocol.HTTP) {
                     parseHttpHeaders(draft.httpHeaders)
@@ -533,31 +533,31 @@ object ManualNodeFactory {
             }
 
             LocalNodeProtocol.WIREGUARD -> {
-                require(draft.wireGuardSecretKey.trim().isNotBlank()) { "WireGuard 需要填写客户端私钥。" }
-                require(draft.wireGuardPublicKey.trim().isNotBlank()) { "WireGuard 需要填写对端公钥。" }
-                parsePort(draft.port, field = "对端端口")
-                draft.wireGuardLocalAddresses.trim().takeIf { it.isNotBlank() }?.let { validateIpList(withHostPrefixes(it), requireCidr = true, field = "本地地址列表") }
+                require(draft.wireGuardSecretKey.trim().isNotBlank()) { tr("WireGuard 需要填写客户端私钥。", "WireGuard needs the client private key.", "Для WireGuard нужен закрытый ключ клиента.") }
+                require(draft.wireGuardPublicKey.trim().isNotBlank()) { tr("WireGuard 需要填写对端公钥。", "WireGuard needs the peer public key.", "Для WireGuard нужен открытый ключ пира.") }
+                parsePort(draft.port, field = tr("对端端口", "Peer port", "Порт пира"))
+                draft.wireGuardLocalAddresses.trim().takeIf { it.isNotBlank() }?.let { validateIpList(withHostPrefixes(it), requireCidr = true, field = tr("本地地址列表", "Local addresses", "Локальные адреса")) }
                 draft.wireGuardAllowedIps.trim().takeIf { it.isNotBlank() }?.let { validateIpList(it, requireCidr = true, field = "Allowed IPs") }
                 draft.wireGuardReserved.trim().takeIf { it.isNotBlank() }?.let { parseReserved(it) }
                 draft.wireGuardMtu.trim().takeIf { it.isNotBlank() }?.let { value ->
                     value.toIntOrNull()?.takeIf { it in 576..9200 }
-                        ?: error("WireGuard MTU 需要是 576-9200 之间的数字。")
+                        ?: error(tr("WireGuard MTU 需要是 576-9200 之间的数字。", "WireGuard MTU must be a number from 576 to 9200.", "MTU WireGuard должен быть числом от 576 до 9200."))
                 }
                 if (draft.wireGuardWorkers.isNotBlank()) {
                     draft.wireGuardWorkers.trim().toIntOrNull()?.takeIf { it > 0 }
-                        ?: error("WireGuard workers 需要是正整数。")
+                        ?: error(tr("WireGuard workers 需要是正整数。", "WireGuard workers must be a positive integer.", "WireGuard workers должно быть положительным целым числом."))
                 }
                 if (draft.wireGuardKeepAlive.isNotBlank()) {
                     draft.wireGuardKeepAlive.trim().toIntOrNull()?.takeIf { it >= 0 }
-                        ?: error("WireGuard keepAlive 需要是 0 或正整数。")
+                        ?: error(tr("WireGuard keepAlive 需要是 0 或正整数。", "WireGuard keepAlive must be 0 or a positive integer.", "WireGuard keepAlive должно быть 0 или положительным целым числом."))
                 }
             }
 
             LocalNodeProtocol.HYSTERIA -> {
-                require(draft.hysteriaAuth.trim().isNotBlank()) { "Hysteria2 需要填写认证口令。" }
-                require(draft.serverName.trim().isNotBlank()) { "Hysteria2 需要填写 TLS Server Name / SNI。" }
+                require(draft.hysteriaAuth.trim().isNotBlank()) { tr("Hysteria2 需要填写认证口令。", "Hysteria2 needs an auth password.", "Для Hysteria2 нужен пароль аутентификации.") }
+                require(draft.serverName.trim().isNotBlank()) { tr("Hysteria2 需要填写 TLS Server Name / SNI。", "Hysteria2 needs a TLS Server Name / SNI.", "Для Hysteria2 нужен TLS Server Name / SNI.") }
                 draft.hysteriaUdpIdleTimeout.trim().takeIf { it.isNotBlank() }?.toIntOrNull()?.takeIf { it > 0 }
-                    ?: error("UDP 空闲超时需要是正整数。")
+                    ?: error(tr("UDP 空闲超时需要是正整数。", "UDP idle timeout must be a positive integer.", "Тайм-аут простоя UDP должен быть положительным целым числом."))
             }
         }
 
@@ -566,32 +566,32 @@ object ManualNodeFactory {
                 draft.alpn.trim().takeIf { it.isNotBlank() }?.let { validateCsvValues(it, "ALPN") }
             }
             if (draft.security == LocalNodeSecurity.REALITY) {
-                require(draft.serverName.trim().isNotBlank()) { "REALITY 需要填写 Server Name / SNI。" }
-                require(draft.realityPublicKey.trim().isNotBlank()) { "REALITY 需要填写公钥。" }
+                require(draft.serverName.trim().isNotBlank()) { tr("REALITY 需要填写 Server Name / SNI。", "REALITY needs a Server Name / SNI.", "Для REALITY нужен Server Name / SNI.") }
+                require(draft.realityPublicKey.trim().isNotBlank()) { tr("REALITY 需要填写公钥。", "REALITY needs a public key.", "Для REALITY нужен открытый ключ.") }
             }
         }
     }
 
     fun exampleName(protocol: LocalNodeProtocol): String {
         return when (protocol) {
-            LocalNodeProtocol.VLESS -> "例如 Netflix 香港 / 自建 VLESS"
-            LocalNodeProtocol.VMESS -> "例如 VMess 日本 Tokyo"
-            LocalNodeProtocol.TROJAN -> "例如 Trojan 备用线"
-            LocalNodeProtocol.SHADOWSOCKS -> "例如 SS 新加坡低延迟"
-            LocalNodeProtocol.SHADOWSOCKSR -> "例如 SSR 香港兼容线"
-            LocalNodeProtocol.SOCKS -> "例如 Office SOCKS5"
-            LocalNodeProtocol.HTTP -> "例如 HTTP 上游代理"
-            LocalNodeProtocol.WIREGUARD -> "例如 WARP / WG 美国"
-            LocalNodeProtocol.HYSTERIA -> "例如 Hy2 家宽加速"
+            LocalNodeProtocol.VLESS -> tr("例如 Netflix 香港 / 自建 VLESS", "e.g. Netflix Hong Kong / self-hosted VLESS", "напр. Netflix Гонконг / свой VLESS")
+            LocalNodeProtocol.VMESS -> tr("例如 VMess 日本 Tokyo", "e.g. VMess Japan Tokyo", "напр. VMess Япония Токио")
+            LocalNodeProtocol.TROJAN -> tr("例如 Trojan 备用线", "e.g. Trojan backup", "напр. Trojan резервный")
+            LocalNodeProtocol.SHADOWSOCKS -> tr("例如 SS 新加坡低延迟", "e.g. SS Singapore low latency", "напр. SS Сингапур, низкая задержка")
+            LocalNodeProtocol.SHADOWSOCKSR -> tr("例如 SSR 香港兼容线", "e.g. SSR Hong Kong", "напр. SSR Гонконг")
+            LocalNodeProtocol.SOCKS -> tr("例如 Office SOCKS5", "e.g. Office SOCKS5", "напр. Office SOCKS5")
+            LocalNodeProtocol.HTTP -> tr("例如 HTTP 上游代理", "e.g. HTTP upstream proxy", "напр. HTTP вышестоящий прокси")
+            LocalNodeProtocol.WIREGUARD -> tr("例如 WARP / WG 美国", "e.g. WARP / WG US", "напр. WARP / WG США")
+            LocalNodeProtocol.HYSTERIA -> tr("例如 Hy2 家宽加速", "e.g. Hy2 home broadband", "напр. Hy2 домашний канал")
         }
     }
 
     fun exampleAddress(protocol: LocalNodeProtocol): String {
         return when (protocol) {
-            LocalNodeProtocol.WIREGUARD -> "例如 engage.cloudflareclient.com"
-            LocalNodeProtocol.HTTP -> "例如 proxy.example.com"
-            LocalNodeProtocol.SOCKS -> "例如 10.0.0.2"
-            else -> "域名、IPv4 或 IPv6"
+            LocalNodeProtocol.WIREGUARD -> tr("例如 engage.cloudflareclient.com", "e.g. engage.cloudflareclient.com", "напр. engage.cloudflareclient.com")
+            LocalNodeProtocol.HTTP -> tr("例如 proxy.example.com", "e.g. proxy.example.com", "напр. proxy.example.com")
+            LocalNodeProtocol.SOCKS -> tr("例如 10.0.0.2", "e.g. 10.0.0.2", "напр. 10.0.0.2")
+            else -> tr("域名、IPv4 或 IPv6", "Domain, IPv4 or IPv6", "Домен, IPv4 или IPv6")
         }
     }
 
@@ -601,27 +601,27 @@ object ManualNodeFactory {
             LocalNodeProtocol.VMESS,
             LocalNodeProtocol.TROJAN,
             LocalNodeProtocol.HYSTERIA,
-            -> "例如 443"
+            -> tr("例如 443", "e.g. 443", "напр. 443")
 
-            LocalNodeProtocol.SHADOWSOCKS -> "例如 8388"
-            LocalNodeProtocol.SHADOWSOCKSR -> "例如 443 / 8388"
-            LocalNodeProtocol.SOCKS -> "例如 1080"
-            LocalNodeProtocol.HTTP -> "例如 8080 / 3128"
-            LocalNodeProtocol.WIREGUARD -> "例如 2408 / 51820"
+            LocalNodeProtocol.SHADOWSOCKS -> tr("例如 8388", "e.g. 8388", "напр. 8388")
+            LocalNodeProtocol.SHADOWSOCKSR -> tr("例如 443 / 8388", "e.g. 443 / 8388", "напр. 443 / 8388")
+            LocalNodeProtocol.SOCKS -> tr("例如 1080", "e.g. 1080", "напр. 1080")
+            LocalNodeProtocol.HTTP -> tr("例如 8080 / 3128", "e.g. 8080 / 3128", "напр. 8080 / 3128")
+            LocalNodeProtocol.WIREGUARD -> tr("例如 2408 / 51820", "e.g. 2408 / 51820", "напр. 2408 / 51820")
         }
     }
 
     fun exampleUuid(protocol: LocalNodeProtocol): String {
         return if (protocol == LocalNodeProtocol.VLESS) {
-            "例如 123e4567-e89b-12d3-a456-426614174000"
+            tr("例如 123e4567-e89b-12d3-a456-426614174000", "e.g. 123e4567-e89b-12d3-a456-426614174000", "напр. 123e4567-e89b-12d3-a456-426614174000")
         } else {
-            "VMess 用户 UUID"
+            tr("VMess 用户 UUID", "VMess user UUID", "UUID пользователя VMess")
         }
     }
 
     fun exampleServerName(protocol: LocalNodeProtocol): String {
         return when (protocol) {
-            LocalNodeProtocol.HYSTERIA -> "例如 bing.com 或你的证书域名"
+            LocalNodeProtocol.HYSTERIA -> tr("例如 bing.com 或你的证书域名", "e.g. bing.com or your certificate's domain", "напр. bing.com или домен вашего сертификата")
             else -> "例如 cdn.example.com"
         }
     }
@@ -630,7 +630,7 @@ object ManualNodeFactory {
         return when (protocol) {
             LocalNodeProtocol.VLESS -> LocalNodeDraft(
                 protocol = protocol,
-                nodeName = "VLESS 香港示例",
+                nodeName = tr("VLESS 香港示例", "VLESS Hong Kong example", "Пример VLESS Гонконг"),
                 address = "hk.example.com",
                 port = "443",
                 userId = "123e4567-e89b-12d3-a456-426614174000",
@@ -645,7 +645,7 @@ object ManualNodeFactory {
 
             LocalNodeProtocol.VMESS -> LocalNodeDraft(
                 protocol = protocol,
-                nodeName = "VMess 日本示例",
+                nodeName = tr("VMess 日本示例", "VMess Japan example", "Пример VMess Япония"),
                 address = "jp.example.com",
                 port = "443",
                 userId = "123e4567-e89b-12d3-a456-426614174000",
@@ -658,7 +658,7 @@ object ManualNodeFactory {
 
             LocalNodeProtocol.TROJAN -> LocalNodeDraft(
                 protocol = protocol,
-                nodeName = "Trojan 美国示例",
+                nodeName = tr("Trojan 美国示例", "Trojan US example", "Пример Trojan США"),
                 address = "us.example.com",
                 port = "443",
                 password = "replace-with-password",
@@ -669,7 +669,7 @@ object ManualNodeFactory {
 
             LocalNodeProtocol.SHADOWSOCKS -> LocalNodeDraft(
                 protocol = protocol,
-                nodeName = "SS 新加坡示例",
+                nodeName = tr("SS 新加坡示例", "SS Singapore example", "Пример SS Сингапур"),
                 address = "sg.example.com",
                 port = "8388",
                 password = "replace-with-secret",
@@ -680,7 +680,7 @@ object ManualNodeFactory {
 
             LocalNodeProtocol.SHADOWSOCKSR -> LocalNodeDraft(
                 protocol = protocol,
-                nodeName = "SSR 香港示例",
+                nodeName = tr("SSR 香港示例", "SSR Hong Kong example", "Пример SSR Гонконг"),
                 address = "ssr.example.com",
                 port = "443",
                 password = "replace-with-secret",
@@ -695,7 +695,7 @@ object ManualNodeFactory {
 
             LocalNodeProtocol.SOCKS -> LocalNodeDraft(
                 protocol = protocol,
-                nodeName = "SOCKS5 示例",
+                nodeName = tr("SOCKS5 示例", "SOCKS5 example", "Пример SOCKS5"),
                 address = "10.0.0.2",
                 port = "1080",
                 username = "demo",
@@ -705,7 +705,7 @@ object ManualNodeFactory {
 
             LocalNodeProtocol.HTTP -> LocalNodeDraft(
                 protocol = protocol,
-                nodeName = "HTTP Proxy 示例",
+                nodeName = tr("HTTP Proxy 示例", "HTTP proxy example", "Пример HTTP-прокси"),
                 address = "proxy.example.com",
                 port = "8080",
                 username = "demo",
@@ -716,7 +716,7 @@ object ManualNodeFactory {
 
             LocalNodeProtocol.WIREGUARD -> LocalNodeDraft(
                 protocol = protocol,
-                nodeName = "WireGuard 示例",
+                nodeName = tr("WireGuard 示例", "WireGuard example", "Пример WireGuard"),
                 address = "engage.cloudflareclient.com",
                 port = "2408",
                 wireGuardSecretKey = "replace-with-private-key",
@@ -728,7 +728,7 @@ object ManualNodeFactory {
 
             LocalNodeProtocol.HYSTERIA -> LocalNodeDraft(
                 protocol = protocol,
-                nodeName = "Hysteria2 示例",
+                nodeName = tr("Hysteria2 示例", "Hysteria2 example", "Пример Hysteria2"),
                 address = "hy2.example.com",
                 port = "443",
                 security = LocalNodeSecurity.TLS,
@@ -741,7 +741,7 @@ object ManualNodeFactory {
 
     fun prefillFromShareLink(raw: String): LocalNodeDraft {
         val trimmed = raw.trim()
-        require(trimmed.isNotBlank()) { "请先粘贴分享链接。" }
+        require(trimmed.isNotBlank()) { tr("请先粘贴分享链接。", "Paste a share link first.", "Сначала вставьте ссылку.") }
         return when {
             trimmed.startsWith("vless://", ignoreCase = true) -> parseVlessDraft(trimmed)
             trimmed.startsWith("vmess://", ignoreCase = true) -> parseVmessDraft(trimmed)
@@ -756,7 +756,7 @@ object ManualNodeFactory {
             trimmed.startsWith("hy2://", ignoreCase = true) || trimmed.startsWith("hysteria2://", ignoreCase = true) ->
                 parseHysteriaDraft(trimmed)
 
-            else -> error("当前预填支持 VLESS / VMess / Trojan / Shadowsocks / SSR / SOCKS / HTTP / Hysteria2 分享链接。")
+            else -> error(tr("当前预填支持 VLESS / VMess / Trojan / Shadowsocks / SSR / SOCKS / HTTP / Hysteria2 分享链接。", "Prefill supports VLESS / VMess / Trojan / Shadowsocks / SSR / SOCKS / HTTP / Hysteria2 share links.", "Автозаполнение поддерживает ссылки VLESS / VMess / Trojan / Shadowsocks / SSR / SOCKS / HTTP / Hysteria2."))
         }
     }
 
@@ -783,7 +783,7 @@ object ManualNodeFactory {
             "http" -> LocalNodeProtocol.HTTP
             "wireguard" -> LocalNodeProtocol.WIREGUARD
             "hysteria" -> LocalNodeProtocol.HYSTERIA
-            else -> error("当前节点协议暂不支持编辑。")
+            else -> error(tr("当前节点协议暂不支持编辑。", "This node's protocol can't be edited yet.", "Протокол этого узла пока нельзя редактировать."))
         }
         val settings = outbound.optJSONObject("settings") ?: JSONObject()
         val streamSettings = outbound.optJSONObject("streamSettings")
@@ -1020,7 +1020,7 @@ object ManualNodeFactory {
         port: Int,
     ): JSONObject {
         val userId = draft.userId.trim()
-        require(userId.isNotBlank()) { "VLESS 需要填写 UUID。" }
+        require(userId.isNotBlank()) { tr("VLESS 需要填写 UUID。", "VLESS needs a UUID.", "Для VLESS нужен UUID.") }
         return JSONObject().apply {
             put("protocol", "vless")
             put(
@@ -1043,7 +1043,7 @@ object ManualNodeFactory {
         port: Int,
     ): JSONObject {
         val userId = draft.userId.trim()
-        require(userId.isNotBlank()) { "VMess 需要填写 UUID。" }
+        require(userId.isNotBlank()) { tr("VMess 需要填写 UUID。", "VMess needs a UUID.", "Для VMess нужен UUID.") }
         return JSONObject().apply {
             put("protocol", "vmess")
             put(
@@ -1065,7 +1065,7 @@ object ManualNodeFactory {
         port: Int,
     ): JSONObject {
         val password = draft.password.trim()
-        require(password.isNotBlank()) { "Trojan 需要填写密码。" }
+        require(password.isNotBlank()) { tr("Trojan 需要填写密码。", "Trojan needs a password.", "Для Trojan нужен пароль.") }
         return JSONObject().apply {
             put("protocol", "trojan")
             put(
@@ -1086,7 +1086,7 @@ object ManualNodeFactory {
         port: Int,
     ): JSONObject {
         val password = draft.password.trim()
-        require(password.isNotBlank()) { "Shadowsocks 需要填写密码或密钥。" }
+        require(password.isNotBlank()) { tr("Shadowsocks 需要填写密码或密钥。", "Shadowsocks needs a password or key.", "Для Shadowsocks нужен пароль или ключ.") }
         return JSONObject().apply {
             put("protocol", "shadowsocks")
             put(
@@ -1162,8 +1162,8 @@ object ManualNodeFactory {
     ): JSONObject {
         val secretKey = draft.wireGuardSecretKey.trim()
         val publicKey = draft.wireGuardPublicKey.trim()
-        require(secretKey.isNotBlank()) { "WireGuard 需要填写客户端私钥。" }
-        require(publicKey.isNotBlank()) { "WireGuard 需要填写对端公钥。" }
+        require(secretKey.isNotBlank()) { tr("WireGuard 需要填写客户端私钥。", "WireGuard needs the client private key.", "Для WireGuard нужен закрытый ключ клиента.") }
+        require(publicKey.isNotBlank()) { tr("WireGuard 需要填写对端公钥。", "WireGuard needs the peer public key.", "Для WireGuard нужен открытый ключ пира.") }
         return JSONObject().apply {
             put("protocol", "wireguard")
             put(
@@ -1213,9 +1213,9 @@ object ManualNodeFactory {
         port: Int,
     ): JSONObject {
         val auth = draft.hysteriaAuth.trim()
-        require(auth.isNotBlank()) { "Hysteria2 需要填写认证口令。" }
+        require(auth.isNotBlank()) { tr("Hysteria2 需要填写认证口令。", "Hysteria2 needs an auth password.", "Для Hysteria2 нужен пароль аутентификации.") }
         val serverName = draft.serverName.trim()
-        require(serverName.isNotBlank()) { "Hysteria2 建议填写 TLS Server Name / SNI。" }
+        require(serverName.isNotBlank()) { tr("Hysteria2 建议填写 TLS Server Name / SNI。", "A TLS Server Name / SNI is recommended for Hysteria2.", "Для Hysteria2 рекомендуется указать TLS Server Name / SNI.") }
         return JSONObject().apply {
             put("protocol", "hysteria")
             put(
@@ -1271,8 +1271,8 @@ object ManualNodeFactory {
     private fun buildCommonStreamSettings(draft: LocalNodeDraft): JSONObject {
         val security = draft.security
         if (security == LocalNodeSecurity.REALITY) {
-            require(draft.serverName.trim().isNotBlank()) { "使用 REALITY 时请填写 Server Name / SNI。" }
-            require(draft.realityPublicKey.trim().isNotBlank()) { "使用 REALITY 时请填写公钥。" }
+            require(draft.serverName.trim().isNotBlank()) { tr("使用 REALITY 时请填写 Server Name / SNI。", "Enter a Server Name / SNI when using REALITY.", "При использовании REALITY укажите Server Name / SNI.") }
+            require(draft.realityPublicKey.trim().isNotBlank()) { tr("使用 REALITY 时请填写公钥。", "Enter a public key when using REALITY.", "При использовании REALITY укажите открытый ключ.") }
         }
         return JSONObject().apply {
             put("network", draft.transport.wireValue)
@@ -1428,12 +1428,12 @@ object ManualNodeFactory {
             .associate { line ->
                 val separator = line.indexOf(':')
                 require(separator > 0 && separator < line.lastIndex) {
-                    "HTTP 头请按 “Header: Value” 的格式填写。"
+                    tr("HTTP 头请按 “Header: Value” 的格式填写。", "Enter HTTP headers as “Header: Value”.", "Укажите HTTP-заголовки в формате «Header: Value».")
                 }
                 val key = line.substring(0, separator).trim()
                 val value = line.substring(separator + 1).trim()
                 require(key.isNotBlank() && value.isNotBlank()) {
-                    "HTTP 头请按 “Header: Value” 的格式填写。"
+                    tr("HTTP 头请按 “Header: Value” 的格式填写。", "Enter HTTP headers as “Header: Value”.", "Укажите HTTP-заголовки в формате «Header: Value».")
                 }
                 key to value
             }
@@ -1472,7 +1472,7 @@ object ManualNodeFactory {
         val body = raw.removePrefix("vmess://")
         val authPart = body.substringBefore("?")
         val queryPart = body.substringAfter("?", "")
-        val decoded = decodeBase64Flexible(authPart, "VMess 分享链接").trim()
+        val decoded = decodeBase64Flexible(authPart, tr("VMess 分享链接", "VMess share link", "Ссылка VMess")).trim()
         val query = parseQuery(queryPart)
         val queryName = query["remark"] ?: query["remarks"] ?: query["ps"]
         if (decoded.startsWith("{")) {
@@ -1575,11 +1575,11 @@ object ManualNodeFactory {
                 // Keep a literal '+' (base64 keys) instead of decoding it to a space.
                 URLDecoder.decode(encodedUserInfo.replace("+", "%2B"), "UTF-8")
             } else {
-                decodeBase64Flexible(encodedUserInfo, "Shadowsocks 分享链接")
+                decodeBase64Flexible(encodedUserInfo, tr("Shadowsocks 分享链接", "Shadowsocks share link", "Ссылка Shadowsocks"))
             }
             "$userInfo@$hostPort"
         } else {
-            decodeBase64Flexible(mainPart, "Shadowsocks 分享链接")
+            decodeBase64Flexible(mainPart, tr("Shadowsocks 分享链接", "Shadowsocks share link", "Ссылка Shadowsocks"))
         }
         val methodPassword = decodedMain.substringBefore("@")
         val hostPort = decodedMain.substringAfter("@")
@@ -1598,7 +1598,7 @@ object ManualNodeFactory {
         if (pluginSpec.isBlank()) return baseDraft
         // Other plugins (obfs, shadow-tls…) run in the mihomo sidecar; see MihomoNodes.
         return applyShadowsocksPlugin(baseDraft, pluginSpec)
-            ?: error("Shadowsocks 插件 ${pluginSpec.substringBefore(';')} 需要兼容内核运行。")
+            ?: error(tr("Shadowsocks 插件 ${pluginSpec.substringBefore(';')} 需要兼容内核运行。", "Shadowsocks plugin ${pluginSpec.substringBefore(';')} needs the compatibility core.", "Плагину Shadowsocks ${pluginSpec.substringBefore(';')} нужно ядро совместимости."))
     }
 
     private fun parseShadowsocksRDraft(raw: String): LocalNodeDraft {
@@ -1665,7 +1665,7 @@ object ManualNodeFactory {
         // v2rayN writes socks://base64(user:pass)@host:port; others use user:pass.
         val userInfo = uri.userInfo.orEmpty().let { info ->
             if (info.isNotBlank() && ':' !in info) {
-                runCatching { decodeBase64Flexible(info, "代理认证信息") }.getOrNull()
+                runCatching { decodeBase64Flexible(info, tr("代理认证信息", "Proxy credentials", "Учётные данные прокси")) }.getOrNull()
                     ?.takeIf { ':' in it } ?: info
             } else {
                 info
@@ -1730,7 +1730,7 @@ object ManualNodeFactory {
             "HTTP", "HTTP PROXY" -> LocalNodeProtocol.HTTP
             "WIREGUARD" -> LocalNodeProtocol.WIREGUARD
             "HYSTERIA2", "HYSTERIA" -> LocalNodeProtocol.HYSTERIA
-            else -> error("当前节点协议暂不支持编辑。")
+            else -> error(tr("当前节点协议暂不支持编辑。", "This node's protocol can't be edited yet.", "Протокол этого узла пока нельзя редактировать."))
         }
     }
 
@@ -1763,7 +1763,7 @@ object ManualNodeFactory {
             "", "tcp", "raw", "none" -> fallback
             // No bundled core speaks these for VMess/VLESS/Trojan; never fall back to TCP silently.
             "kcp", "mkcp" -> LocalNodeTransport.KCP
-            "quic", "h3" -> error("暂不支持 $value 传输方式")
+            "quic", "h3" -> error(tr("暂不支持 $value 传输方式", "Transport $value isn't supported yet", "Транспорт $value пока не поддерживается"))
             "ws", "websocket" -> LocalNodeTransport.WS
             "grpc" -> LocalNodeTransport.GRPC
             "http", "h2" -> LocalNodeTransport.HTTP2
@@ -1797,7 +1797,7 @@ object ManualNodeFactory {
         }.recoverCatching {
             Base64.getUrlDecoder().decode(normalized).decodeToString()
         }.getOrElse {
-            error("$label 无法解码。")
+            error(tr("$label 无法解码。", "Couldn't decode $label.", "Не удалось декодировать: $label."))
         }
     }
 
@@ -1830,34 +1830,34 @@ object ManualNodeFactory {
 
     private fun validateUuid(raw: String) {
         val value = raw.trim()
-        require(value.isNotBlank()) { "请填写 UUID。" }
+        require(value.isNotBlank()) { tr("请填写 UUID。", "Enter a UUID.", "Укажите UUID.") }
         runCatching { UUID.fromString(value) }.getOrElse {
-            error("UUID 格式不正确。")
+            error(tr("UUID 格式不正确。", "Invalid UUID format.", "Неверный формат UUID."))
         }
     }
 
     private fun validateIpList(raw: String, requireCidr: Boolean, field: String) {
         parseList(raw).forEach { entry ->
             if (requireCidr) {
-                require('/' in entry) { "$field 里的每一项都需要带 CIDR，例如 10.0.0.2/32。" }
+                require('/' in entry) { tr("$field 里的每一项都需要带 CIDR，例如 10.0.0.2/32。", "Each entry in $field needs a CIDR, e.g. 10.0.0.2/32.", "Каждое значение в поле «$field» должно быть в формате CIDR, напр. 10.0.0.2/32.") }
             }
-            require(entry.length >= 3) { "$field 里存在无效项。"}
+            require(entry.length >= 3) { tr("$field 里存在无效项。", "$field has an invalid entry.", "В поле «$field» есть недопустимое значение.")}
         }
     }
 
     private fun validateCsvValues(raw: String, field: String) {
         val values = raw.split(",").map(String::trim).filter(String::isNotBlank)
-        require(values.isNotEmpty()) { "$field 不能为空。"}
-        require(values.none { it.contains(' ') }) { "$field 里的值请用英文逗号分隔，不要夹空格块。"}
+        require(values.isNotEmpty()) { tr("$field 不能为空。", "$field can't be empty.", "Поле «$field» не может быть пустым.")}
+        require(values.none { it.contains(' ') }) { tr("$field 里的值请用英文逗号分隔，不要夹空格块。", "Separate the values in $field with commas, with no blank entries.", "Разделяйте значения в поле «$field» запятыми, без пустых элементов.")}
     }
 
     private fun parseReserved(raw: String): List<Int> {
         if (raw.isBlank()) return emptyList()
         val values = raw.split(",").map(String::trim).filter(String::isNotBlank).map {
             it.toIntOrNull()?.takeIf { value -> value in 0..255 }
-                ?: error("WireGuard reserved 需要是 0-255 的三个数字，例如 1,2,3。")
+                ?: error(tr("WireGuard reserved 需要是 0-255 的三个数字，例如 1,2,3。", "WireGuard reserved must be three numbers from 0 to 255, e.g. 1,2,3.", "WireGuard reserved: три числа от 0 до 255, напр. 1,2,3."))
         }
-        require(values.size == 3) { "WireGuard reserved 需要刚好三个数字，例如 1,2,3。" }
+        require(values.size == 3) { tr("WireGuard reserved 需要刚好三个数字，例如 1,2,3。", "WireGuard reserved must be exactly three numbers, e.g. 1,2,3.", "WireGuard reserved: ровно три числа, напр. 1,2,3.") }
         return values
     }
 
@@ -1879,8 +1879,8 @@ object ManualNodeFactory {
     }
 
     private fun parsePort(value: String, field: String): Int {
-        val port = value.trim().toIntOrNull() ?: error("$field 需要是 1-65535 的数字。")
-        require(port in 1..65535) { "$field 需要是 1-65535 的数字。" }
+        val port = value.trim().toIntOrNull() ?: error(tr("$field 需要是 1-65535 的数字。", "$field must be a number from 1 to 65535.", "Поле «$field» должно быть числом от 1 до 65535."))
+        require(port in 1..65535) { tr("$field 需要是 1-65535 的数字。", "$field must be a number from 1 to 65535.", "Поле «$field» должно быть числом от 1 до 65535.") }
         return port
     }
 

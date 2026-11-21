@@ -110,7 +110,7 @@ internal fun RuleSourceCard(
             )
             Text(
                 text = buildList {
-                    add(uiText("${source.convertedRules} 条规则", "${source.convertedRules} rules"))
+                    add(uiText("${source.convertedRules} 条规则", "${source.convertedRules} rules", "Правил: ${source.convertedRules}"))
                     if (remote) add(uiText(source.updatedAt)) else add(uiText("本地文本"))
                 }.joinToString(" · "),
                 color = TextSecondary,

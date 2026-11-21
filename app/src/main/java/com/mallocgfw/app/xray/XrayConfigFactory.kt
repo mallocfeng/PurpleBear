@@ -17,6 +17,7 @@ import java.util.Base64
 import java.util.Locale
 import org.json.JSONArray
 import org.json.JSONObject
+import com.mallocgfw.app.model.tr
 
 object XrayConfigFactory {
     const val DEFAULT_VPN_MTU = DEFAULT_APP_VPN_MTU
@@ -642,7 +643,7 @@ object XrayConfigFactory {
         }
         return outbound?.apply {
             put("tag", tag)
-        } ?: error("当前节点缺少可用的 Xray 出站配置。")
+        } ?: error(tr("当前节点缺少可用的 Xray 出站配置。", "The current node has no usable Xray outbound config.", "У текущего узла нет пригодной исходящей конфигурации Xray."))
     }
 
     private fun buildOutboundChain(
@@ -763,7 +764,7 @@ object XrayConfigFactory {
         val decoded = runCatching {
             Base64.getDecoder().decode(padBase64(authPart)).decodeToString()
         }.getOrElse {
-            error("当前 vmess 链接格式无法生成 Xray 配置。")
+            error(tr("当前 vmess 链接格式无法生成 Xray 配置。", "Couldn't build an Xray config from this vmess link.", "Не удалось создать конфигурацию Xray из этой ссылки vmess."))
         }.trim()
 
         val legacyParams = parseQuery(queryPart)
@@ -853,10 +854,10 @@ object XrayConfigFactory {
         val securityMethod = decoded.substringBefore(":", "auto").ifBlank { "auto" }
         val credentialPart = decoded.substringAfter(":", decoded)
         val userId = credentialPart.substringBefore("@").takeIf { it.isNotBlank() }
-            ?: error("vmess 节点缺少用户 ID。")
+            ?: error(tr("vmess 节点缺少用户 ID。", "The vmess node has no user ID.", "У узла vmess нет ID пользователя."))
         val hostPort = credentialPart.substringAfter("@", "")
         val address = hostPort.substringBeforeLast(":", hostPort).takeIf { it.isNotBlank() }
-            ?: error("vmess 节点缺少服务端地址。")
+            ?: error(tr("vmess 节点缺少服务端地址。", "The vmess node has no server address.", "У узла vmess нет адреса сервера."))
         val port = hostPort.substringAfterLast(":", "443").toIntOrNull() ?: 443
 
         val network = when (params["obfs"]?.lowercase(Locale.ROOT) ?: params["type"]?.lowercase(Locale.ROOT)) {

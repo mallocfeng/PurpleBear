@@ -54,6 +54,7 @@ import com.mallocgfw.app.ui.theme.Primary
 import com.mallocgfw.app.ui.theme.SurfaceHigh
 import com.mallocgfw.app.ui.theme.TextPrimary
 import com.mallocgfw.app.ui.theme.TextSecondary
+import com.mallocgfw.app.model.tr
 
 @Composable
 internal fun LocalNodeBuilderScreen(
@@ -140,7 +141,7 @@ internal fun LocalNodeBuilderScreen(
                         text = "套用示例",
                         modifier = Modifier.weight(1f),
                         onClick = {
-                            inlineMessage = "已套用 ${protocol.displayName} 示例模板。"
+                            inlineMessage = tr("已套用 ${protocol.displayName} 示例模板。", "Applied the ${protocol.displayName} example template.", "Применён пример шаблона ${protocol.displayName}.")
                             onDraftChange(ManualNodeFactory.exampleDraft(protocol))
                         },
                     )
@@ -664,7 +665,7 @@ internal fun LocalNodeBuilderScreen(
                 runCatching {
                     ManualNodeFactory.prefillFromShareLink(raw)
                 }.onSuccess { nextDraft ->
-                    inlineMessage = "已从分享链接预填 ${nextDraft.protocol.displayName} 表单。"
+                    inlineMessage = tr("已从分享链接预填 ${nextDraft.protocol.displayName} 表单。", "Filled the ${nextDraft.protocol.displayName} form from the share link.", "Форма ${nextDraft.protocol.displayName} заполнена из ссылки.")
                     prefillDialogVisible = false
                     onDraftChange(nextDraft)
                 }.onFailure { error ->
@@ -727,7 +728,7 @@ internal fun <T> BuilderDropdownField(
         onExpandedChange = { expanded = !expanded },
     ) {
         OutlinedTextField(
-            value = selectedOption?.label.orEmpty(),
+            value = selectedOption?.label?.let { uiText(it) }.orEmpty(),
             onValueChange = {},
             readOnly = true,
             textStyle = compactInputTextStyle(),
@@ -761,9 +762,9 @@ internal fun <T> BuilderDropdownField(
                     DropdownMenuItem(
                         text = {
                             Column {
-                                Text(option.label, color = TextPrimary, fontWeight = FontWeight.Bold)
+                                Text(uiText(option.label), color = TextPrimary, fontWeight = FontWeight.Bold)
                                 option.subtitle?.takeIf { it.isNotBlank() }?.let {
-                                    Text(it, color = TextSecondary, fontSize = TypeScale.Meta, lineHeight = TypeScale.MetaLine)
+                                    Text(uiText(it), color = TextSecondary, fontSize = TypeScale.Meta, lineHeight = TypeScale.MetaLine)
                                 }
                             }
                         },
@@ -778,7 +779,7 @@ internal fun <T> BuilderDropdownField(
     }
     selectedOption?.subtitle?.takeIf { it.isNotBlank() }?.let {
         Text(
-            text = it,
+            text = uiText(it),
             color = TextSecondary,
             fontSize = TypeScale.Meta,
             lineHeight = TypeScale.MetaLine,
@@ -809,7 +810,7 @@ internal fun BuilderTextField(
         supportingText = helper?.let {
             {
                 Text(
-                    it,
+                    uiText(it),
                     color = TextSecondary,
                     fontSize = TypeScale.Tiny,
                     lineHeight = TypeScale.TinyLine,
@@ -850,7 +851,7 @@ internal fun BuilderSmallActionButton(
         colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
         border = BorderStroke(1.dp, Primary.copy(alpha = 0.2f)),
     ) {
-        Text(text, fontWeight = FontWeight.Bold)
+        Text(uiText(text), fontWeight = FontWeight.Bold)
     }
 }
 
@@ -868,12 +869,12 @@ internal fun BooleanSettingRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = title,
+                text = uiText(title),
                 fontSize = TypeScale.ListTitle,
                 lineHeight = TypeScale.ListTitleLine,
                 fontWeight = FontWeight.Bold,
             )
-            Text(subtitle, color = TextSecondary)
+            Text(uiText(subtitle), color = TextSecondary)
         }
         Spacer(modifier = Modifier.width(12.dp))
         TogglePill(

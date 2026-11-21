@@ -131,13 +131,13 @@ internal fun GroupSectionCard(
                 }
                 Text(
                     text = buildString {
-                        append(uiText("${section.servers.size} 个节点", "${section.servers.size} nodes"))
+                        append(uiText("${section.servers.size} 个节点", "${section.servers.size} nodes", "Узлов: ${section.servers.size}"))
                         if (section.group.type == ServerGroupType.Subscription) {
                             append(" · ${uiText(section.group.updatedAt)}")
                         }
                         fastestLatency?.let { append(" · ${uiText("最快", "Fastest")} $it ms") }
                         if (section.hiddenUnsupportedNodeCount > 0) {
-                            append(" · ${uiText("隐藏 ${section.hiddenUnsupportedNodeCount} 个", "${section.hiddenUnsupportedNodeCount} hidden")}")
+                            append(" · ${uiText("隐藏 ${section.hiddenUnsupportedNodeCount} 个", "${section.hiddenUnsupportedNodeCount} hidden", "скрыто: ${section.hiddenUnsupportedNodeCount}")}")
                         }
                     },
                     color = TextSecondary,

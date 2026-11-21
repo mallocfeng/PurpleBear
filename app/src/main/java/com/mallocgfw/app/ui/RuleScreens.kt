@@ -280,7 +280,7 @@ internal fun RuleSourceDetailScreen(
                 TwoColumnInfoGrid(
                     items = buildList {
                         if (!isLocalText) {
-                            add("最后更新时间" to (summary?.metadata?.updatedAt ?: "--"))
+                            add("最后更新时间" to (summary?.metadata?.updatedAt?.let { uiText(it) } ?: "--"))
                         }
                         addAll(listOf(
                         "本地规则条数" to "${summary?.metadata?.totalRules ?: 0}",
@@ -305,7 +305,7 @@ internal fun RuleSourceDetailScreen(
                 Spacer(modifier = Modifier.height(12.dp))
                 DetailRow(
                     label = "域名规则",
-                    value = uiText("${summary?.domainRuleCount ?: 0} 条", "${summary?.domainRuleCount ?: 0} rules"),
+                    value = uiText("${summary?.domainRuleCount ?: 0} 条", "${summary?.domainRuleCount ?: 0} rules", "Правил: ${summary?.domainRuleCount ?: 0}"),
                     trailing = "IP ${summary?.ipRuleCount ?: 0}",
                 )
                 Spacer(modifier = Modifier.height(12.dp))
@@ -344,9 +344,9 @@ internal fun RuleSourceDetailScreen(
         ConfirmDeleteDialog(
             title = if (summary.metadata.systemDefault) "恢复默认规则" else "删除规则源",
             message = if (summary.metadata.systemDefault) {
-                "确认把“${summary.metadata.name}”恢复为系统默认状态？已缓存的规则统计会被清空。"
+                uiText("确认把“${summary.metadata.name}”恢复为系统默认状态？已缓存的规则统计会被清空。", "Reset \"${summary.metadata.name}\" to its default state? Cached rule stats will be cleared.", "Сбросить «${summary.metadata.name}» к состоянию по умолчанию? Кэшированная статистика правил будет очищена.")
             } else {
-                "确认删除“${summary.metadata.name}”？本地保存的转换规则也会一起移除。"
+                uiText("确认删除“${summary.metadata.name}”？本地保存的转换规则也会一起移除。", "Delete \"${summary.metadata.name}\"? Its locally saved converted rules will also be removed.", "Удалить «${summary.metadata.name}»? Локально сохранённые преобразованные правила тоже будут удалены.")
             },
             confirmText = if (summary.metadata.systemDefault) "恢复默认" else "删除",
             onConfirm = {
@@ -526,7 +526,7 @@ internal fun AddRuleSourceScreen(
                         Text(
                             text = uiText(
                                 "以下节点不存在，命中后将默认走代理，建议重新绑定：${missingNodeLabels.joinToString("、")}",
-                                "Missing nodes will use PROXY by default. Rebind them: ${missingNodeLabels.joinToString(", ")}",
+                                "Missing nodes will use PROXY by default. Rebind them: ${missingNodeLabels.joinToString(", ")}", "Отсутствующие узлы по умолчанию идут через PROXY. Привяжите заново: ${missingNodeLabels.joinToString(", ")}",
                             ),
                             color = Error,
                             modifier = Modifier.padding(top = 10.dp),

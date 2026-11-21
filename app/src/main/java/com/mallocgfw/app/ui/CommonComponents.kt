@@ -594,7 +594,7 @@ internal fun FilterRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         listOf(
-            "all" to uiText("全部", "All"),
+            "all" to uiText("全部", "All", "Все"),
             "asia" to uiText("亚洲"),
             "latency" to uiText("低延迟"),
             "favorites" to uiText("收藏"),

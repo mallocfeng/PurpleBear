@@ -246,9 +246,9 @@ fun ServerNode.ssrCompatibilityLabel(): String? {
     return if (protocol.equals("SHADOWSOCKS", ignoreCase = true) &&
         flow.startsWith("2022-blake3-", ignoreCase = true)
     ) {
-        "SSR 链接 · Shadowsocks 2022"
+        tr("SSR 链接 · Shadowsocks 2022", "SSR link · Shadowsocks 2022", "Ссылка SSR · Shadowsocks 2022")
     } else {
-        "SSR 兼容模式"
+        tr("SSR 兼容模式", "SSR compatibility mode", "Режим совместимости SSR")
     }
 }
 

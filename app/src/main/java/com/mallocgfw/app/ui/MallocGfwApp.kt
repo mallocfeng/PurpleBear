@@ -81,7 +81,9 @@ import com.mallocgfw.app.model.RuleSourceStatus
 import com.mallocgfw.app.model.RuleSourceType
 import com.mallocgfw.app.model.ServerNode
 import com.mallocgfw.app.model.ServerGroupType
+import com.mallocgfw.app.model.AppTextLanguage
 import com.mallocgfw.app.model.isSameImportedNode
+import com.mallocgfw.app.model.tr
 import com.mallocgfw.app.model.mergedSubscriptionGroupNodes
 import com.mallocgfw.app.model.normalizedAppVpnMtu
 import com.mallocgfw.app.model.StreamingMediaManager
@@ -138,6 +140,8 @@ fun MallocGfwApp(
     var screen by rememberSaveable { mutableStateOf(AppScreen.Launch) }
     var screenHistory by rememberSaveable { mutableStateOf(listOf<AppScreen>()) }
     var previousMainTab by rememberSaveable { mutableStateOf(MainTab.Home) }
+    // Where "Add nodes" was opened from (Nodes "+", or Home with no nodes yet).
+    var importReturnTab by rememberSaveable { mutableStateOf(MainTab.Servers) }
     var mainTab by rememberSaveable { mutableStateOf(MainTab.Home) }
     var connectionStatus by rememberSaveable { mutableStateOf(ConnectionStatus.Disconnected) }
     var proxyMode by rememberSaveable { mutableStateOf(initialState.proxyMode) }
@@ -338,6 +342,9 @@ fun MallocGfwApp(
     fun goToMain(tab: MainTab) {
         if (screen == AppScreen.Subscriptions && tab != MainTab.Import) {
             subscriptionMessage = null
+        }
+        if (tab == MainTab.Import && mainTab != MainTab.Import) {
+            importReturnTab = mainTab
         }
         mainTab = tab
         previousMainTab = tab
@@ -569,7 +576,7 @@ fun MallocGfwApp(
                 StatusBarManager.TILE_ADD_REQUEST_ERROR_NOT_CURRENT_USER -> "当前系统用户不支持添加这个快捷开关。"
                 StatusBarManager.TILE_ADD_REQUEST_ERROR_NO_STATUS_BAR_SERVICE -> "当前系统没有状态栏快捷开关服务。"
                 StatusBarManager.TILE_ADD_REQUEST_ERROR_REQUEST_IN_PROGRESS -> "系统已经在处理另一个快捷开关请求，请稍后再试。"
-                else -> "添加快捷开关失败，系统返回代码 $result。"
+                else -> tr("添加快捷开关失败，系统返回代码 $result。", "Couldn't add the Quick Settings tile (system code $result).", "Не удалось добавить плитку быстрых настроек (код системы $result).")
             }
         }
     }
@@ -708,9 +715,9 @@ fun MallocGfwApp(
         protectedApps[index] = current.copy(enabled = nextEnabled)
         pendingProtectedAppsApply = true
         settingsMessage = if (nextEnabled) {
-            "${current.name} 已加入名单。"
+            tr("${current.name} 已加入名单。", "${current.name} added to the list.", "${current.name}: добавлено в список.")
         } else {
-            "${current.name} 已移出名单。"
+            tr("${current.name} 已移出名单。", "${current.name} removed from the list.", "${current.name}: удалено из списка.")
         }
     }
 
@@ -746,7 +753,7 @@ fun MallocGfwApp(
         }
         appSettings = appSettings.copy(streamingSelections = nextSelections)
         pendingStreamingRoutingApply = true
-        settingsMessage = "${StreamingMediaManager.serviceById(serviceId)?.name ?: "流媒体"} 节点已保存。"
+        settingsMessage = tr("${StreamingMediaManager.serviceById(serviceId)?.name ?: "流媒体"} 节点已保存。", "${StreamingMediaManager.serviceById(serviceId)?.name ?: "Media"} node saved.", "Узел для ${StreamingMediaManager.serviceById(serviceId)?.name ?: "медиа"} сохранён.")
     }
 
     fun applyStreamingRoutingChanges() {
@@ -820,6 +827,13 @@ fun MallocGfwApp(
         }
         if (screen == AppScreen.Permission) {
             screen = AppScreen.Onboarding
+            return
+        }
+        // Import is still a main "tab" internally but is opened from another page
+        // (Nodes "+", or Home with no nodes), so go back there; previousMainTab
+        // would be Import itself.
+        if (screen == AppScreen.Import) {
+            goToMain(importReturnTab)
             return
         }
         if (screenHistory.isNotEmpty()) {
@@ -982,7 +996,7 @@ fun MallocGfwApp(
         return if (selectedAfter != null && selectedBefore != null && !selectedNameStillExists) {
             ImportApplyResult(
                 selectedServerChanged = true,
-                message = "原选中节点 ${selectedBefore.name} 已不存在，已切换到 ${selectedAfter.name}。",
+                message = tr("原选中节点 ${selectedBefore.name} 已不存在，已切换到 ${selectedAfter.name}。", "The selected node ${selectedBefore.name} no longer exists; switched to ${selectedAfter.name}.", "Выбранного узла ${selectedBefore.name} больше нет, выбран ${selectedAfter.name}."),
                 reconnectServer = if (selectedWasConnected) selectedAfter else null,
             )
         } else if (selectedAfter != null && selectedWasConnected) {
@@ -1005,7 +1019,7 @@ fun MallocGfwApp(
     fun openLocalNodeEditor(nodeId: String) {
         val server = servers.firstOrNull { it.id == nodeId } ?: return
         if (server.mihomoProxyJson.isNotBlank()) {
-            runtimeMessage = "${server.protocol} 节点由兼容内核运行，暂不支持在 App 内编辑；如需修改，请删除后重新导入。"
+            runtimeMessage = tr("${server.protocol} 节点由兼容内核运行，暂不支持在 App 内编辑；如需修改，请删除后重新导入。", "${server.protocol} nodes run on the compatibility core and can't be edited in the app. To change one, delete it and import it again.", "Узлы ${server.protocol} работают на ядре совместимости и не редактируются в приложении. Чтобы изменить узел, удалите его и импортируйте снова.")
             return
         }
         runCatching {
@@ -1083,10 +1097,10 @@ fun MallocGfwApp(
         if (normalizedTargetId == node.preProxyNodeId) return
         servers[nodeIndex] = node.copy(preProxyNodeId = normalizedTargetId)
         runtimeMessage = if (normalizedTargetId.isBlank()) {
-            "已清除 ${node.name} 的前置代理。重新连接后生效。"
+            tr("已清除 ${node.name} 的前置代理。重新连接后生效。", "Cleared the pre-proxy of ${node.name}. Takes effect after reconnecting.", "Предварительный прокси для ${node.name} удалён. Вступит в силу после переподключения.")
         } else {
             val targetName = servers.firstOrNull { it.id == normalizedTargetId }?.name ?: "所选节点"
-            "已将 ${targetName} 设为 ${node.name} 的前置代理。重新连接后生效。"
+            tr("已将 ${targetName} 设为 ${node.name} 的前置代理。重新连接后生效。", "Set ${targetName} as the pre-proxy for ${node.name}. Takes effect after reconnecting.", "${targetName} назначен предварительным прокси для ${node.name}. Вступит в силу после переподключения.")
         }
         warmServerSections()
     }
@@ -1109,10 +1123,10 @@ fun MallocGfwApp(
         if (normalizedTargetId == node.fallbackNodeId) return
         servers[nodeIndex] = node.copy(fallbackNodeId = normalizedTargetId)
         runtimeMessage = if (normalizedTargetId.isBlank()) {
-            "已清除 ${node.name} 的备用节点。"
+            tr("已清除 ${node.name} 的备用节点。", "Cleared the fallback node of ${node.name}.", "Резервный узел для ${node.name} удалён.")
         } else {
             val targetName = servers.firstOrNull { it.id == normalizedTargetId }?.name ?: "所选节点"
-            "已将 ${targetName} 设为 ${node.name} 的备用节点。当前节点检测失败时会自动切换。"
+            tr("已将 ${targetName} 设为 ${node.name} 的备用节点。当前节点检测失败时会自动切换。", "Set ${targetName} as the fallback for ${node.name}. The app switches to it automatically if the current node fails checks.", "${targetName} назначен резервным узлом для ${node.name}. Если текущий узел не пройдёт проверку, переключение произойдёт автоматически.")
         }
         warmServerSections()
     }
@@ -1135,7 +1149,7 @@ fun MallocGfwApp(
         reason: String,
         disconnectFirst: Boolean,
     ) {
-        val message = "$reason，正在切换到备用节点 ${fallback.name}…"
+        val message = tr("$reason，正在切换到备用节点 ${fallback.name}…", "$reason. Switching to fallback node ${fallback.name}…", "$reason. Переключение на резервный узел ${fallback.name}…")
         AppLogManager.append(
             context,
             "FALLBACK",
@@ -1255,7 +1269,7 @@ fun MallocGfwApp(
                 RuleSourceManager.refreshSource(context, source)
             }.onSuccess { result: RuleRefreshResult ->
                 replaceRuleSource(result.source)
-                ruleMessage = "${result.source.name} 已更新，转换 ${result.compiled.convertedRules} 条。"
+                ruleMessage = tr("${result.source.name} 已更新，转换 ${result.compiled.convertedRules} 条。", "${result.source.name} updated, ${result.compiled.convertedRules} rules converted.", "${result.source.name}: обновлено, преобразовано правил: ${result.compiled.convertedRules}.")
             }.onFailure { error ->
                 replaceRuleSource(RuleSourceManager.buildFailureState(source, error))
                 ruleMessage = error.message ?: "规则更新失败。"
@@ -1344,7 +1358,7 @@ fun MallocGfwApp(
             updateState = AppUpdateUiState(
                 status = AppUpdateStatus.Available,
                 info = info,
-                message = "发现新版本 ${info.versionName}。",
+                message = tr("发现新版本 ${info.versionName}。", "New version ${info.versionName} available.", "Доступна новая версия ${info.versionName}."),
             )
             if (promptIfAvailable) {
                 showUpdatePrompt = true
@@ -1410,7 +1424,7 @@ fun MallocGfwApp(
 
         updateState = updateState.copy(
             status = AppUpdateStatus.Downloading,
-            message = "正在从 GitHub 下载 ${info.apkName}…",
+            message = tr("正在从 GitHub 下载 ${info.apkName}…", "Downloading ${info.apkName} from GitHub…", "Загрузка ${info.apkName} с GitHub…"),
             downloadedApkPath = null,
             downloadedBytes = 0L,
             totalBytes = info.apkSizeBytes,
@@ -1478,26 +1492,26 @@ fun MallocGfwApp(
         settingsMessage = when (dnsMode) {
             AppDnsMode.System -> "DNS 已切换为系统解析。"
             AppDnsMode.Remote -> "DNS 已切换为远端 1.1.1.1。"
-            AppDnsMode.Custom -> "DNS 已更新为 $normalizedCustomValue。"
+            AppDnsMode.Custom -> tr("DNS 已更新为 $normalizedCustomValue。", "DNS set to $normalizedCustomValue.", "DNS изменён на $normalizedCustomValue.")
         }
     }
 
     fun updateVpnMtu(mtu: Int) {
         val normalizedMtu = normalizedAppVpnMtu(mtu)
         if (normalizedMtu == appSettings.vpnMtu) {
-            settingsMessage = "VPN MTU 已经是 $normalizedMtu。"
+            settingsMessage = tr("VPN MTU 已经是 $normalizedMtu。", "VPN MTU is already $normalizedMtu.", "VPN MTU уже равен $normalizedMtu.")
             return
         }
         appSettings = appSettings.copy(vpnMtu = normalizedMtu)
         val activeServer = resolveServerForSettingsReconnect()
         if (connectionStatus == ConnectionStatus.Connected && activeServer != null) {
-            settingsMessage = "VPN MTU 已设置为 $normalizedMtu，正在重连以生效。"
+            settingsMessage = tr("VPN MTU 已设置为 $normalizedMtu，正在重连以生效。", "VPN MTU set to $normalizedMtu. Reconnecting to apply it.", "VPN MTU установлен на $normalizedMtu. Переподключение для применения.")
             reconnectVpnForSettingsChange(
                 server = activeServer,
-                message = "VPN MTU 已设置为 $normalizedMtu，正在重连 VPN…",
+                message = tr("VPN MTU 已设置为 $normalizedMtu，正在重连 VPN…", "VPN MTU set to $normalizedMtu. Reconnecting VPN…", "VPN MTU установлен на $normalizedMtu. Переподключение VPN…"),
             )
         } else {
-            settingsMessage = "VPN MTU 已设置为 $normalizedMtu，下次连接生效。"
+            settingsMessage = tr("VPN MTU 已设置为 $normalizedMtu，下次连接生效。", "VPN MTU set to $normalizedMtu. Takes effect on the next connection.", "VPN MTU установлен на $normalizedMtu. Вступит в силу при следующем подключении.")
         }
     }
 
@@ -1608,9 +1622,9 @@ fun MallocGfwApp(
             },
         )
         ruleMessage = if (enabled) {
-            "${current.name} 已启用。重新开关代理后生效。"
+            tr("${current.name} 已启用。重新开关代理后生效。", "${current.name} enabled. Takes effect after turning the proxy off and on.", "${current.name}: включено. Вступит в силу после перезапуска прокси.")
         } else {
-            "${current.name} 已停用。重新开关代理后生效。"
+            tr("${current.name} 已停用。重新开关代理后生效。", "${current.name} disabled. Takes effect after turning the proxy off and on.", "${current.name}: отключено. Вступит в силу после перезапуска прокси.")
         }
     }
 
@@ -1635,7 +1649,7 @@ fun MallocGfwApp(
                 selectedRuleSourceId = ruleSources.firstOrNull()?.id.orEmpty()
             }
         }
-        ruleMessage = "${source.name} 已移除。"
+        ruleMessage = tr("${source.name} 已移除。", "${source.name} removed.", "${source.name}: удалено.")
     }
 
     fun toggleCore(server: ServerNode?, navigateHomeAfterStart: Boolean = false) {
@@ -1676,7 +1690,7 @@ fun MallocGfwApp(
         }
         val activeServerId = vpnSnapshot.activeServerId
         if (activeServerId == server.id) {
-            runtimeMessage = "${server.name} 已经是当前线路。"
+            runtimeMessage = tr("${server.name} 已经是当前线路。", "${server.name} is already the current node.", "${server.name} уже выбран.")
             if (navigateHomeAfterStart) {
                 goToMain(MainTab.Home)
             }
@@ -1688,7 +1702,7 @@ fun MallocGfwApp(
         }
         reconnectVpnForSettingsChange(
             server = server,
-            message = "正在切换到 ${server.name}，将重新连接 VPN 以应用新线路…",
+            message = tr("正在切换到 ${server.name}，将重新连接 VPN 以应用新线路…", "Switching to ${server.name}; reconnecting VPN to apply the new node…", "Переключение на ${server.name}: VPN переподключится для применения нового узла…"),
         )
     }
 
@@ -1697,12 +1711,12 @@ fun MallocGfwApp(
         if (index < 0) return
         if (latencyTestInFlight[nodeId] == true) {
             val server = servers[index]
-            runtimeMessage = "节点 ${server.name} 正在检测中，请稍候。"
+            runtimeMessage = tr("节点 ${server.name} 正在检测中，请稍候。", "Node ${server.name} is being tested. Please wait.", "Узел ${server.name} проверяется, подождите.")
             return
         }
         val server = servers[index]
         if (VpnServiceController.isActuallyRunning(context) && NodeLatencyTester.requiresCoreProbe(server)) {
-            runtimeMessage = "当前已连接 VPN，这类 ${server.protocol} 节点请先断开当前连接后再检测。"
+            runtimeMessage = tr("当前已连接 VPN，这类 ${server.protocol} 节点请先断开当前连接后再检测。", "VPN is connected. Disconnect first to test this ${server.protocol} node.", "VPN подключён. Чтобы проверить этот узел ${server.protocol}, сначала отключитесь.")
             AppLogManager.append(
                 context,
                 "LATENCY",
@@ -1711,7 +1725,7 @@ fun MallocGfwApp(
             return
         }
         latencyTestInFlight[nodeId] = true
-        runtimeMessage = "正在检测节点 ${server.name}…"
+        runtimeMessage = tr("正在检测节点 ${server.name}…", "Testing node ${server.name}…", "Проверка узла ${server.name}…")
         AppLogManager.append(context, "LATENCY", "开始检测节点：${server.name} (${server.address}:${server.port})")
         scope.launch {
             var latencyStateChanged = false
@@ -1730,7 +1744,7 @@ fun MallocGfwApp(
                         }
                     }
                     AppLogManager.append(context, "LATENCY", "节点检测成功：${server.name} -> ${latency} ms")
-                    runtimeMessage = "节点 ${server.name} 检测完成，延迟 ${latency} ms。"
+                    runtimeMessage = tr("节点 ${server.name} 检测完成，延迟 ${latency} ms。", "Node ${server.name} tested: ${latency} ms.", "Узел ${server.name} проверен: ${latency} мс.")
                 }
                 .onFailure { error ->
                     val latestIndex = servers.indexOfFirst { it.id == nodeId }
@@ -1746,7 +1760,7 @@ fun MallocGfwApp(
                         }
                     }
                     AppLogManager.append(context, "LATENCY", "节点检测失败：${server.name}", error)
-                    runtimeMessage = "节点 ${server.name} 检测失败：${error.message ?: "请稍后重试。"}"
+                    runtimeMessage = tr("节点 ${server.name} 检测失败：${error.message ?: "请稍后重试。"}", "Node ${server.name} test failed: ${error.message ?: "Try again later."}", "Не удалось проверить узел ${server.name}: ${error.message ?: "Повторите попытку позже."}")
                     val latestServer = latestIndex.takeIf { it >= 0 }?.let { servers[it] }
                     val fallbackServer = latestServer
                         ?.takeIf {
@@ -1899,7 +1913,7 @@ fun MallocGfwApp(
         val server = autoConnectTargetServer ?: return@LaunchedEffect
         if (autoConnectAttemptedServerId == server.id) return@LaunchedEffect
         autoConnectAttemptedServerId = server.id
-        runtimeMessage = "正在恢复上次线路 ${server.name}…"
+        runtimeMessage = tr("正在恢复上次线路 ${server.name}…", "Restoring the last node ${server.name}…", "Восстановление последнего узла ${server.name}…")
         requestVpnConnection(server)
     }
 
@@ -2043,7 +2057,7 @@ fun MallocGfwApp(
         val server = servers.firstOrNull { it.id == serverId } ?: return@LaunchedEffect
         autoReconnectAttempts += 1
         val currentAttempt = autoReconnectAttempts
-        runtimeMessage = "连接中断，正在尝试第 $currentAttempt 次自动重连…"
+        runtimeMessage = tr("连接中断，正在尝试第 $currentAttempt 次自动重连…", "Connection lost. Reconnecting automatically (attempt $currentAttempt)…", "Соединение потеряно. Автоматическое переподключение (попытка $currentAttempt)…")
         delay((1_500L * currentAttempt).coerceAtMost(5_000L))
         if (connectionStatus == ConnectionStatus.Disconnected && !VpnServiceController.isRunning()) {
             requestVpnConnection(server)
@@ -2053,9 +2067,10 @@ fun MallocGfwApp(
     BackHandler(enabled = screen !in setOf(AppScreen.Home, AppScreen.Servers, AppScreen.Rules, AppScreen.Import, AppScreen.Me)) {
         onBack()
     }
-    // Import is opened from the "+" on Nodes, so Back returns there instead of leaving the app.
+    // Import is opened from the "+" on Nodes, so Back returns there instead of leaving the app
+    // (onBack handles it, shared with the on-screen back button).
     BackHandler(enabled = screen == AppScreen.Import) {
-        goToMain(MainTab.Servers)
+        onBack()
     }
 
     if (startupHiddenUnsupportedNodeCount > 0 && screen != AppScreen.Launch) {
@@ -2066,7 +2081,7 @@ fun MallocGfwApp(
                 Text(
                     uiText(
                         "启动时已自动隐藏 $startupHiddenUnsupportedNodeCount 个 REALITY + gRPC 节点，这类线路当前版本暂不支持。",
-                        "$startupHiddenUnsupportedNodeCount unsupported REALITY + gRPC nodes were hidden at launch.",
+                        "$startupHiddenUnsupportedNodeCount unsupported REALITY + gRPC nodes were hidden at launch.", "При запуске скрыто неподдерживаемых узлов REALITY + gRPC: $startupHiddenUnsupportedNodeCount.",
                     ),
                 )
             },
@@ -2087,7 +2102,7 @@ fun MallocGfwApp(
                 Text(
                     uiText(
                         "PurpleBear ${info?.versionName.orEmpty()} 已发布，是否查看更新说明？",
-                        "PurpleBear ${info?.versionName.orEmpty()} is available. View release notes?",
+                        "PurpleBear ${info?.versionName.orEmpty()} is available. View release notes?", "Вышла версия PurpleBear ${info?.versionName.orEmpty()}. Посмотреть список изменений?",
                     ),
                 )
             },
@@ -2117,7 +2132,7 @@ fun MallocGfwApp(
                 Text(
                     uiText(
                         "当前安装的 PurpleBear ${AppUpdateManager.currentVersionName(context)} 已是最新版。",
-                        "PurpleBear ${AppUpdateManager.currentVersionName(context)} is already up to date.",
+                        "PurpleBear ${AppUpdateManager.currentVersionName(context)} is already up to date.", "Установленная версия PurpleBear ${AppUpdateManager.currentVersionName(context)} последняя.",
                     ),
                 )
             },
@@ -2209,6 +2224,8 @@ fun MallocGfwApp(
     BackHandler(enabled = blockingReconnectInFlight) {}
 
     val resolvedLanguage = appSettings.language.resolveAppLanguage()
+    // Messages built outside Compose (tr) follow the same language.
+    AppTextLanguage.apply(appSettings.language)
 
     CompositionLocalProvider(LocalAppLanguage provides resolvedLanguage) {
     MallocGfwTheme(lightTheme = appSettings.lightThemeEnabled) {
@@ -2236,6 +2253,7 @@ fun MallocGfwApp(
                     onToggleTheme = ::toggleThemeMode,
                     onOpenSettings = { navigateSecondary(AppScreen.Settings) },
                     onOpenScan = ::scanSubscriptionQr,
+                    onBack = ::onBack,
                 ) { padding ->
                     when (screen) {
                     AppScreen.Permission -> PermissionScreen(
@@ -2385,6 +2403,7 @@ fun MallocGfwApp(
                                 importInFlight = false
                             }
                         },
+                        onCreateManual = ::openLocalNodeBuilder,
                     )
 
                     AppScreen.ConfirmImport -> ConfirmImportScreen(
@@ -2423,9 +2442,9 @@ fun MallocGfwApp(
                             val subscription = subscriptions[index]
                             if (!subscription.autoUpdate || subscription.sourceUrl.isNullOrBlank()) {
                                 subscriptionMessage = if (subscription.sourceUrl.isNullOrBlank()) {
-                                    "${subscription.name} 来自文件导入，没有可刷新的订阅 URL，请重新导入文件。"
+                                    tr("${subscription.name} 来自文件导入，没有可刷新的订阅 URL，请重新导入文件。", "${subscription.name} was imported from a file and has no URL to refresh. Import the file again.", "${subscription.name} импортирована из файла, URL для обновления нет. Импортируйте файл снова.")
                                 } else {
-                                    "${subscription.name} 使用的是带时效签名的订阅链接，已按静态快照导入，不参与刷新。"
+                                    tr("${subscription.name} 使用的是带时效签名的订阅链接，已按静态快照导入，不参与刷新。", "${subscription.name} uses a time-limited signed link and was imported as a static snapshot, so it isn't refreshed.", "${subscription.name} использует ссылку с ограниченной по времени подписью и импортирована как статический снимок, поэтому не обновляется.")
                                 }
                                 return@SubscriptionsScreen
                             }
@@ -2445,7 +2464,7 @@ fun MallocGfwApp(
                                         )
                                     }
                                     subscriptionMessage = applyResult.message
-                                        ?: "${preview.group.name} 刷新完成，共同步 ${preview.nodes.count { !it.hiddenUnsupported }} 个节点。"
+                                        ?: tr("${preview.group.name} 刷新完成，共同步 ${preview.nodes.count { !it.hiddenUnsupported }} 个节点。", "${preview.group.name} refreshed: ${preview.nodes.count { !it.hiddenUnsupported }} nodes synced.", "${preview.group.name}: обновлено, синхронизировано узлов: ${preview.nodes.count { !it.hiddenUnsupported }}.")
                                     if (applyResult.selectedServerChanged) {
                                         goToMain(MainTab.Servers)
                                     }
@@ -2526,7 +2545,7 @@ fun MallocGfwApp(
                         },
                         onHeartbeatIntervalChange = { minutes ->
                             appSettings = appSettings.copy(heartbeatIntervalMinutes = minutes)
-                            settingsMessage = appText("心跳检测间隔已设置为 $minutes 分钟。", "Fallback check interval set to $minutes minutes.", resolvedLanguage)
+                            settingsMessage = appText("心跳检测间隔已设置为 $minutes 分钟。", "Fallback check interval set to $minutes minutes.", "Интервал проверки резервного узла: $minutes мин.", resolvedLanguage)
                         },
                         onVpnMtuChange = ::updateVpnMtu,
                         onDailyAutoUpdateChange = { enabled ->
@@ -2543,7 +2562,7 @@ fun MallocGfwApp(
                         onDnsChange = ::updateDnsSettings,
                         onLogLevelChange = { level ->
                             appSettings = appSettings.copy(logLevel = level)
-                            settingsMessage = appText("日志级别已切换为 ${level.displayName}。", "Log level changed to ${level.displayName}.", resolvedLanguage)
+                            settingsMessage = appText("日志级别已切换为 ${level.displayName}。", "Log level changed to ${level.displayName}.", "Уровень журналов изменён на ${level.displayName}.", resolvedLanguage)
                         },
                         onAddQuickSettingsTile = ::requestQuickSettingsTile,
                         onViewLogs = ::openLogViewer,
@@ -2610,7 +2629,7 @@ fun MallocGfwApp(
                             val message = when {
                                 normalizedRoutes.isEmpty() -> "已关闭 Tailscale 子网访问。"
                                 nextEffectiveRoutes.isEmpty() -> "子网设置已保存，当前 Tailnet 尚未公布对应路由。"
-                                else -> "已启用子网：${nextEffectiveRoutes.joinToString()}"
+                                else -> tr("已启用子网：${nextEffectiveRoutes.joinToString()}", "Subnets enabled: ${nextEffectiveRoutes.joinToString()}", "Включены подсети: ${nextEffectiveRoutes.joinToString()}")
                             }
                             runtimeMessage = message
                             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
@@ -2630,7 +2649,7 @@ fun MallocGfwApp(
                                         val successMessage = if (nodeId.isBlank()) {
                                             "已取消 Tailscale 出口节点。"
                                         } else {
-                                            "已切换出口节点：${targetNodeName ?: "所选设备"}"
+                                            tr("已切换出口节点：${targetNodeName ?: "所选设备"}", "Exit node: ${targetNodeName ?: "the selected device"}", "Выходной узел: ${targetNodeName ?: "выбранное устройство"}")
                                         }
                                         runtimeMessage = successMessage
                                         Toast.makeText(context, successMessage, Toast.LENGTH_SHORT).show()

@@ -126,7 +126,7 @@ internal fun HomeScreen(
         ConnectionStatus.Disconnected -> "--:--:--"
     }
     val speedTestTimeoutSubtitle = if (currentRouteHint != null) {
-        uiText("连接可用可忽略", "Usable connection")
+        uiText("连接可用可忽略", "Usable connection", "Соединение работает")
     } else {
         uiText("请稍后重试")
     }
@@ -155,7 +155,7 @@ internal fun HomeScreen(
         ConnectionStatus.Disconnecting -> when {
             vpnSnapshot.speedTestInFlight -> uiText("正在刷新")
             vpnSnapshot.speedTestTimedOut -> speedTestTimeoutSubtitle
-            else -> uiText("下行样本 ${formatByteCount(vpnSnapshot.rxBytes)}", "Down ${formatByteCount(vpnSnapshot.rxBytes)}")
+            else -> uiText("下行样本 ${formatByteCount(vpnSnapshot.rxBytes)}", "Down ${formatByteCount(vpnSnapshot.rxBytes)}", "Приём ${formatByteCount(vpnSnapshot.rxBytes)}")
         }
         ConnectionStatus.Connecting,
         ConnectionStatus.Disconnected -> uiText("等待连接")
@@ -165,7 +165,7 @@ internal fun HomeScreen(
         ConnectionStatus.Disconnecting -> when {
             vpnSnapshot.speedTestInFlight -> uiText("正在刷新")
             vpnSnapshot.speedTestTimedOut -> speedTestTimeoutSubtitle
-            else -> uiText("上行样本 ${formatByteCount(vpnSnapshot.txBytes)}", "Up ${formatByteCount(vpnSnapshot.txBytes)}")
+            else -> uiText("上行样本 ${formatByteCount(vpnSnapshot.txBytes)}", "Up ${formatByteCount(vpnSnapshot.txBytes)}", "Отправка ${formatByteCount(vpnSnapshot.txBytes)}")
         }
         ConnectionStatus.Connecting -> uiText("等待连接")
         ConnectionStatus.Disconnected -> uiText("等待连接")
@@ -635,7 +635,7 @@ internal fun ServersScreen(
             title = "删除节点",
             message = uiText(
                 "确认删除本地节点“${server.name}”？删除后需要重新导入才能恢复。",
-                "Delete local node \"${server.name}\"? You will need to import it again to restore it.",
+                "Delete local node \"${server.name}\"? You will need to import it again to restore it.", "Удалить локальный узел «${server.name}»? Чтобы восстановить его, понадобится импортировать заново.",
             ),
             confirmText = "删除",
             onConfirm = {
@@ -651,7 +651,7 @@ internal fun ServersScreen(
             title = "删除订阅组",
             message = uiText(
                 "确认删除订阅组“${group.name}”？组内所有节点都会一起删除。",
-                "Delete subscription group \"${group.name}\" and all nodes in it?",
+                "Delete subscription group \"${group.name}\" and all nodes in it?", "Удалить группу подписки «${group.name}» и все её узлы?",
             ),
             confirmText = "删除",
             onConfirm = {
@@ -804,7 +804,7 @@ internal fun NodeDetailScreen(
                 DetailRow(
                     label = "接入地址",
                     value = server?.address ?: "暂无",
-                    trailing = "端口 ${server?.port ?: "--"}",
+                    trailing = uiText("端口 ${server?.port ?: "--"}", "Port ${server?.port ?: "--"}", "Порт ${server?.port ?: "--"}"),
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 DetailRow(
@@ -820,7 +820,7 @@ internal fun NodeDetailScreen(
                 GroupedCard {
                     ListRow(
                         title = "全部参数",
-                        value = uiText("${parameterRows.size} 项", "${parameterRows.size} items"),
+                        value = uiText("${parameterRows.size} 项", "${parameterRows.size} items", "Параметров: ${parameterRows.size}"),
                         icon = Icons.Rounded.Code,
                         onClick = { showAllParameters = !showAllParameters },
                         trailing = {
@@ -895,7 +895,7 @@ internal fun NodeDetailScreen(
             title = "删除节点",
             message = uiText(
                 "确认删除本地节点“${server.name}”？删除后需要重新导入才能恢复。",
-                "Delete local node \"${server.name}\"? You will need to import it again to restore it.",
+                "Delete local node \"${server.name}\"? You will need to import it again to restore it.", "Удалить локальный узел «${server.name}»? Чтобы восстановить его, понадобится импортировать заново.",
             ),
             confirmText = "删除",
             onConfirm = {
@@ -911,7 +911,7 @@ internal fun NodeDetailScreen(
             title = "删除订阅组",
             message = uiText(
                 "确认删除订阅组“${group.name}”？组内所有节点都会一起删除。",
-                "Delete subscription group \"${group.name}\" and all nodes in it?",
+                "Delete subscription group \"${group.name}\" and all nodes in it?", "Удалить группу подписки «${group.name}» и все её узлы?",
             ),
             confirmText = "删除",
             onConfirm = {
@@ -941,11 +941,11 @@ internal fun PreProxyNodePickerScreen(
     val headerTitle = when (mode) {
         NodeLinkPickerMode.PreProxy -> uiText(
             "为 ${server?.name ?: "当前节点"} 选择前置代理",
-            "Choose pre-proxy for ${server?.name ?: uiText("当前节点")}",
+            "Choose pre-proxy for ${server?.name ?: uiText("当前节点")}", "Предварительный прокси для ${server?.name ?: uiText("当前节点")}",
         )
         NodeLinkPickerMode.Fallback -> uiText(
             "为 ${server?.name ?: "当前节点"} 选择备用节点",
-            "Choose fallback for ${server?.name ?: uiText("当前节点")}",
+            "Choose fallback for ${server?.name ?: uiText("当前节点")}", "Резервный узел для ${server?.name ?: uiText("当前节点")}",
         )
     }
     val headerSubtitle = when (mode) {

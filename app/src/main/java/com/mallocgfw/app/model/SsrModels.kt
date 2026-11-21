@@ -29,19 +29,19 @@ object SsrLinkCodec {
 
     fun parse(raw: String): SsrEndpoint {
         val encoded = raw.trim().substringAfter("://", raw.trim())
-        val decoded = decodeBase64Url(encoded, "SSR 分享链接").trim()
+        val decoded = decodeBase64Url(encoded, tr("SSR 分享链接", "SSR share link", "Ссылка SSR")).trim()
         val mainPart = decoded.substringBefore("/?")
         val query = parseQuery(decoded.substringAfter("/?", ""))
         val parts = mainPart.split(":", limit = 6)
-        require(parts.size == 6) { "SSR 分享链接格式不完整。" }
+        require(parts.size == 6) { tr("SSR 分享链接格式不完整。", "The SSR share link is incomplete.", "Ссылка SSR неполная.") }
         return SsrEndpoint(
             name = decodeOptionalBase64(query["remarks"]).ifBlank { parts[0] },
             server = parts[0],
-            port = parts[1].toIntOrNull() ?: error("SSR 端口格式不正确。"),
+            port = parts[1].toIntOrNull() ?: error(tr("SSR 端口格式不正确。", "Invalid SSR port.", "Неверный порт SSR.")),
             protocol = parts[2],
             method = parts[3],
             obfs = parts[4],
-            password = decodeBase64Url(parts[5], "SSR 密码"),
+            password = decodeBase64Url(parts[5], tr("SSR 密码", "SSR password", "Пароль SSR")),
             obfsParam = decodeOptionalBase64(query["obfsparam"]),
             protocolParam = decodeOptionalBase64(query["protoparam"]),
             udp = query["udp"]?.let { it == "1" || it.equals("true", ignoreCase = true) } ?: true,
@@ -88,7 +88,7 @@ object SsrLinkCodec {
 
     private fun decodeOptionalBase64(value: String?): String {
         if (value.isNullOrBlank()) return ""
-        return decodeBase64Url(value, "SSR 参数")
+        return decodeBase64Url(value, tr("SSR 参数", "SSR parameters", "Параметры SSR"))
     }
 
     private fun encodeBase64Url(value: String): String {
@@ -102,7 +102,7 @@ object SsrLinkCodec {
         }.recoverCatching {
             Base64.getDecoder().decode(normalized).decodeToString()
         }.getOrElse {
-            error("$label 无法解码。")
+            error(tr("$label 无法解码。", "Couldn't decode $label.", "Не удалось декодировать: $label."))
         }
     }
 }
@@ -119,7 +119,7 @@ object SsrMihomoConfigFactory {
      * whose TCP and UDP traffic goes straight to that proxy.
      */
     fun buildConfig(proxies: List<Pair<MihomoProxy, LocalProxyEndpoint>>): String {
-        require(proxies.isNotEmpty()) { "mihomo sidecar 没有可运行的节点。" }
+        require(proxies.isNotEmpty()) { tr("mihomo sidecar 没有可运行的节点。", "The mihomo sidecar has no node to run.", "У mihomo sidecar нет узлов для запуска.") }
         return buildString {
             appendLine("allow-lan: false")
             appendLine("bind-address: ${yamlQuote(LocalProxyRuntime.LOOPBACK_HOST)}")
@@ -155,9 +155,9 @@ object SsrMihomoConfigFactory {
 
     fun endpointFor(node: ServerNode, sidecarNodes: List<ServerNode>, allocation: LocalProxyAllocation): LocalProxyEndpoint {
         val index = sidecarNodes.indexOfFirst { it.id == node.id }
-        require(index >= 0) { "${node.name} 需要兼容内核运行，但没有为它启动兼容内核。" }
+        require(index >= 0) { tr("${node.name} 需要兼容内核运行，但没有为它启动兼容内核。", "${node.name} needs the compatibility core, but it wasn't started for it.", "Для ${node.name} нужно ядро совместимости, но оно не было запущено.") }
         return allocation.sidecar.getOrNull(index)
-            ?: error("同时使用的兼容内核节点过多（最多 ${allocation.sidecar.size} 个），请减少分流规则里的此类节点。")
+            ?: error(tr("同时使用的兼容内核节点过多（最多 ${allocation.sidecar.size} 个），请减少分流规则里的此类节点。", "Too many compatibility-core nodes in use at once (max ${allocation.sidecar.size}). Use fewer of them in routing rules.", "Одновременно используется слишком много узлов ядра совместимости (максимум ${allocation.sidecar.size}). Уменьшите их число в правилах маршрутизации."))
     }
 
     /**

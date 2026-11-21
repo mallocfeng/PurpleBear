@@ -19,7 +19,7 @@ object ImportParser {
 
     suspend fun buildPreview(input: String): ImportPreview {
         val trimmed = input.trim()
-        require(trimmed.isNotBlank()) { "请输入订阅链接或节点 URL。" }
+        require(trimmed.isNotBlank()) { tr("请输入订阅链接或节点 URL。", "Enter a subscription link or node URL.", "Введите ссылку подписки или URL узла.") }
 
         return when {
             // Several links (or a pasted subscription / Clash body) at once: parse it as content.
@@ -28,7 +28,7 @@ object ImportParser {
             trimmed.startsWith("http://") || trimmed.startsWith("https://") -> buildSubscriptionPreview(trimmed)
             ManualNodeFactory.supportsShareLink(trimmed) || MihomoNodes.handlesShareLink(trimmed) -> buildLocalPreview(trimmed)
             else -> runCatching { buildPastedPreview(trimmed) }.getOrElse {
-                error("当前仅支持 http(s) 订阅，以及 VLESS / VMess / Trojan / Shadowsocks / SSR / SOCKS / HTTP / Hysteria2 单节点导入。")
+                error(tr("当前仅支持 http(s) 订阅，以及 VLESS / VMess / Trojan / Shadowsocks / SSR / SOCKS / HTTP / Hysteria2 单节点导入。", "Only http(s) subscriptions and single VLESS / VMess / Trojan / Shadowsocks / SSR / SOCKS / HTTP / Hysteria2 nodes can be imported.", "Поддерживаются только подписки http(s) и отдельные узлы VLESS / VMess / Trojan / Shadowsocks / SSR / SOCKS / HTTP / Hysteria2."))
             }
         }
     }
@@ -162,7 +162,7 @@ object ImportParser {
         val nodes = listOf(
             parseNodeLine(nodeUrl, groupId = groupId, sourceLabel = groupName, index = 1)
                 ?.let(::markHiddenIfUnsupported)
-                ?: error("种子订阅中的单节点链接无法解析。"),
+                ?: error(tr("种子订阅中的单节点链接无法解析。", "Couldn't parse the single-node link in the seed subscription.", "Не удалось разобрать ссылку на узел в исходной подписке.")),
         )
         val visibleNodeCount = nodes.count { !it.hiddenUnsupported }
         val hiddenUnsupportedNodeCount = nodes.count { it.hiddenUnsupported }
@@ -261,7 +261,7 @@ object ImportParser {
             sourceLabel = "Local",
             index = 1,
         )?.let(::markHiddenIfUnsupported)
-            ?: error("当前仅支持可解析的 VLESS / VMess / Trojan / Shadowsocks / SSR / SOCKS / HTTP / Hysteria2 单节点。")
+            ?: error(tr("当前仅支持可解析的 VLESS / VMess / Trojan / Shadowsocks / SSR / SOCKS / HTTP / Hysteria2 单节点。", "Only valid single VLESS / VMess / Trojan / Shadowsocks / SSR / SOCKS / HTTP / Hysteria2 nodes are supported.", "Поддерживаются только корректные отдельные узлы VLESS / VMess / Trojan / Shadowsocks / SSR / SOCKS / HTTP / Hysteria2."))
         return ImportPreview(
             input = nodeUrl,
             group = ServerGroup(
@@ -319,17 +319,17 @@ object ImportParser {
             if (groupType == ServerGroupType.Subscription && shouldAutoRefreshSubscription(sourceValue).not()) {
                 when {
                     containsRegularClientBlock(content) -> {
-                        "当前设备上的订阅请求仍被服务端识别为非 Shadowrocket 客户端，未返回真实节点。"
+                        tr("当前设备上的订阅请求仍被服务端识别为非 Shadowrocket 客户端，未返回真实节点。", "The server still treats this device's request as a non-Shadowrocket client and returned no real nodes.", "Сервер по-прежнему считает запрос с этого устройства не клиентом Shadowrocket и не вернул настоящие узлы.")
                     }
                     containsExpiredSnapshotNotice(content) -> {
-                        "订阅链接已过期或已失效。该链接只支持一次性使用，请重新打开提供订阅的页面获取最新链接。"
+                        tr("订阅链接已过期或已失效。该链接只支持一次性使用，请重新打开提供订阅的页面获取最新链接。", "The subscription link has expired. It works only once: open the page that provides the subscription again to get a new link.", "Срок действия ссылки подписки истёк. Она одноразовая: откройте страницу подписки снова и получите новую ссылку.")
                     }
                     else -> {
-                        "订阅链接未返回可用节点。该链接是一次性快照链接，当前返回内容与 Shadowrocket 实际收到的数据不一致。"
+                        tr("订阅链接未返回可用节点。该链接是一次性快照链接，当前返回内容与 Shadowrocket 实际收到的数据不一致。", "The subscription link returned no usable nodes. It is a one-time snapshot link, and what it returns differs from what Shadowrocket receives.", "Ссылка подписки не вернула рабочих узлов. Это одноразовая ссылка-снимок, и её содержимое отличается от того, что получает Shadowrocket.")
                     }
                 }
             } else {
-                "没有从导入内容中解析出可用节点。"
+                tr("没有从导入内容中解析出可用节点。", "No usable nodes were found in the imported content.", "В импортированных данных не найдено рабочих узлов.")
             }
         }
 
@@ -396,7 +396,7 @@ object ImportParser {
                         url = url,
                         connectTimeoutMs = SUBSCRIPTION_CONNECT_TIMEOUT_MS,
                         readTimeoutMs = SUBSCRIPTION_READ_TIMEOUT_MS,
-                        label = "订阅提供者",
+                        label = tr("订阅提供者", "Subscription provider", "Провайдер подписки"),
                         requestProfile = ResourceFetchClient.RequestProfile.DEFAULT,
                     )
                 }.getOrNull()?.let { ProviderContent(it, filter, override) }
@@ -500,7 +500,7 @@ object ImportParser {
             trimmed.contains("://") -> trimmed
             else -> {
                 val cleaned = trimmed.replace("\\s+".toRegex(), "")
-                runCatching { decodeBase64Flexible(cleaned, "订阅内容") }.getOrElse { error ->
+                runCatching { decodeBase64Flexible(cleaned, tr("订阅内容", "Subscription content", "Содержимое подписки")) }.getOrElse { error ->
                     // Surge / Loon / Quantumult X configs are plain "name = type, …" lines.
                     val isConf = trimmed.lineSequence().any { MihomoNodes.fromConfLine(it) != null } ||
                         MihomoNodes.surgeWireGuardSections(trimmed).isNotEmpty()
@@ -1507,7 +1507,7 @@ object ImportParser {
         }.recoverCatching {
             Base64.getUrlDecoder().decode(normalized).toString(Charsets.UTF_8)
         }.getOrElse {
-            error("$label 不是可识别的 Base64 编码。")
+            error(tr("$label 不是可识别的 Base64 编码。", "$label is not valid Base64.", "$label: некорректный Base64."))
         }
     }
 
@@ -1540,7 +1540,7 @@ object ImportParser {
             "httpupgrade" -> LocalNodeTransport.HTTP_UPGRADE
             "xhttp" -> LocalNodeTransport.XHTTP
             "kcp", "mkcp" -> LocalNodeTransport.KCP
-            "quic", "h3" -> error("暂不支持 $value 传输方式")
+            "quic", "h3" -> error(tr("暂不支持 $value 传输方式", "Transport $value isn't supported yet", "Транспорт $value пока не поддерживается"))
             else -> LocalNodeTransport.TCP
         }
     }

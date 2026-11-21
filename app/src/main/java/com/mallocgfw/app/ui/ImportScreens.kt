@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -52,6 +53,7 @@ internal fun ImportScreen(
     onInputChange: (String) -> Unit,
     onOpenFile: () -> Unit,
     onOpenConfirm: () -> Unit,
+    onCreateManual: () -> Unit = {},
 ) {
     LazyColumn(
         modifier = Modifier
@@ -98,6 +100,18 @@ internal fun ImportScreen(
                     primaryEnabled = !importInFlight && input.isNotBlank(),
                     secondaryText = "从文件导入",
                     onSecondary = onOpenFile,
+                )
+            }
+        }
+        item {
+            // The manual builder is easy to miss otherwise: it used to sit on the
+            // Local group header only.
+            GroupedCard {
+                ListRow(
+                    title = "手动添加节点",
+                    subtitle = "逐项填写协议、地址和密钥",
+                    icon = Icons.Rounded.EditNote,
+                    onClick = onCreateManual,
                 )
             }
         }
@@ -153,7 +167,7 @@ internal fun ConfirmImportScreen(
                         Eyebrow(if (isLocalImport) "当前导入节点" else "订阅名称")
                         Text(
                             text = if (isBatchLocalImport) {
-                                uiText("$localNodeCount 个节点", "$localNodeCount nodes")
+                                uiText("$localNodeCount 个节点", "$localNodeCount nodes", "Узлов: $localNodeCount")
                             } else if (isLocalImport) {
                                 localNode?.name?.let { uiText(it) } ?: uiText("暂无可导入数据")
                             } else {
@@ -176,9 +190,9 @@ internal fun ConfirmImportScreen(
                 TwoColumnInfoGrid(
                     items = buildList {
                         if (isBatchLocalImport) {
-                            add("节点数量" to uiText("$localNodeCount 个节点", "$localNodeCount nodes"))
+                            add("节点数量" to uiText("$localNodeCount 个节点", "$localNodeCount nodes", "Узлов: $localNodeCount"))
                             if ((preview?.hiddenUnsupportedNodeCount ?: 0) > 0) {
-                                add("已隐藏节点" to uiText("已隐藏 ${preview?.hiddenUnsupportedNodeCount ?: 0} 个", "${preview?.hiddenUnsupportedNodeCount ?: 0} hidden"))
+                                add("已隐藏节点" to uiText("已隐藏 ${preview?.hiddenUnsupportedNodeCount ?: 0} 个", "${preview?.hiddenUnsupportedNodeCount ?: 0} hidden", "Скрыто: ${preview?.hiddenUnsupportedNodeCount ?: 0}"))
                             }
                             add("目标分组" to (preview?.group?.name?.let { uiText(it) } ?: "Local"))
                         } else if (isLocalImport) {
@@ -189,9 +203,9 @@ internal fun ConfirmImportScreen(
                             add("安全" to (localNode?.security?.let { uiText(it) } ?: "--"))
                             add("目标分组" to (preview?.group?.name?.let { uiText(it) } ?: "Local"))
                         } else {
-                            add("节点数量" to uiText("${preview?.nodes?.size ?: 0} 个节点", "${preview?.nodes?.size ?: 0} nodes"))
+                            add("节点数量" to uiText("${preview?.nodes?.size ?: 0} 个节点", "${preview?.nodes?.size ?: 0} nodes", "Узлов: ${preview?.nodes?.size ?: 0}"))
                             if ((preview?.hiddenUnsupportedNodeCount ?: 0) > 0) {
-                                add("已隐藏节点" to uiText("已隐藏 ${preview?.hiddenUnsupportedNodeCount ?: 0} 个", "${preview?.hiddenUnsupportedNodeCount ?: 0} hidden"))
+                                add("已隐藏节点" to uiText("已隐藏 ${preview?.hiddenUnsupportedNodeCount ?: 0} 个", "${preview?.hiddenUnsupportedNodeCount ?: 0} hidden", "Скрыто: ${preview?.hiddenUnsupportedNodeCount ?: 0}"))
                             }
                             add("更新时间" to (preview?.group?.updatedAt?.let { uiText(it) } ?: "--"))
                             add("导入类型" to uiText("订阅"))
@@ -276,7 +290,7 @@ internal fun SubscriptionsScreen(
                         )
                         Text(
                             text = listOf(
-                                uiText("${subscription.nodes} 个节点", "${subscription.nodes} nodes"),
+                                uiText("${subscription.nodes} 个节点", "${subscription.nodes} nodes", "Узлов: ${subscription.nodes}"),
                                 uiText(formatRelativeSyncTime(subscription.updatedAtMs, subscription.updatedAt, nowMs)),
                                 uiText(
                                     when {

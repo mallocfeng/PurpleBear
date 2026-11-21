@@ -202,7 +202,7 @@ internal fun HeartbeatIntervalDialog(
                 )
                 HeartbeatIntervalOptionsMinutes.forEach { minutes ->
                     ModeChip(
-                        text = uiText("$minutes 分钟", "$minutes min"),
+                        text = uiText("$minutes 分钟", "$minutes min", "$minutes мин"),
                         selected = pendingMinutes == minutes,
                     ) {
                         pendingMinutes = minutes
@@ -255,7 +255,7 @@ internal fun VpnMtuDialog(
                 AppVpnMtuOptions.forEach { mtu ->
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         ModeChip(
-                            text = if (mtu == 1400) uiText("$mtu 推荐", "$mtu Recommended") else mtu.toString(),
+                            text = if (mtu == 1400) uiText("$mtu 推荐", "$mtu Recommended", "$mtu (рекомендуется)") else mtu.toString(),
                             selected = pendingMtu == mtu,
                         ) {
                             pendingMtu = mtu

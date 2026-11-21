@@ -9,6 +9,7 @@ import java.net.ServerSocket
 import java.nio.charset.StandardCharsets
 import java.security.SecureRandom
 import java.util.Base64
+import com.mallocgfw.app.model.tr
 
 /** One loopback proxy listener and the credentials required to use it. */
 data class LocalProxyEndpoint(
@@ -90,7 +91,7 @@ object LocalProxyRuntime {
         val count = 2 + SIDECAR_SLOTS
         val ports = portPicker(count, RESERVED_PORTS)
         require(ports.size == count && ports.distinct().size == count && ports.all { it in 1..65535 }) {
-            "无法分配本地代理端口。"
+            tr("无法分配本地代理端口。", "Couldn't allocate a local proxy port.", "Не удалось выделить локальный порт прокси.")
         }
         val sidecar = ports.drop(2).map { LocalProxyEndpoint(it, randomSecret(8), randomSecret(SECRET_BYTES)) }
         return LocalProxyAllocation(

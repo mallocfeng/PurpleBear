@@ -15,6 +15,7 @@ import com.mallocgfw.app.model.subscriptionNameKey
 import com.mallocgfw.app.xray.AppLogManager
 import com.mallocgfw.app.xray.GeoDataManager
 import com.mallocgfw.app.xray.GeoDataSnapshot
+import com.mallocgfw.app.model.tr
 
 data class SyncReport(
     val state: PersistedAppState,
@@ -97,7 +98,7 @@ object BackgroundSyncManager {
         }.getOrElse { error ->
             GeoDataManager.load(context).copy(
                 status = com.mallocgfw.app.xray.GeoDataStatus.Failed,
-                lastError = error.message ?: "Geo 资源同步失败。",
+                lastError = error.message ?: tr("Geo 资源同步失败。", "Geo data sync failed.", "Не удалось синхронизировать данные Geo."),
             )
         }
 
@@ -249,21 +250,12 @@ object BackgroundSyncManager {
         refreshedStreamingRules: Int,
         failedItems: Int,
     ): String {
-        return buildString {
-            append("后台同步完成")
-            append("，订阅 ")
-            append(refreshedSubscriptions)
-            append(" 项，规则 ")
-            append(refreshedRuleSources)
-            append(" 项，流媒体规则 ")
-            append(refreshedStreamingRules)
-            append(" 项")
-            if (failedItems > 0) {
-                append("，失败 ")
-                append(failedItems)
-                append(" 项")
-            }
-            append('。')
-        }
+        val base = tr(
+            "后台同步完成，订阅 $refreshedSubscriptions 项，规则 $refreshedRuleSources 项，流媒体规则 $refreshedStreamingRules 项",
+            "Background sync done: $refreshedSubscriptions subscriptions, $refreshedRuleSources rule sources, $refreshedStreamingRules media rules",
+            "Фоновая синхронизация завершена: подписок $refreshedSubscriptions, источников правил $refreshedRuleSources, правил медиа $refreshedStreamingRules",
+        )
+        val failed = if (failedItems > 0) tr("，失败 $failedItems 项", ", $failedItems failed", ", с ошибкой $failedItems") else ""
+        return base + failed + tr("。", ".", ".")
     }
 }
