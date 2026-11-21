@@ -7,12 +7,16 @@ import com.mallocgfw.app.model.NodeCompatibility
 import com.mallocgfw.app.model.ServerNode
 import com.mallocgfw.app.model.SsrMihomoConfigFactory
 import java.io.File
+import java.net.Socket
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 object SsrRuntimeManager {
     private const val TAG = "SsrRuntimeManager"
     private const val NATIVE_LIBRARY_NAME = "libmihomo.so"
+    private const val LISTENER_READY_TIMEOUT_MS = 3_000L
+    private const val LISTENER_PROBE_TIMEOUT_MS = 200
+    private const val LISTENER_POLL_MS = 50L
     private val runtimeLock = Any()
     private var process: Process? = null
     private var activeConfigKey: String? = null
@@ -66,8 +70,27 @@ object SsrRuntimeManager {
                         process = null
                         error("mihomo sidecar 启动后立即退出。")
                     }
+                    // Callers may dial a listener right away (the certificate fetch
+                    // through a sidecar pre-proxy does), so wait until they accept.
+                    awaitListeners(started, proxies.map { it.second })
                 }
             }
+        }
+    }
+
+    private fun awaitListeners(started: Process, endpoints: List<LocalProxyEndpoint>) {
+        val deadline = System.currentTimeMillis() + LISTENER_READY_TIMEOUT_MS
+        val pending = endpoints.toMutableList()
+        while (pending.isNotEmpty() && System.currentTimeMillis() < deadline && started.isAlive) {
+            pending.removeAll { endpoint ->
+                runCatching {
+                    Socket().use { it.connect(endpoint.socketAddress(), LISTENER_PROBE_TIMEOUT_MS) }
+                }.isSuccess
+            }
+            if (pending.isNotEmpty()) Thread.sleep(LISTENER_POLL_MS)
+        }
+        if (pending.isNotEmpty()) {
+            Log.w(TAG, "mihomo sidecar listeners not ready after ${LISTENER_READY_TIMEOUT_MS} ms: $pending")
         }
     }
 

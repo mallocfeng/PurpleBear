@@ -27,6 +27,7 @@ object XrayConfigFactory {
     /** Tailscale's resolver; also the DNS address the VPN advertises for MagicDNS. */
     const val TAILSCALE_RESOLVER = "100.100.100.100"
     private const val NXDOMAIN = 3
+    private const val MAX_CHAIN_LENGTH = 8
     private val GOOGLE_PLAY_DOWNLOAD_DOMAINS = listOf(
         "android.clients.google.com",
         "google.com",
@@ -76,7 +77,7 @@ object XrayConfigFactory {
                 "outbounds",
                 JSONArray().apply {
                     // Nodes that run in the mihomo sidecar, each on its own listener slot.
-                    val sidecarNodes = SsrMihomoConfigFactory.sidecarNodes(node, additionalOutbounds.map { it.node })
+                    val sidecarNodes = sidecarNodesFor(node, additionalOutbounds.map { it.node }, availableServers)
                     buildOutboundChain(node, "proxy", availableServers, localProxy, sidecarNodes).forEach(::put)
                     additionalOutbounds.forEach { outbound ->
                         buildOutboundChain(outbound.node, outbound.tag, availableServers, localProxy, sidecarNodes).forEach(::put)
@@ -161,7 +162,7 @@ object XrayConfigFactory {
                 "outbounds",
                 JSONArray().apply {
                     // Nodes that run in the mihomo sidecar, each on its own listener slot.
-                    val sidecarNodes = SsrMihomoConfigFactory.sidecarNodes(node, additionalOutbounds.map { it.node })
+                    val sidecarNodes = sidecarNodesFor(node, additionalOutbounds.map { it.node }, availableServers)
                     buildOutboundChain(node, "proxy", availableServers, localProxy, sidecarNodes).forEach(::put)
                     additionalOutbounds.forEach { outbound ->
                         buildOutboundChain(outbound.node, outbound.tag, availableServers, localProxy, sidecarNodes).forEach(::put)
@@ -573,6 +574,31 @@ object XrayConfigFactory {
     }
 
     /**
+     * Nodes that run in the mihomo sidecar for one run, in listener-slot order:
+     * the node, the routed outbounds, then pre-proxy fronts of their chains.
+     * The core manager starts the sidecar from the same list, so slots match.
+     */
+    fun sidecarNodesFor(
+        node: ServerNode,
+        additional: List<ServerNode>,
+        availableServers: List<ServerNode>,
+    ): List<ServerNode> {
+        val fronts = (listOf(node) + additional).flatMap { root ->
+            buildList {
+                var current = root
+                val visited = mutableSetOf(root.id)
+                while (size < MAX_CHAIN_LENGTH) {
+                    val front = resolvePreProxyNode(current, availableServers, visited) ?: break
+                    add(front)
+                    visited += front.id
+                    current = front
+                }
+            }
+        }
+        return SsrMihomoConfigFactory.sidecarNodes(node, additional + fronts)
+    }
+
+    /**
      * A minimal config that only runs [front] (with its own pre-proxy chain)
      * behind the authenticated SOCKS inbound of [localProxy]. Used briefly
      * before the real start to fetch the certificate of a node that sits
@@ -582,6 +608,7 @@ object XrayConfigFactory {
         front: ServerNode,
         availableServers: List<ServerNode>,
         localProxy: LocalProxyAllocation,
+        sidecarNodes: List<ServerNode> = emptyList(),
     ): String {
         return JSONObject().apply {
             put("log", JSONObject().put("loglevel", "warning"))
@@ -590,8 +617,9 @@ object XrayConfigFactory {
             put(
                 "outbounds",
                 JSONArray().apply {
-                    // The first outbound is the default one; chain nodes never run in the sidecar.
-                    buildOutboundChain(front, "proxy", availableServers, localProxy, emptyList()).forEach(::put)
+                    // The first outbound is the default one. A front run by the sidecar is
+                    // reached through its listener, so the sidecar must already be up.
+                    buildOutboundChain(front, "proxy", availableServers, localProxy, sidecarNodes).forEach(::put)
                 },
             )
         }.toString(2)
@@ -652,7 +680,10 @@ object XrayConfigFactory {
             candidate.id == targetId && !candidate.hiddenUnsupported
         } ?: return null
         if (target.id == node.id || target.id in visitedNodeIds) return null
-        if (!ManualNodeFactory.supportsPreProxy(node) || !ManualNodeFactory.supportsPreProxy(target)) return null
+        // The node itself must be an Xray node (it dials through the front with
+        // dialerProxy); the front may run anywhere, including the mihomo sidecar,
+        // whose loopback listener is an ordinary SOCKS outbound here.
+        if (!ManualNodeFactory.supportsPreProxy(node) || !ManualNodeFactory.isRunnable(target)) return null
         return target
     }
 

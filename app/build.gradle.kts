@@ -27,8 +27,8 @@ android {
         applicationId = "com.mallocgfw.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 278
-        versionName = "0.8.3"
+        versionCode = 279
+        versionName = "0.8.4"
 
         ndk {
             abiFilters += "arm64-v8a"

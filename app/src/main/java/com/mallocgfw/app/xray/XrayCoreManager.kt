@@ -5,7 +5,6 @@ import android.os.Build
 import android.util.Log
 import com.mallocgfw.app.model.AppStateStore
 import com.mallocgfw.app.model.ServerNode
-import com.mallocgfw.app.model.SsrMihomoConfigFactory
 import com.mallocgfw.app.model.XrayNamedOutbound
 import com.mallocgfw.app.model.XrayRoutingRule
 import java.io.File
@@ -173,13 +172,14 @@ object XrayCoreManager {
         chained: List<PinCandidate>,
         localProxy: LocalProxyAllocation,
         datDir: String,
+        sidecarNodes: List<ServerNode>,
     ) {
         if (chained.isEmpty() || !InsecureTlsPinner.hasPending(context, chained.map { it.node })) return
         val servers = runCatching { AppStateStore.load(context).servers }.getOrDefault(emptyList())
         for (candidate in chained) {
             val front = candidate.front ?: continue
             if (!InsecureTlsPinner.hasPending(context, listOf(candidate.node))) continue
-            val config = runCatching { XrayConfigFactory.buildPinFetchConfig(front, servers, localProxy) }
+            val config = runCatching { XrayConfigFactory.buildPinFetchConfig(front, servers, localProxy, sidecarNodes) }
                 .onFailure { Log.w(TAG, "Unable to build pin fetch config", it) }
                 .getOrNull() ?: continue
             val response = synchronized(coreLock) {
@@ -220,13 +220,14 @@ object XrayCoreManager {
                 val datDir = prepared.runtimeDir.absolutePath
                 // Fresh random ports and credentials for every run; see LocalProxyRuntime.
                 val localProxy = LocalProxyRuntime.allocate(::freePortsFromCore)
-                fetchChainedPins(context, pinCandidates.filter { it.front != null }, localProxy, datDir)
+                val servers = runCatching { AppStateStore.load(context).servers }.getOrDefault(emptyList())
+                // Includes pre-proxy fronts run by the sidecar; same list and order
+                // as the config builder uses, so listener slots match.
+                val sidecarNodes = XrayConfigFactory.sidecarNodesFor(server, additionalOutbounds.map { it.node }, servers)
+                // Started before the pin fetch: a chain may go through a sidecar front.
+                SsrRuntimeManager.startIfNeeded(context, sidecarNodes, localProxy).getOrElse { throw it }
+                fetchChainedPins(context, pinCandidates.filter { it.front != null }, localProxy, datDir, sidecarNodes)
                 val configJson = buildConfigJson(localProxy)
-                SsrRuntimeManager.startIfNeeded(
-                    context,
-                    SsrMihomoConfigFactory.sidecarNodes(server, additionalOutbounds.map { it.node }),
-                    localProxy,
-                ).getOrElse { throw it }
                 _snapshot.value = _snapshot.value.copy(
                     status = XrayCoreStatus.Starting,
                     message = message,

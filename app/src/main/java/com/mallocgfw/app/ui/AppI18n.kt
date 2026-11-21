@@ -1268,6 +1268,8 @@ private val englishText = mapOf(
     "所选设备" to "selected device",
     "无加密" to "None",
     // Keys that only had a Russian entry, so English showed Chinese (2026-11)
+    "无" to "None",
+    "兼容内核运行的协议暂不支持" to "Not available for compatibility-core protocols",
     "Flow / 附加字段" to "Flow / extra fields",
     "HTTP 代理不加密，只适合你明确知道链路安全的场景。" to "HTTP proxies are not encrypted. Use only when you know the path is safe.",
     "SOCKS5 不加密，适合上游代理。" to "SOCKS5 is not encrypted; suited to upstream proxies.",
@@ -2269,4 +2271,6 @@ private val russianText = mapOf(
     "退出 Tailscale 失败。" to "Не удалось выйти из Tailscale.",
     "所选设备" to "выбранное устройство",
     "无加密" to "Без шифрования",
+    "兼容内核运行的协议暂不支持" to "Недоступно для протоколов ядра совместимости",
+    "无" to "Нет",
 )

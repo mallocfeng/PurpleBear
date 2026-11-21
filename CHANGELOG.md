@@ -2,6 +2,20 @@
 
 PurpleBear 各版本的完整更新记录。安装包见 [GitHub Releases](https://github.com/mallocfeng/PurpleBear/releases)。
 
+## 0.8.4
+
+1. 兼容内核运行的节点（TUIC、AnyTLS、Snell、SS + obfs / shadow-tls、跳过证书校验的 Hysteria2 等）现在可以作为其他节点的前置代理：Xray 出口经兼容内核的本地端口中转，兼容内核会为链路中的前置节点一并启动。
+
+2. 备用节点不再限制兼容内核节点：这类节点可以设置备用节点，也可以被选为其他节点的备用节点（TUIC、Hysteria 等基于 UDP 的协议在连接中无法可靠心跳，仍不支持自动切换）。
+
+3. 兼容内核运行的节点作出口时，节点详情中的“前置代理”改为灰显并注明暂不支持，不再整行隐藏；此前导入的、经兼容内核节点中转的链式配置不再被清除。
+
+4. 修复兼容内核启动后未等待本地端口就绪：经兼容内核前置获取出口证书时可能失败。
+
+5. 节点详情中的 Flow “无” 等文字补齐英文与俄文翻译。
+
+6. 更新版本号到 `0.8.4`，`versionCode` 更新为 `279`。
+
 ## 0.8.3
 
 1. Tailscale 支持 MagicDNS：开启 Tailscale 并连接 VPN 后，可直接用设备名（如 `nas` 或 `nas.xxx.ts.net`）访问 Tailnet 设备。应用把 VPN 的 DNS 地址设为 `100.100.100.100`，Tailnet 设备名由内核按设备列表直接解析，其他域名原样转发给原 DNS，走向（直连或代理）与之前完全一致。Tailscale 后台配置的自定义 DNS 记录与 Split DNS 暂不支持。

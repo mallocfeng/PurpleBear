@@ -402,9 +402,23 @@ object ManualNodeFactory {
         }.getOrNull()
     }
 
+    /**
+     * Whether [server] can dial through a pre-proxy. Only Xray nodes can (via
+     * sockopt.dialerProxy); a node run by the mihomo sidecar is reached through a
+     * loopback listener and its own connection is made by mihomo.
+     */
     fun supportsPreProxy(server: ServerNode): Boolean {
-        // Sidecar nodes are reached through a loopback listener, which can't be chained.
         return !server.hiddenUnsupported && !NodeCompatibility.runsInSidecar(server) && buildOutboundConfig(server) != null
+    }
+
+    /**
+     * Whether [server] can run at all, in Xray or in the sidecar. Such a node can
+     * be a pre-proxy (an Xray node dials through its local listener) and can be,
+     * or have, a fallback node (a fallback is just a reconnect).
+     */
+    fun isRunnable(server: ServerNode): Boolean {
+        if (server.hiddenUnsupported || NodeCompatibility.coreIncompatibility(server) != null) return false
+        return NodeCompatibility.runsInSidecar(server) || buildOutboundConfig(server) != null
     }
 
     fun buildServerNode(draft: LocalNodeDraft): ServerNode {

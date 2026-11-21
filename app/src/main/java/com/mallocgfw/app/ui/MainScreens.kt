@@ -666,6 +666,7 @@ internal fun NodeDetailScreen(
     canSelectPreProxy: Boolean,
     canSelectFallback: Boolean,
     connectionStatus: ConnectionStatus,
+    preProxyUnsupported: Boolean = false,
     activeServerId: String?,
     runtimeMessage: String?,
     onBack: () -> Unit,
@@ -715,7 +716,8 @@ internal fun NodeDetailScreen(
                 subtitle = server?.description ?: "当前没有可查看的节点信息。",
             )
         }
-        if (server != null && (canSelectPreProxy || canSelectFallback)) {
+        val showPreProxyRow = canSelectPreProxy || preProxyUnsupported
+        if (server != null && (showPreProxyRow || canSelectFallback)) {
             item {
                 GroupedCard {
                     if (canSelectPreProxy) {
@@ -726,8 +728,19 @@ internal fun NodeDetailScreen(
                             icon = Icons.Rounded.Link,
                             onClick = onOpenPreProxyPicker,
                         )
+                    } else if (preProxyUnsupported) {
+                        // Shown greyed rather than hidden, so the limit is visible. These
+                        // nodes can still be chosen as another node's pre-proxy.
+                        ListRow(
+                            title = "前置代理",
+                            subtitle = "兼容内核运行的协议暂不支持",
+                            value = "不支持",
+                            icon = Icons.Rounded.Link,
+                            enabled = false,
+                            onClick = {},
+                        )
                     }
-                    if (canSelectPreProxy && canSelectFallback) GroupDivider(startIndent = 58.dp)
+                    if (showPreProxyRow && canSelectFallback) GroupDivider(startIndent = 58.dp)
                     if (canSelectFallback) {
                         ListRow(
                             title = "备用节点",
@@ -773,7 +786,7 @@ internal fun NodeDetailScreen(
                         "协议" to (server?.protocol ?: "--"),
                         "安全层" to (server?.security?.let { uiText(it) } ?: "--"),
                         "传输层" to (server?.transport ?: "--"),
-                        "Flow" to (server?.flow ?: "--"),
+                        "Flow" to (server?.flow?.let { uiText(it) } ?: "--"),
                     ),
                     compact = true,
                 )

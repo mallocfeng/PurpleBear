@@ -77,4 +77,38 @@ class PreProxyChainTest {
         assertTrue(byTag.getValue(middleTag).getJSONObject("settings").toString().contains("middle.example.com"))
         assertTrue(dialer(nearTag).isNullOrEmpty())
     }
+
+    @Test
+    fun compatibilityCoreNodeCanBeTheFrontOfAnXrayNode() {
+        val front = local("anytls://pw@front.example.com:443?sni=front.example.com#Front").copy(id = "front")
+        assertTrue(ManualNodeFactory.isRunnable(front))
+        assertFalse(ManualNodeFactory.supportsPreProxy(front))
+        val exit = ManualNodeFactory.buildNodeFromShareLink(
+            "trojan://pw@exit.example.com:443?security=tls&sni=exit.example.com#Exit",
+        ).copy(id = "exit", preProxyNodeId = "front")
+        val servers = listOf(front, exit)
+
+        // The sidecar is started for the front even though only the exit is selected.
+        val sidecarNodes = XrayConfigFactory.sidecarNodesFor(exit, emptyList(), servers)
+        assertEquals(listOf("front"), sidecarNodes.map { it.id })
+
+        val allocation = com.mallocgfw.app.xray.LocalProxyAllocation.ephemeral()
+        val outbounds = JSONObject(XrayConfigFactory.build(exit, availableServers = servers, localProxy = allocation))
+            .getJSONArray("outbounds")
+        val byTag = (0 until outbounds.length()).map { outbounds.getJSONObject(it) }.associateBy { it.getString("tag") }
+        val frontTag = byTag.getValue("proxy").getJSONObject("streamSettings").getJSONObject("sockopt").getString("dialerProxy")
+        val frontOutbound = byTag.getValue(frontTag)
+        assertEquals("socks", frontOutbound.getString("protocol"))
+        assertEquals(allocation.sidecar[0].port, frontOutbound.getJSONObject("settings").getInt("port"))
+    }
+
+    @Test
+    fun compatibilityCoreNodeNeverDialsThroughAFront() {
+        val relay = local("ss://$ssKey@relay.example.com:8388#Relay").copy(id = "relay")
+        val exit = local("anytls://pw@exit.example.com:443?sni=exit.example.com#Exit").copy(id = "exit", preProxyNodeId = "relay")
+        val outbounds = JSONObject(XrayConfigFactory.build(exit, availableServers = listOf(relay, exit))).getJSONArray("outbounds")
+        val tags = (0 until outbounds.length()).map { outbounds.getJSONObject(it).getString("tag") }
+        assertTrue(tags.none { it.startsWith("proxy_pre_") })
+        assertTrue(ManualNodeFactory.isRunnable(exit))
+    }
 }

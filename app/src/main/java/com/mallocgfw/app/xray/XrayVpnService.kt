@@ -605,7 +605,7 @@ class XrayVpnService : VpnService() {
             candidate.id == fallbackId &&
                 candidate.id != source.id &&
                 !candidate.hiddenUnsupported &&
-                ManualNodeFactory.supportsPreProxy(candidate)
+                ManualNodeFactory.isRunnable(candidate)
         }
     }
 

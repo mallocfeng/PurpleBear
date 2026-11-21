@@ -296,13 +296,13 @@ fun MallocGfwApp(
                 candidateId.isNotBlank() &&
                     candidateId != server.id &&
                     ManualNodeFactory.supportsPreProxy(server) &&
-                    visibleServerMap[candidateId]?.let(ManualNodeFactory::supportsPreProxy) == true
+                    visibleServerMap[candidateId]?.let(ManualNodeFactory::isRunnable) == true
             }.orEmpty()
             val normalizedFallbackId = server.fallbackNodeId.trim().takeIf { candidateId ->
                 candidateId.isNotBlank() &&
                     candidateId != server.id &&
-                    ManualNodeFactory.supportsPreProxy(server) &&
-                    visibleServerMap[candidateId]?.let(ManualNodeFactory::supportsPreProxy) == true
+                    ManualNodeFactory.isRunnable(server) &&
+                    visibleServerMap[candidateId]?.let(ManualNodeFactory::isRunnable) == true
             }.orEmpty()
             if (normalizedPreProxyId != server.preProxyNodeId || normalizedFallbackId != server.fallbackNodeId) {
                 servers[index] = server.copy(
@@ -1055,21 +1055,24 @@ fun MallocGfwApp(
         navigateSecondary(AppScreen.PreProxyNodePicker)
     }
 
-    fun isValidLinkedNodeCandidate(owner: ServerNode, candidateId: String): Boolean {
+    /** [candidateId] can be linked to [owner]: any runnable node other than the owner. */
+    fun isRunnableOtherNode(owner: ServerNode, candidateId: String): Boolean {
         return candidateId.trim().takeIf { it.isNotBlank() }?.let { normalizedId ->
             normalizedId != owner.id &&
-                ManualNodeFactory.supportsPreProxy(owner) &&
                 servers.any { candidate ->
-                    candidate.id == normalizedId &&
-                        !candidate.hiddenUnsupported &&
-                        ManualNodeFactory.supportsPreProxy(candidate)
+                    candidate.id == normalizedId && ManualNodeFactory.isRunnable(candidate)
                 }
         } == true
     }
 
+    fun isValidLinkedNodeCandidate(owner: ServerNode, candidateId: String): Boolean {
+        return ManualNodeFactory.supportsPreProxy(owner) && isRunnableOtherNode(owner, candidateId)
+    }
+
     fun isValidFallbackNodeCandidate(owner: ServerNode, candidateId: String): Boolean {
-        return NodeLatencyTester.supportsHeartbeatFallback(owner) &&
-            isValidLinkedNodeCandidate(owner, candidateId)
+        return ManualNodeFactory.isRunnable(owner) &&
+            NodeLatencyTester.supportsHeartbeatFallback(owner) &&
+            isRunnableOtherNode(owner, candidateId)
     }
 
     fun updateNodePreProxy(nodeId: String, preProxyNodeId: String) {
@@ -1124,8 +1127,7 @@ fun MallocGfwApp(
         return servers.firstOrNull { candidate ->
             candidate.id == fallbackId &&
                 candidate.id != source.id &&
-                !candidate.hiddenUnsupported &&
-                ManualNodeFactory.supportsPreProxy(candidate)
+                ManualNodeFactory.isRunnable(candidate)
         }
     }
 
@@ -2342,7 +2344,11 @@ fun MallocGfwApp(
                         preProxyNode = servers.firstOrNull { it.id == selectedServer?.preProxyNodeId },
                         fallbackNode = servers.firstOrNull { it.id == selectedServer?.fallbackNodeId },
                         canSelectPreProxy = selectedServer?.let(ManualNodeFactory::supportsPreProxy) == true,
-                        canSelectFallback = selectedServer?.let(ManualNodeFactory::supportsPreProxy) == true,
+                        // A node run by the compatibility core can be a hop but can't use one.
+                        preProxyUnsupported = selectedServer?.let { node ->
+                            ManualNodeFactory.isRunnable(node) && !ManualNodeFactory.supportsPreProxy(node)
+                        } == true,
+                        canSelectFallback = selectedServer?.let(ManualNodeFactory::isRunnable) == true,
                         connectionStatus = connectionStatus,
                         activeServerId = vpnSnapshot.activeServerId,
                         runtimeMessage = runtimeMessage,
@@ -2778,14 +2784,14 @@ fun MallocGfwApp(
                             val ownerSupportsCurrentMode = when (nodeLinkPickerMode) {
                                 NodeLinkPickerMode.PreProxy -> ownerNode?.let(ManualNodeFactory::supportsPreProxy) == true
                                 NodeLinkPickerMode.Fallback -> ownerNode?.let { owner ->
-                                    ManualNodeFactory.supportsPreProxy(owner) &&
+                                    ManualNodeFactory.isRunnable(owner) &&
                                         NodeLatencyTester.supportsHeartbeatFallback(owner)
                                 } == true
                             }
+                            // Any runnable node can be a hop or a fallback, compatibility-core ones included.
                             candidate.id != ownerNodeId &&
-                                !candidate.hiddenUnsupported &&
                                 ownerSupportsCurrentMode &&
-                                ManualNodeFactory.supportsPreProxy(candidate)
+                                ManualNodeFactory.isRunnable(candidate)
                         },
                         selectedServerId = (
                             servers.firstOrNull { it.id == preProxyPickerOwnerNodeId }

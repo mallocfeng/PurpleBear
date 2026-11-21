@@ -164,14 +164,14 @@ object AppStateStore {
             val normalizedPreProxyId = server.preProxyNodeId.trim().takeIf { candidateId ->
                 candidateId.isNotBlank() &&
                     candidateId != server.id &&
-                    visibleServerMap[candidateId]?.let(ManualNodeFactory::supportsPreProxy) == true &&
+                    visibleServerMap[candidateId]?.let(ManualNodeFactory::isRunnable) == true &&
                     ManualNodeFactory.supportsPreProxy(server)
             }.orEmpty()
             val normalizedFallbackId = server.fallbackNodeId.trim().takeIf { candidateId ->
                 candidateId.isNotBlank() &&
                     candidateId != server.id &&
-                    visibleServerMap[candidateId]?.let(ManualNodeFactory::supportsPreProxy) == true &&
-                    ManualNodeFactory.supportsPreProxy(server)
+                    visibleServerMap[candidateId]?.let(ManualNodeFactory::isRunnable) == true &&
+                    ManualNodeFactory.isRunnable(server)
             }.orEmpty()
             if (normalizedPreProxyId == server.preProxyNodeId && normalizedFallbackId == server.fallbackNodeId) {
                 server
