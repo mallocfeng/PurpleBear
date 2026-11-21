@@ -70,6 +70,54 @@ class XrayVpnService : VpnService() {
     private var destroyMessage = "VPN 已断开"
     private val tailscaleRecoveryTimes = ArrayDeque<Long>()
 
+    /** Whether the current tunnel was built with Tailnet routing. */
+    @Volatile
+    private var tunnelHasTailscale = false
+
+    /**
+     * Gives Tailscale a few seconds to come up, then lets the VPN connect without
+     * it. A login against an unreachable control server only fails after the
+     * bridge's 45 s timeout, and the tunnel used to wait for all of it. If the
+     * node comes up later, [reloadWhenTailscaleReady] adds Tailnet routing.
+     */
+    private suspend fun awaitTailscaleForConnect(settings: com.mallocgfw.app.model.AppSettings) {
+        val start = TailscaleRuntimeManager.startAsync(applicationContext, settings)
+        val result = withTimeoutOrNull(TAILSCALE_CONNECT_WAIT_MS) { start.await() }
+        when {
+            result == null -> {
+                AppLogManager.append(applicationContext, TAG, "Tailscale 仍在连接，先建立 VPN；Tailscale 就绪后会自动加载 Tailnet 分流")
+                scope.launch { reloadWhenTailscaleReady(start) }
+            }
+            result.isFailure -> AppLogManager.append(
+                applicationContext,
+                TAG,
+                "Tailscale 未就绪，本次连接将不加载 Tailscale 分流：${result.exceptionOrNull()?.message}",
+            )
+        }
+    }
+
+    private suspend fun reloadWhenTailscaleReady(start: kotlinx.coroutines.Deferred<Result<*>>) {
+        val result = start.await()
+        result.exceptionOrNull()?.let { error ->
+            AppLogManager.append(applicationContext, TAG, "Tailscale 连接失败，VPN 继续运行但不加载 Tailscale 分流：${error.message}")
+            return
+        }
+        // After any connect still in progress, so its tunnel state is final.
+        val serverId = operationMutex.withLock {
+            val runtime = VpnRuntimeStore.snapshot.value
+            val settings = AppStateStore.load(applicationContext).settings
+            runtime.activeServerId?.takeIf {
+                it.isNotBlank() &&
+                    runtime.status == ConnectionStatus.Connected &&
+                    !tunnelHasTailscale &&
+                    settings.tailscaleEnabled &&
+                    TailscaleRuntimeManager.snapshot.value.routing(settings) != null
+            }
+        } ?: return
+        AppLogManager.append(applicationContext, TAG, "Tailscale 已就绪，正在重新连接以加载 Tailnet 分流")
+        startService(connectIntent(applicationContext, serverId))
+    }
+
     /** Real resolver behind the MagicDNS address of the current tunnel, or null. */
     @Volatile
     private var activeMagicDnsUpstream: String? = null
@@ -283,16 +331,10 @@ class XrayVpnService : VpnService() {
         val state = AppStateStore.load(applicationContext)
         AppLogManager.append(applicationContext, TAG, "连接启动，DNS 模式：${state.settings.dnsMode.name}")
         if (state.settings.tailscaleEnabled) {
-            TailscaleRuntimeManager.ensureStarted(applicationContext, state.settings)
-                .onFailure { error ->
-                    AppLogManager.append(
-                        applicationContext,
-                        TAG,
-                        "Tailscale 未就绪，本次连接将不加载 Tailscale 分流：${error.message}",
-                    )
-                }
+            awaitTailscaleForConnect(state.settings)
         }
         val tailscaleRouting = TailscaleRuntimeManager.snapshot.value.routing(state.settings)
+        tunnelHasTailscale = tailscaleRouting != null
         val dnsServer = resolveDnsAddress(applicationContext, state.settings)
         val dnsEndpoint = resolveDnsEndpoint(applicationContext, state.settings)
         val server = state.servers.firstOrNull { it.id == serverId }
@@ -1041,6 +1083,8 @@ class XrayVpnService : VpnService() {
         private const val UPLOAD_TEST_URL = "https://speed.cloudflare.com/__up"
         private val HEARTBEAT_INTERVAL_OPTIONS_MINUTES = setOf(2, 5, 10)
         private const val TAILSCALE_RECOVERY_DELAY_MS = 1_500L
+        /** A node with saved state usually logs in within 1–3 s. */
+        private const val TAILSCALE_CONNECT_WAIT_MS = 6_000L
         private const val TAILSCALE_RECOVERY_WINDOW_MS = 10 * 60_000L
         private const val TAILSCALE_RECOVERY_LIMIT = 3
         private val LOCAL_EXCLUDED_ROUTES = listOf(

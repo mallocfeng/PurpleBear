@@ -8,7 +8,11 @@ import android.util.Log
 import com.mallocgfw.app.model.AppSettings
 import com.mallocgfw.app.tailscale.TailscaleBridgeClient
 import java.io.File
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -110,6 +114,25 @@ object TailscaleRuntimeManager {
     init {
         TailscaleBridgeClient.onBridgeLost = ::handleBridgeLost
     }
+
+    /** Outlives callers: a start is a blocking call into the bridge and can't be cancelled. */
+    private val startScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    @Volatile
+    private var pendingStart: Deferred<Result<TailscaleRuntimeSnapshot>>? = null
+
+    /**
+     * Starts the node in the background, or joins a start already running.
+     * Logging in can take the bridge's full 45 s timeout when the control
+     * server is unreachable, so the VPN waits only briefly for this (see
+     * XrayVpnService.awaitTailscaleForConnect) instead of calling [ensureStarted].
+     */
+    fun startAsync(context: Context, settings: AppSettings): Deferred<Result<TailscaleRuntimeSnapshot>> =
+        synchronized(this) {
+            pendingStart?.takeIf { it.isActive }
+                ?: startScope.async { ensureStarted(context.applicationContext, settings) }
+                    .also { pendingStart = it }
+        }
 
     /**
      * The :tailscale process died. Its SOCKS endpoint is gone, so the snapshot

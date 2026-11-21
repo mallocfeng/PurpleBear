@@ -2,6 +2,12 @@
 
 PurpleBear 各版本的完整更新记录。安装包见 [GitHub Releases](https://github.com/mallocfeng/PurpleBear/releases)。
 
+## 0.8.5
+
+1. 修复开启 Tailscale 但控制服务器连不上（或网络很慢）时，每次连接 VPN 都要等约 47 秒：Tailscale 改为在后台启动，VPN 最多等待 6 秒。超时则先不带 Tailnet 分流建立 VPN，正常上网不受影响；Tailscale 稍后连上时自动重新连接一次以加载 Tailnet 分流（含 MagicDNS），最终失败则 VPN 继续运行并在日志中说明。
+
+2. 更新版本号到 `0.8.5`，`versionCode` 更新为 `280`。
+
 ## 0.8.4
 
 1. 兼容内核运行的节点（TUIC、AnyTLS、Snell、SS + obfs / shadow-tls、跳过证书校验的 Hysteria2 等）现在可以作为其他节点的前置代理：Xray 出口经兼容内核的本地端口中转，兼容内核会为链路中的前置节点一并启动。

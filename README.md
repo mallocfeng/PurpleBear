@@ -176,6 +176,10 @@ Release 包输出在 `app/build/outputs/apk/release/app-release.apk`。签名读
 
 ## 更新日志
 
+### 0.8.5
+
+- 修复开启 Tailscale 但控制服务器连不上时，每次连接 VPN 都要等约 47 秒；现在最多等 6 秒，Tailscale 之后连上会自动加载 Tailnet 分流。
+
 ### 0.8.4
 
 - 兼容内核运行的节点（TUIC、AnyTLS、Snell 等）可作为前置代理，也可设置备用节点或被选为备用节点；作出口时前置代理改为灰显提示。
