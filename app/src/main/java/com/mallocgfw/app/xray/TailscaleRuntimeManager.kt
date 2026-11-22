@@ -101,6 +101,9 @@ data class TailscaleRuntimeSnapshot(
     }
 }
 
+/** A tailnet port forwarded to an app-local loopback port; see bridge.go forwardConfig. */
+data class TailscaleForward(val tailnetPort: Int, val localPort: Int, val secret: String)
+
 object TailscaleRuntimeManager {
     private const val TAG = "TailscaleRuntime"
     private val _snapshot = MutableStateFlow(TailscaleRuntimeSnapshot())
@@ -244,6 +247,23 @@ object TailscaleRuntimeManager {
             nativeValue(TailscaleBridgeClient.logout(context, stateDir))
             _snapshot.value = TailscaleRuntimeSnapshot(message = "已从 Tailscale 退出")
         }
+    }
+
+    /** Accepts tailnet connections on [TailscaleForward.tailnetPort] for the MCP server. */
+    suspend fun serveForward(context: Context, forward: TailscaleForward): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val config = JSONObject()
+                .put("tailnetPort", forward.tailnetPort)
+                .put("localPort", forward.localPort)
+                .put("secret", forward.secret)
+            nativeValue(TailscaleBridgeClient.serveForward(context, config.toString()))
+            Unit
+        }
+    }
+
+    suspend fun stopForward(context: Context) = withContext(Dispatchers.IO) {
+        runCatching { nativeValue(TailscaleBridgeClient.stopForward(context)) }
+            .onFailure { Log.w(TAG, "Unable to stop the tailnet forward", it) }
     }
 
     suspend fun stopNow(context: Context) = withContext(Dispatchers.IO) {

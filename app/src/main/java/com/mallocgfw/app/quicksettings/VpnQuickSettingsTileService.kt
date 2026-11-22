@@ -6,7 +6,7 @@ import android.net.VpnService
 import android.os.Build
 import android.service.quicksettings.TileService
 import com.mallocgfw.app.MainActivity
-import com.mallocgfw.app.model.AppStateStore
+import com.mallocgfw.app.core.AppController
 import com.mallocgfw.app.model.ConnectionStatus
 import com.mallocgfw.app.model.ServerNode
 import com.mallocgfw.app.xray.VpnRuntimeSnapshot
@@ -87,7 +87,7 @@ class VpnQuickSettingsTileService : TileService() {
     private suspend fun loadTileState(): TileState = withContext(Dispatchers.IO) {
         VpnRuntimeStore.initialize(applicationContext)
         val runtime = VpnRuntimeStore.snapshot.value
-        val state = AppStateStore.load(applicationContext)
+        val state = AppController.load(applicationContext)
         val preferredId = listOf(
             runtime.activeServerId,
             state.settings.lastConnectedServerId,

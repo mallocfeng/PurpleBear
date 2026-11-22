@@ -68,20 +68,8 @@ object AppStateStore {
         }
     }
 
-    fun saveBackgroundSync(
-        context: Context,
-        baseState: PersistedAppState,
-        syncedState: PersistedAppState,
-    ): Boolean {
-        return synchronized(stateLock) {
-            val latest = readState(context)
-            if (latest != baseState.normalized()) {
-                return@synchronized false
-            }
-            writeState(context, syncedState)
-            true
-        }
-    }
+    /** The form [save] writes, for comparing states from different sources. */
+    fun normalize(state: PersistedAppState): PersistedAppState = state.normalized()
 
     fun save(context: Context, state: PersistedAppState) {
         synchronized(stateLock) {

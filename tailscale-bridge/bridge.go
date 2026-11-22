@@ -11,9 +11,11 @@ import "C"
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -59,6 +61,7 @@ type Bridge struct {
 	lastError string
 	proxyAddr string
 	proxyPass string
+	forward   net.Listener
 }
 
 // NewBridge returns a new bridge instance.
@@ -201,6 +204,7 @@ func registerAndroidInterfaces(configs []interfaceConfig) {
 func (b *Bridge) Stop() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.closeForwardLocked()
 	if b.server != nil {
 		if err := b.server.Close(); err != nil {
 			return err
@@ -250,6 +254,125 @@ func (b *Bridge) Logout(stateDir string) error {
 		return errors.New("Tailscale state directory is required")
 	}
 	return os.RemoveAll(stateDir)
+}
+
+// forwardConfig asks the bridge to accept TCP connections on the node's
+// tailnet address and hand them to an app-local loopback port (the MCP
+// server). Each forwarded connection starts with one line,
+//
+//	PBTN1 <secret> <base64url JSON {"user","device","addr"}>\n
+//
+// naming the tailnet peer as resolved by WhoIs. The secret proves to the app
+// that the line came from this bridge and not from another local process.
+type forwardConfig struct {
+	TailnetPort int    `json:"tailnetPort"`
+	LocalPort   int    `json:"localPort"`
+	Secret      string `json:"secret"`
+}
+
+// ServeForward starts (or replaces) the tailnet listener.
+func (b *Bridge) ServeForward(configJSON string) error {
+	var cfg forwardConfig
+	if err := json.Unmarshal([]byte(configJSON), &cfg); err != nil {
+		return fmt.Errorf("invalid forward configuration: %w", err)
+	}
+	if cfg.TailnetPort <= 0 || cfg.TailnetPort > 65535 || cfg.LocalPort <= 0 || cfg.LocalPort > 65535 || len(cfg.Secret) < 16 {
+		return errors.New("invalid forward configuration")
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.server == nil {
+		return errors.New("Tailscale 尚未启动")
+	}
+	b.closeForwardLocked()
+	lc, err := b.server.LocalClient()
+	if err != nil {
+		return err
+	}
+	ln, err := b.server.Listen("tcp", fmt.Sprintf(":%d", cfg.TailnetPort))
+	if err != nil {
+		return fmt.Errorf("listen on tailnet port %d: %w", cfg.TailnetPort, err)
+	}
+	b.forward = ln
+	whois := func(ctx context.Context, remote string) (string, string, error) {
+		who, err := lc.WhoIs(ctx, remote)
+		if err != nil {
+			return "", "", err
+		}
+		user, device := "", ""
+		if who.UserProfile != nil {
+			user = who.UserProfile.LoginName
+		}
+		if who.Node != nil {
+			device = who.Node.ComputedName
+			if device == "" {
+				device = strings.TrimSuffix(who.Node.Name, ".")
+			}
+		}
+		return user, device, nil
+	}
+	go acceptForward(ln, cfg, whois)
+	return nil
+}
+
+// StopForward closes the tailnet listener, if any.
+func (b *Bridge) StopForward() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.closeForwardLocked()
+	return nil
+}
+
+func (b *Bridge) closeForwardLocked() {
+	if b.forward != nil {
+		_ = b.forward.Close()
+		b.forward = nil
+	}
+}
+
+func acceptForward(ln net.Listener, cfg forwardConfig, whois func(context.Context, string) (string, string, error)) {
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		go handleForward(conn, cfg, whois)
+	}
+}
+
+func handleForward(conn net.Conn, cfg forwardConfig, whois func(context.Context, string) (string, string, error)) {
+	defer conn.Close()
+	remote := conn.RemoteAddr().String()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	user, device, err := whois(ctx, remote)
+	cancel()
+	if err != nil {
+		// Not a known tailnet peer: refuse.
+		log.Printf("tailscale forward: whois %s: %v", remote, err)
+		return
+	}
+	host, _, _ := net.SplitHostPort(remote)
+	payload, _ := json.Marshal(map[string]string{"user": user, "device": device, "addr": host})
+	local, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", cfg.LocalPort), 5*time.Second)
+	if err != nil {
+		log.Printf("tailscale forward: dial local: %v", err)
+		return
+	}
+	defer local.Close()
+	if _, err := fmt.Fprintf(local, "PBTN1 %s %s\n", cfg.Secret, base64.RawURLEncoding.EncodeToString(payload)); err != nil {
+		return
+	}
+	done := make(chan struct{}, 2)
+	go func() { _, _ = io.Copy(local, conn); closeWrite(local); done <- struct{}{} }()
+	go func() { _, _ = io.Copy(conn, local); closeWrite(conn); done <- struct{}{} }()
+	<-done
+	<-done
+}
+
+func closeWrite(c net.Conn) {
+	if cw, ok := c.(interface{ CloseWrite() error }); ok {
+		_ = cw.CloseWrite()
+	}
 }
 
 type snapshot struct {
@@ -471,6 +594,27 @@ func NativeLogout(stateDir *C.char) *C.char {
 			return "", errors.New("missing Tailscale state directory")
 		}
 		return "", nativeBridge.Logout(C.GoString(stateDir))
+	})
+}
+
+// NativeServeForward starts the tailnet listener for the MCP server.
+//
+//export NativeServeForward
+func NativeServeForward(config *C.char) *C.char {
+	return nativeCall(func() (string, error) {
+		if config == nil {
+			return "", errors.New("missing forward configuration")
+		}
+		return "", nativeBridge.ServeForward(C.GoString(config))
+	})
+}
+
+// NativeStopForward closes the tailnet listener.
+//
+//export NativeStopForward
+func NativeStopForward() *C.char {
+	return nativeCall(func() (string, error) {
+		return "", nativeBridge.StopForward()
 	})
 }
 

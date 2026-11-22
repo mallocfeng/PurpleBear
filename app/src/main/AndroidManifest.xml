@@ -63,6 +63,20 @@
             </intent-filter>
         </service>
 
+        <!-- AI remote control (MCP): runs only while the user has it switched on. -->
+        <service
+            android:name=".mcp.McpService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-enabled local MCP server that lets the user's own computer on the same Wi-Fi or tailnet query and control this app; shows a persistent notification with a stop button while running." />
+        </service>
+
+        <receiver
+            android:name=".mcp.McpApprovalReceiver"
+            android:exported="false" />
+
         <!-- Tailscale and libXray both embed Go runtimes. Keep their native
              code in separate processes while Xray remains the sole VPN. -->
         <service

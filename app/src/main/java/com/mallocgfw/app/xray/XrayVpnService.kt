@@ -19,7 +19,7 @@ import android.os.ParcelFileDescriptor
 import android.util.Log
 import com.mallocgfw.app.MainActivity
 import com.mallocgfw.app.model.AppDnsMode
-import com.mallocgfw.app.model.AppStateStore
+import com.mallocgfw.app.core.AppController
 import com.mallocgfw.app.model.AppTextLanguage
 import com.mallocgfw.app.model.tr
 import com.mallocgfw.app.model.ConnectionStatus
@@ -108,7 +108,7 @@ class XrayVpnService : VpnService() {
         // After any connect still in progress, so its tunnel state is final.
         val serverId = operationMutex.withLock {
             val runtime = VpnRuntimeStore.snapshot.value
-            val settings = AppStateStore.load(applicationContext).settings
+            val settings = AppController.load(applicationContext).settings
             runtime.activeServerId?.takeIf {
                 it.isNotBlank() &&
                     runtime.status == ConnectionStatus.Connected &&
@@ -154,7 +154,7 @@ class XrayVpnService : VpnService() {
         val runtime = VpnRuntimeStore.snapshot.value
         val serverId = runtime.activeServerId?.takeIf { it.isNotBlank() } ?: return
         if (runtime.status != ConnectionStatus.Connected) return
-        if (!AppStateStore.load(applicationContext).settings.tailscaleEnabled) return
+        if (!AppController.load(applicationContext).settings.tailscaleEnabled) return
         tailscaleRecoveryTimes.addLast(now)
         AppLogManager.append(applicationContext, TAG, "Tailscale 进程已退出，正在重新连接以恢复 Tailnet 分流")
         startService(connectIntent(applicationContext, serverId))
@@ -227,7 +227,7 @@ class XrayVpnService : VpnService() {
                     operationMutex.withLock {
                         runCatching { switchActiveServer(serverId) }
                             .onSuccess {
-                                val server = AppStateStore.load(applicationContext).servers.firstOrNull { it.id == serverId }
+                                val server = AppController.load(applicationContext).servers.firstOrNull { it.id == serverId }
                                 val message = server?.let { tr("已切换到 ${it.name}", "Switched to ${it.name}", "Переключено на ${it.name}") } ?: tr("已切换线路", "Node switched", "Узел переключён")
                                 AppLogManager.append(applicationContext, TAG, message)
                                 resetFailoverState()
@@ -331,7 +331,7 @@ class XrayVpnService : VpnService() {
         cleanupCompleted = false
         resetFailoverState()
         AppLogManager.trimAllLogs(applicationContext)
-        val state = AppStateStore.load(applicationContext)
+        val state = AppController.load(applicationContext)
         // The service may run with no UI open (Quick Settings, auto reconnect).
         AppTextLanguage.apply(state.settings.language)
         AppLogManager.append(applicationContext, TAG, "连接启动，DNS 模式：${state.settings.dnsMode.name}")
@@ -445,7 +445,7 @@ class XrayVpnService : VpnService() {
     }
 
     private suspend fun switchActiveServer(serverId: String) {
-        val state = AppStateStore.load(applicationContext)
+        val state = AppController.load(applicationContext)
         val server = state.servers.firstOrNull { it.id == serverId }
             ?: error(tr("未找到要切换的节点。", "Couldn't find the node to switch to.", "Узел для переключения не найден."))
         val tunFd = vpnInterface?.fd ?: error(tr("系统 VPN 还没有建立，无法热切换线路。", "The system VPN isn't up yet, so nodes can't be hot-switched.", "Системный VPN ещё не установлен, горячее переключение узла невозможно."))
@@ -560,7 +560,7 @@ class XrayVpnService : VpnService() {
         heartbeatJob?.cancel()
         heartbeatJob = scope.launch {
             while (true) {
-                val state = AppStateStore.load(applicationContext)
+                val state = AppController.load(applicationContext)
                 val intervalMinutes = state.settings.heartbeatIntervalMinutes
                     .takeIf { it in HEARTBEAT_INTERVAL_OPTIONS_MINUTES }
                     ?: DEFAULT_HEARTBEAT_INTERVAL_MINUTES
@@ -569,7 +569,7 @@ class XrayVpnService : VpnService() {
                 val runtime = VpnRuntimeStore.snapshot.value
                 if (runtime.status != ConnectionStatus.Connected) return@launch
                 val activeId = runtime.activeServerId?.takeIf { it.isNotBlank() } ?: continue
-                val latestState = AppStateStore.load(applicationContext)
+                val latestState = AppController.load(applicationContext)
                 val activeNode = latestState.servers.firstOrNull { it.id == activeId } ?: continue
                 if (probeAndMaybeFailback(activeNode, latestState.servers)) {
                     return@launch
@@ -692,7 +692,7 @@ class XrayVpnService : VpnService() {
         operationMutex.withLock {
             val runtime = VpnRuntimeStore.snapshot.value
             if (runtime.status != ConnectionStatus.Connected || runtime.activeServerId != source.id) return
-            val latestState = AppStateStore.load(applicationContext)
+            val latestState = AppController.load(applicationContext)
             val latestSource = latestState.servers.firstOrNull { it.id == source.id } ?: return
             val latestFallback = fallbackNodeFor(latestSource, latestState.servers) ?: return
             if (latestFallback.id != fallback.id) return
@@ -753,7 +753,7 @@ class XrayVpnService : VpnService() {
         operationMutex.withLock {
             val runtime = VpnRuntimeStore.snapshot.value
             if (runtime.status != ConnectionStatus.Connected || runtime.activeServerId != fallback.id) return
-            val latestState = AppStateStore.load(applicationContext)
+            val latestState = AppController.load(applicationContext)
             val latestPrimary = latestState.servers.firstOrNull { it.id == primary.id } ?: run {
                 resetFailoverState()
                 return

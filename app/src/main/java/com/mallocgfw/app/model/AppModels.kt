@@ -22,6 +22,7 @@ enum class AppScreen {
     Settings,
     Tailscale,
     OpenSourceLicenses,
+    Mcp,
     Update,
     MediaRouting,
     MediaRoutingNodePicker,

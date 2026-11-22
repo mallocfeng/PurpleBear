@@ -10,6 +10,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.view.WindowCompat
+import com.mallocgfw.app.mcp.ApprovalBroker
 import com.mallocgfw.app.ui.MallocGfwApp
 
 class MainActivity : ComponentActivity() {
@@ -17,6 +18,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ApprovalBroker.init(this)
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
         setContent {
@@ -25,6 +27,17 @@ class MainActivity : ComponentActivity() {
                 onLaunchRequestConsumed = { launchRequest = null },
             )
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // MCP approvals show as a dialog while the app is in front, as notifications otherwise.
+        ApprovalBroker.setUiInForeground(true)
+    }
+
+    override fun onPause() {
+        ApprovalBroker.setUiInForeground(false)
+        super.onPause()
     }
 
     override fun onNewIntent(intent: Intent) {

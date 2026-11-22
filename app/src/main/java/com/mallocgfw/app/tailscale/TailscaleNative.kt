@@ -11,4 +11,6 @@ object TailscaleNative {
     external fun stop(): String
     external fun setExitNode(nodeId: String): String
     external fun logout(stateDir: String): String
+    external fun serveForward(config: String): String
+    external fun stopForward(): String
 }

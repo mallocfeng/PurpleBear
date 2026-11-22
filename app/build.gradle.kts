@@ -27,8 +27,8 @@ android {
         applicationId = "com.mallocgfw.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 283
-        versionName = "0.8.6.2"
+        versionCode = 284
+        versionName = "0.8.7"
 
         ndk {
             abiFilters += "arm64-v8a"
@@ -127,6 +127,8 @@ dependencies {
     implementation("androidx.camera:camera-view:$cameraXVersion")
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
     implementation("org.yaml:snakeyaml:2.7")
+    // QR codes for MCP pairing (encoder only).
+    implementation("com.google.zxing:core:3.5.4")
 
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")

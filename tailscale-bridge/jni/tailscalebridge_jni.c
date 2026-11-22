@@ -13,6 +13,8 @@ static noarg_call_fn bridge_status;
 static noarg_call_fn bridge_stop;
 static string_call_fn bridge_exit_node;
 static string_call_fn bridge_logout;
+static string_call_fn bridge_serve_forward;
+static noarg_call_fn bridge_stop_forward;
 static free_fn bridge_free;
 
 static int load_bridge(void) {
@@ -24,8 +26,11 @@ static int load_bridge(void) {
     bridge_stop = (noarg_call_fn)dlsym(bridge_handle, "NativeStop");
     bridge_exit_node = (string_call_fn)dlsym(bridge_handle, "NativeSetExitNode");
     bridge_logout = (string_call_fn)dlsym(bridge_handle, "NativeLogout");
+    bridge_serve_forward = (string_call_fn)dlsym(bridge_handle, "NativeServeForward");
+    bridge_stop_forward = (noarg_call_fn)dlsym(bridge_handle, "NativeStopForward");
     bridge_free = (free_fn)dlsym(bridge_handle, "NativeFree");
-    return bridge_start && bridge_status && bridge_stop && bridge_exit_node && bridge_logout && bridge_free;
+    return bridge_start && bridge_status && bridge_stop && bridge_exit_node && bridge_logout &&
+        bridge_serve_forward && bridge_stop_forward && bridge_free;
 }
 
 static jstring error_json(JNIEnv *env, const char *message) {
@@ -86,4 +91,19 @@ Java_com_mallocgfw_app_tailscale_TailscaleNative_logout(JNIEnv *env, jclass claz
     char *value = bridge_logout(chars);
     release_string(env, state_dir, chars);
     return from_go(env, value);
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_mallocgfw_app_tailscale_TailscaleNative_serveForward(JNIEnv *env, jclass clazz, jstring config) {
+    if (!load_bridge()) return error_json(env, "cannot load Tailscale native bridge");
+    const char *chars = get_string(env, config);
+    char *value = bridge_serve_forward(chars);
+    release_string(env, config, chars);
+    return from_go(env, value);
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_mallocgfw_app_tailscale_TailscaleNative_stopForward(JNIEnv *env, jclass clazz) {
+    if (!load_bridge()) return error_json(env, "cannot load Tailscale native bridge");
+    return from_go(env, bridge_stop_forward());
 }

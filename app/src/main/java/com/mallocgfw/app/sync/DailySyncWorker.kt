@@ -8,7 +8,7 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.mallocgfw.app.model.AppStateStore
+import com.mallocgfw.app.core.AppController
 import com.mallocgfw.app.model.AppTextLanguage
 import com.mallocgfw.app.xray.AppLogManager
 import java.util.concurrent.TimeUnit
@@ -19,14 +19,11 @@ class DailySyncWorker(
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
         return runCatching {
-            val state = AppStateStore.load(applicationContext)
+            AppController.init(applicationContext)
+            val state = AppController.current()
             AppTextLanguage.apply(state.settings.language)
             val report = BackgroundSyncManager.syncAll(applicationContext, state)
-            val saved = AppStateStore.saveBackgroundSync(
-                context = applicationContext,
-                baseState = state,
-                syncedState = report.state,
-            )
+            val saved = AppController.commitIfUnchanged(base = state, next = report.state)
             if (!saved) {
                 AppLogManager.append(applicationContext, "SYNC", "每日自动更新检测到前台状态变化，稍后重试")
                 return@runCatching Result.retry()

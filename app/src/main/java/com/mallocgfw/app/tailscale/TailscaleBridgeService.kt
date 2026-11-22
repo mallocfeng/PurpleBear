@@ -19,6 +19,10 @@ class TailscaleBridgeService : Service() {
         override fun setExitNode(nodeId: String): String = TailscaleNative.setExitNode(nodeId)
 
         override fun logout(stateDir: String): String = TailscaleNative.logout(stateDir)
+
+        override fun serveForward(config: String): String = TailscaleNative.serveForward(config)
+
+        override fun stopForward(): String = TailscaleNative.stopForward()
     }
 
     override fun onBind(intent: Intent?): IBinder = bridge

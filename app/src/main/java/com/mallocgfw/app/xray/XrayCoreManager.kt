@@ -3,7 +3,7 @@ package com.mallocgfw.app.xray
 import android.content.Context
 import android.os.Build
 import android.util.Log
-import com.mallocgfw.app.model.AppStateStore
+import com.mallocgfw.app.core.AppController
 import com.mallocgfw.app.model.ServerNode
 import com.mallocgfw.app.model.XrayNamedOutbound
 import com.mallocgfw.app.model.XrayRoutingRule
@@ -82,7 +82,7 @@ object XrayCoreManager {
             tunFd = null,
             additionalOutbounds = additionalOutbounds,
         ) { localProxy ->
-            val state = AppStateStore.load(context)
+            val state = AppController.load(context)
             val settings = state.settings
             XrayConfigFactory.build(
                 node = server,
@@ -116,7 +116,7 @@ object XrayCoreManager {
             tunFd = tunFd,
             additionalOutbounds = additionalOutbounds,
         ) { localProxy ->
-            val state = AppStateStore.load(context)
+            val state = AppController.load(context)
             val settings = state.settings
             XrayConfigFactory.buildVpn(
                 node = server,
@@ -149,7 +149,7 @@ object XrayCoreManager {
         server: ServerNode,
         additionalOutbounds: List<XrayNamedOutbound>,
     ): List<PinCandidate> {
-        val servers = runCatching { AppStateStore.load(context).servers }.getOrDefault(emptyList())
+        val servers = runCatching { AppController.load(context).servers }.getOrDefault(emptyList())
         return (listOf(server) + additionalOutbounds.map { it.node }).flatMap { root ->
             val chain = mutableListOf<PinCandidate>()
             var current = root
@@ -176,7 +176,7 @@ object XrayCoreManager {
         sidecarNodes: List<ServerNode>,
     ) {
         if (chained.isEmpty() || !InsecureTlsPinner.hasPending(context, chained.map { it.node })) return
-        val servers = runCatching { AppStateStore.load(context).servers }.getOrDefault(emptyList())
+        val servers = runCatching { AppController.load(context).servers }.getOrDefault(emptyList())
         for (candidate in chained) {
             val front = candidate.front ?: continue
             if (!InsecureTlsPinner.hasPending(context, listOf(candidate.node))) continue
@@ -221,7 +221,7 @@ object XrayCoreManager {
                 val datDir = prepared.runtimeDir.absolutePath
                 // Fresh random ports and credentials for every run; see LocalProxyRuntime.
                 val localProxy = LocalProxyRuntime.allocate(::freePortsFromCore)
-                val servers = runCatching { AppStateStore.load(context).servers }.getOrDefault(emptyList())
+                val servers = runCatching { AppController.load(context).servers }.getOrDefault(emptyList())
                 // Includes pre-proxy fronts run by the sidecar; same list and order
                 // as the config builder uses, so listener slots match.
                 val sidecarNodes = XrayConfigFactory.sidecarNodesFor(server, additionalOutbounds.map { it.node }, servers)

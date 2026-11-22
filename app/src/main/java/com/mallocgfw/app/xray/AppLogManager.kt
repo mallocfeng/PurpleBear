@@ -84,6 +84,17 @@ object AppLogManager {
         }
     }
 
+    /**
+     * The last [lines] lines of the app log ([errorLog] false) or the Xray error
+     * log. The access log is browsing history and is never offered here.
+     */
+    fun readLastLines(context: Context, errorLog: Boolean, lines: Int): List<String> {
+        return synchronized(logLock) {
+            val file = if (errorLog) ensureLogFile(context, XRAY_ERROR_LOG) else appLogFile(context)
+            readTail(file, 64_000).lines().filter { it.isNotBlank() }.takeLast(lines)
+        }
+    }
+
     private fun appLogFile(context: Context): File = ensureLogFile(context, APP_LOG)
 
     private fun logFiles(context: Context): List<Pair<String, File>> {

@@ -292,6 +292,7 @@ internal fun SettingsScreen(
     onAddQuickSettingsTile: () -> Unit,
     onViewLogs: () -> Unit,
     onOpenLicenses: () -> Unit,
+    onOpenMcp: () -> Unit,
 ) {
     var showDnsDialog by remember { mutableStateOf(false) }
     var showLogLevelDialog by remember { mutableStateOf(false) }
@@ -422,6 +423,16 @@ internal fun SettingsScreen(
                     subtitle = "同步完成后通知。",
                     checked = settings.showUpdateNotifications,
                     onToggle = { onUpdateNotificationsChange(!settings.showUpdateNotifications) },
+                )
+            }
+        }
+        item {
+            SettingsGroup(title = uiText("AI 远程控制", "AI remote control", "Удалённое управление ИИ")) {
+                SettingActionRow(
+                    title = uiText("AI 远程控制（MCP）", "AI remote control (MCP)", "Удалённое управление ИИ (MCP)"),
+                    subtitle = mcpSettingsSubtitle(),
+                    actionText = uiText("打开", "Open", "Открыть"),
+                    onAction = onOpenMcp,
                 )
             }
         }

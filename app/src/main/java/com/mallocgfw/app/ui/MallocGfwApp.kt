@@ -1,5 +1,7 @@
 package com.mallocgfw.app.ui
 
+import com.mallocgfw.app.core.AppController
+import com.mallocgfw.app.core.StateOps
 import android.Manifest
 import android.app.Activity
 import android.app.StatusBarManager
@@ -36,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -48,8 +51,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -63,7 +64,6 @@ import com.mallocgfw.app.R
 import com.mallocgfw.app.model.AppScreen
 import com.mallocgfw.app.model.AppDnsMode
 import com.mallocgfw.app.model.AppGeoRoutingRegion
-import com.mallocgfw.app.model.AppStateStore
 import com.mallocgfw.app.model.ConnectionStatus
 import com.mallocgfw.app.model.ImportParser
 import com.mallocgfw.app.model.ImportPreview
@@ -80,6 +80,9 @@ import com.mallocgfw.app.model.RuleSourceManager
 import com.mallocgfw.app.model.RuleSourceStatus
 import com.mallocgfw.app.model.RuleSourceType
 import com.mallocgfw.app.model.ServerNode
+import com.mallocgfw.app.model.ProtectedApp
+import com.mallocgfw.app.model.SubscriptionItem
+import com.mallocgfw.app.model.ServerGroup
 import com.mallocgfw.app.model.ServerGroupType
 import com.mallocgfw.app.model.AppTextLanguage
 import com.mallocgfw.app.model.isSameImportedNode
@@ -87,7 +90,6 @@ import com.mallocgfw.app.model.tr
 import com.mallocgfw.app.model.mergedSubscriptionGroupNodes
 import com.mallocgfw.app.model.normalizedAppVpnMtu
 import com.mallocgfw.app.model.StreamingMediaManager
-import com.mallocgfw.app.model.StreamingRouteSelection
 import com.mallocgfw.app.model.subscriptionMergeKey
 import com.mallocgfw.app.model.subscriptionNameKey
 import com.mallocgfw.app.ui.theme.Background
@@ -115,10 +117,6 @@ import com.mallocgfw.app.xray.VpnServiceController
 import com.mallocgfw.app.xray.XrayCoreManager
 import com.mallocgfw.app.xray.XrayCoreStatus
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -132,7 +130,7 @@ fun MallocGfwApp(
     val quickTileLabel = stringResource(R.string.qs_tile_label)
     val scope = rememberCoroutineScope()
     val screenStateHolder = rememberSaveableStateHolder()
-    val initialLoad = remember { AppStateStore.loadWithStartupCleanup(context) }
+    val initialLoad = remember { AppController.loadForUi(context) }
     val initialState = initialLoad.state
     val xraySnapshot by XrayCoreManager.snapshot.collectAsState()
     val tailscaleSnapshot by TailscaleRuntimeManager.snapshot.collectAsState()
@@ -144,15 +142,14 @@ fun MallocGfwApp(
     var importReturnTab by rememberSaveable { mutableStateOf(MainTab.Servers) }
     var mainTab by rememberSaveable { mutableStateOf(MainTab.Home) }
     var connectionStatus by rememberSaveable { mutableStateOf(ConnectionStatus.Disconnected) }
-    var proxyMode by rememberSaveable { mutableStateOf(initialState.proxyMode) }
-    var appSettings by remember { mutableStateOf(initialState.settings) }
-    var selectedServerId by rememberSaveable {
-        mutableStateOf(
-            initialState.selectedServerId.ifBlank {
-                initialState.servers.firstOrNull { !it.hiddenUnsupported }?.id.orEmpty()
-            },
-        )
-    }
+    // The saved state lives in AppController, shared with the MCP server, the
+    // VPN service and background sync. These read it (recomposing on any
+    // change, wherever it came from) and write through it; it saves itself.
+    var proxyMode: ProxyMode by AppStateField({ it.proxyMode }) { s, v -> s.copy(proxyMode = v) }
+    var appSettings: com.mallocgfw.app.model.AppSettings by AppStateField({ it.settings }) { s, v -> s.copy(settings = v) }
+    var selectedServerId: String by AppStateField(
+        { s -> s.selectedServerId.ifBlank { s.servers.firstOrNull { !it.hiddenUnsupported }?.id.orEmpty() } },
+    ) { s, v -> s.copy(selectedServerId = v) }
     var selectedRuleSourceId by rememberSaveable {
         mutableStateOf(initialState.ruleSources.firstOrNull()?.id.orEmpty())
     }
@@ -164,12 +161,12 @@ fun MallocGfwApp(
     var serverFilter by rememberSaveable { mutableStateOf("all") }
     var serverSearch by rememberSaveable { mutableStateOf("") }
     var importInput by rememberSaveable { mutableStateOf("") }
-    val servers = remember { initialState.servers.toMutableStateList() }
-    val serverGroups = remember { initialState.serverGroups.toMutableStateList() }
-    val subscriptions = remember { initialState.subscriptions.toMutableStateList() }
-    val ruleSources = remember { initialState.ruleSources.toMutableStateList() }
-    val recentImports = remember { initialState.recentImports.toMutableStateList() }
-    val protectedApps = remember { initialState.protectedApps.toMutableStateList() }
+    val servers: List<ServerNode> by AppStateView { it.servers }
+    val serverGroups: List<ServerGroup> by AppStateView { it.serverGroups }
+    val subscriptions: List<SubscriptionItem> by AppStateView { it.subscriptions }
+    val ruleSources: List<RuleSourceItem> by AppStateView { it.ruleSources }
+    val recentImports: List<String> by AppStateView { it.recentImports }
+    val protectedApps: List<ProtectedApp> by AppStateView { it.protectedApps }
     val initialExpandedGroupIds = remember(initialState) {
         buildSet {
             add(ImportParser.LOCAL_GROUP_ID)
@@ -263,79 +260,10 @@ fun MallocGfwApp(
         }
     }
 
-    fun currentPersistedState(): PersistedAppState {
-        return PersistedAppState(
-            serverGroups = serverGroups.toList(),
-            servers = servers.toList(),
-            subscriptions = subscriptions.toList(),
-            ruleSources = ruleSources.toList(),
-            recentImports = recentImports.toList(),
-            protectedApps = protectedApps.toList(),
-            selectedServerId = selectedServerId,
-            proxyMode = proxyMode,
-            settings = appSettings,
-        )
-    }
-
-    fun normalizeStreamingSelectionsInMemory() {
-        val validServerIds = servers.map { it.id }.toSet()
-        val normalizedSelections = appSettings.streamingSelections
-            .mapNotNull { selection ->
-                when {
-                    selection.serverId.isBlank() -> null
-                    selection.serverId in validServerIds -> selection
-                    else -> null
-                }
-            }
-            .distinctBy { it.serviceId }
-        if (normalizedSelections != appSettings.streamingSelections) {
-            appSettings = appSettings.copy(streamingSelections = normalizedSelections)
-        }
-    }
-
-    fun normalizePreProxySelectionsInMemory() {
-        val visibleServerMap = servers.filterNot { it.hiddenUnsupported }.associateBy { it.id }
-        servers.indices.forEach { index ->
-            val server = servers[index]
-            val normalizedPreProxyId = server.preProxyNodeId.trim().takeIf { candidateId ->
-                candidateId.isNotBlank() &&
-                    candidateId != server.id &&
-                    ManualNodeFactory.supportsPreProxy(server) &&
-                    visibleServerMap[candidateId]?.let(ManualNodeFactory::isRunnable) == true
-            }.orEmpty()
-            val normalizedFallbackId = server.fallbackNodeId.trim().takeIf { candidateId ->
-                candidateId.isNotBlank() &&
-                    candidateId != server.id &&
-                    ManualNodeFactory.isRunnable(server) &&
-                    visibleServerMap[candidateId]?.let(ManualNodeFactory::isRunnable) == true
-            }.orEmpty()
-            if (normalizedPreProxyId != server.preProxyNodeId || normalizedFallbackId != server.fallbackNodeId) {
-                servers[index] = server.copy(
-                    preProxyNodeId = normalizedPreProxyId,
-                    fallbackNodeId = normalizedFallbackId,
-                )
-            }
-        }
-    }
+    fun currentPersistedState(): PersistedAppState = AppController.current()
 
     fun applyPersistedState(nextState: PersistedAppState) {
-        val visibleServers = nextState.servers.filterNot { it.hiddenUnsupported }
-        serverGroups.clear()
-        serverGroups.addAll(nextState.serverGroups)
-        servers.clear()
-        servers.addAll(nextState.servers)
-        subscriptions.clear()
-        subscriptions.addAll(nextState.subscriptions)
-        ruleSources.clear()
-        ruleSources.addAll(nextState.ruleSources)
-        recentImports.clear()
-        recentImports.addAll(nextState.recentImports)
-        protectedApps.clear()
-        protectedApps.addAll(nextState.protectedApps)
-        normalizePreProxySelectionsInMemory()
-        selectedServerId = nextState.selectedServerId.ifBlank { visibleServers.firstOrNull()?.id.orEmpty() }
-        appSettings = nextState.settings
-        normalizeStreamingSelectionsInMemory()
+        AppController.edit { nextState }
         warmServerSections()
     }
 
@@ -365,7 +293,7 @@ fun MallocGfwApp(
             AppScreen.Rules, AppScreen.RuleSourceDetail, AppScreen.AddRuleSource -> MainTab.Rules
             AppScreen.Import, AppScreen.ConfirmImport, AppScreen.Subscriptions -> MainTab.Import
             AppScreen.Me, AppScreen.PerApp, AppScreen.Diagnostics, AppScreen.Settings, AppScreen.Permission,
-            AppScreen.OpenSourceLicenses, AppScreen.MediaRouting, AppScreen.MediaRoutingNodePicker, AppScreen.LogViewer,
+            AppScreen.OpenSourceLicenses, AppScreen.Mcp, AppScreen.MediaRouting, AppScreen.MediaRoutingNodePicker, AppScreen.LogViewer,
             AppScreen.Tailscale -> MainTab.Me
             else -> mainTab
         }
@@ -395,7 +323,7 @@ fun MallocGfwApp(
             AppScreen.Rules, AppScreen.RuleSourceDetail, AppScreen.AddRuleSource -> MainTab.Rules
             AppScreen.Import, AppScreen.ConfirmImport, AppScreen.Subscriptions -> MainTab.Import
             AppScreen.Me, AppScreen.PerApp, AppScreen.Diagnostics, AppScreen.Settings, AppScreen.Permission,
-            AppScreen.OpenSourceLicenses, AppScreen.MediaRouting, AppScreen.MediaRoutingNodePicker, AppScreen.LogViewer,
+            AppScreen.OpenSourceLicenses, AppScreen.Mcp, AppScreen.MediaRouting, AppScreen.MediaRoutingNodePicker, AppScreen.LogViewer,
             AppScreen.Tailscale -> MainTab.Me
             else -> MainTab.Home
         }
@@ -405,7 +333,6 @@ fun MallocGfwApp(
 
     fun startVpnService(serverId: String) {
         lastRequestedConnectionServerId = serverId
-        AppStateStore.save(context, currentPersistedState())
         val server = servers.firstOrNull { it.id == serverId }
             ?: error("未找到要连接的节点。")
         VpnServiceController.start(context, server)
@@ -416,7 +343,6 @@ fun MallocGfwApp(
         message: String,
         disconnectFirst: Boolean,
     ) {
-        AppStateStore.save(context, currentPersistedState())
         pendingReconnectServerId = server.id
         pendingReconnectMessage = message
         blockingReconnectInFlight = true
@@ -587,18 +513,9 @@ fun MallocGfwApp(
 
     fun updateLanguage(language: AppLanguage) {
         if (appSettings.language == language) return
-        val currentDefaultRegion = AppGeoRoutingRegion.defaultForLanguage(appSettings.language)
-        val nextDefaultRegion = AppGeoRoutingRegion.defaultForLanguage(language)
-        val nextGeoRoutingRegion = if (appSettings.geoRoutingRegion == currentDefaultRegion) {
-            nextDefaultRegion
-        } else {
-            appSettings.geoRoutingRegion
-        }
-        val geoRoutingRegionChanged = nextGeoRoutingRegion != appSettings.geoRoutingRegion
-        appSettings = appSettings.copy(
-            language = language,
-            geoRoutingRegion = nextGeoRoutingRegion,
-        )
+        val previousRegion = appSettings.geoRoutingRegion
+        AppController.edit { StateOps.setLanguage(it, language) }
+        val geoRoutingRegionChanged = appSettings.geoRoutingRegion != previousRegion
         settingsMessage = when (language.resolveAppLanguage()) {
             ResolvedLanguage.Chinese -> "界面语言已更新。"
             ResolvedLanguage.English -> "Language updated."
@@ -622,7 +539,7 @@ fun MallocGfwApp(
     fun updateGeoRoutingRegion(region: AppGeoRoutingRegion) {
         if (blockingReconnectInFlight) return
         if (appSettings.geoRoutingRegion == region) return
-        appSettings = appSettings.copy(geoRoutingRegion = region)
+        AppController.edit { StateOps.setGeoRoutingRegion(it, region) }
         val shouldReconnect = VpnServiceController.isRunning() ||
             connectionStatus == ConnectionStatus.Connected ||
             connectionStatus == ConnectionStatus.Connecting ||
@@ -638,7 +555,7 @@ fun MallocGfwApp(
     }
 
     fun updateStreamingRoutingEnabled(enabled: Boolean) {
-        appSettings = appSettings.copy(streamingRoutingEnabled = enabled)
+        AppController.edit { StateOps.setStreamingRoutingEnabled(it, enabled) }
         pendingStreamingRoutingApply = true
         settingsMessage = if (enabled) {
             "流媒体分流已开启。"
@@ -650,7 +567,7 @@ fun MallocGfwApp(
     fun updateGlobalProxyEnabled(enabled: Boolean) {
         if (blockingReconnectInFlight) return
         if (appSettings.globalProxyEnabled == enabled) return
-        appSettings = appSettings.copy(globalProxyEnabled = enabled)
+        AppController.edit { StateOps.setGlobalProxy(it, enabled) }
         val shouldReconnect = VpnServiceController.isRunning() ||
             connectionStatus == ConnectionStatus.Connected ||
             connectionStatus == ConnectionStatus.Connecting ||
@@ -708,11 +625,9 @@ fun MallocGfwApp(
     }
 
     fun updateProtectedAppEnabled(appId: String) {
-        val index = protectedApps.indexOfFirst { it.id == appId }
-        if (index < 0) return
-        val current = protectedApps[index]
+        val current = protectedApps.firstOrNull { it.id == appId } ?: return
         val nextEnabled = !current.enabled
-        protectedApps[index] = current.copy(enabled = nextEnabled)
+        AppController.edit { StateOps.setProtectedApps(it, mapOf(appId to nextEnabled)) }
         pendingProtectedAppsApply = true
         settingsMessage = if (nextEnabled) {
             tr("${current.name} 已加入名单。", "${current.name} added to the list.", "${current.name}: добавлено в список.")
@@ -742,16 +657,7 @@ fun MallocGfwApp(
     }
 
     fun updateStreamingServiceSelection(serviceId: String, serverId: String) {
-        val nextSelections = appSettings.streamingSelections
-            .filterNot { it.serviceId == serviceId }
-            .toMutableList()
-        if (serverId.isNotBlank()) {
-            nextSelections += StreamingRouteSelection(
-                serviceId = serviceId,
-                serverId = serverId,
-            )
-        }
-        appSettings = appSettings.copy(streamingSelections = nextSelections)
+        AppController.edit { StateOps.setStreamingRoute(it, serviceId, serverId) }
         pendingStreamingRoutingApply = true
         settingsMessage = tr("${StreamingMediaManager.serviceById(serviceId)?.name ?: "流媒体"} 节点已保存。", "${StreamingMediaManager.serviceById(serviceId)?.name ?: "Media"} node saved.", "Узел для ${StreamingMediaManager.serviceById(serviceId)?.name ?: "медиа"} сохранён.")
     }
@@ -871,141 +777,19 @@ fun MallocGfwApp(
     }
 
     fun applyImport(preview: ImportPreview): ImportApplyResult {
-        val selectedBefore = servers.firstOrNull { it.id == selectedServerId }
-        val existingGroupIndex = serverGroups.indexOfFirst { it.id == preview.group.id }
-        val targetGroupId = preview.group.id
-        val selectedWasInTargetGroup = selectedBefore?.groupId == targetGroupId
-        val selectedWasConnected = selectedWasInTargetGroup &&
-            selectedBefore != null &&
-            connectionStatus == ConnectionStatus.Connected &&
-            (vpnSnapshot.activeServerId == selectedBefore.id ||
-                (vpnSnapshot.activeServerId.isNullOrBlank() && appSettings.lastConnectedServerId == selectedBefore.id))
-        val targetGroup = preview.group.copy(id = targetGroupId)
-        if (existingGroupIndex >= 0) {
-            serverGroups[existingGroupIndex] = targetGroup
-        } else {
-            serverGroups.add(0, targetGroup)
-        }
-        expandedGroups[targetGroupId] = true
-
-        val normalizedPreviewNodes = preview.nodes.map { node ->
-            if (node.groupId == targetGroupId) node else node.copy(groupId = targetGroupId)
-        }
-        if (preview.group.type == ServerGroupType.Subscription) {
-            val otherServers = servers.filterNot { it.groupId == targetGroupId }
-            servers.clear()
-            servers.addAll(otherServers)
-            servers.addAll(normalizedPreviewNodes)
-        } else {
-            // Local ids restart at 1 on every import, so a new node can carry the
-            // id of an unrelated existing one. Settle each node's final id first
-            // (existing match, or a free id), then remap links inside the batch.
-            val takenIds = servers.map { it.id }.toMutableSet()
-            val existingIndexes = mutableMapOf<String, Int>()
-            val finalIds = mutableMapOf<String, String>()
-            normalizedPreviewNodes.forEach { normalizedNode ->
-                val existingNodeIndex = servers.indexOfFirst {
-                    it.isSameImportedNode(normalizedNode)
-                }
-                if (existingNodeIndex >= 0) {
-                    existingIndexes[normalizedNode.id] = existingNodeIndex
-                    finalIds[normalizedNode.id] = servers[existingNodeIndex].id
-                } else {
-                    val id = ImportParser.uniqueNodeId(normalizedNode.id, takenIds)
-                    takenIds += id
-                    finalIds[normalizedNode.id] = id
-                }
-            }
-            normalizedPreviewNodes.forEach { normalizedNode ->
-                val existingNodeIndex = existingIndexes[normalizedNode.id]
-                if (existingNodeIndex != null) {
-                    val existingNode = servers[existingNodeIndex]
-                    servers[existingNodeIndex] = normalizedNode.copy(
-                        id = existingNode.id,
-                        favorite = existingNode.favorite,
-                        latencyMs = existingNode.latencyMs,
-                        stable = existingNode.stable,
-                        preProxyNodeId = existingNode.preProxyNodeId,
-                        fallbackNodeId = existingNode.fallbackNodeId,
-                    )
-                } else {
-                    servers.add(
-                        normalizedNode.copy(
-                            id = finalIds.getValue(normalizedNode.id),
-                            preProxyNodeId = finalIds[normalizedNode.preProxyNodeId] ?: normalizedNode.preProxyNodeId,
-                            fallbackNodeId = finalIds[normalizedNode.fallbackNodeId] ?: normalizedNode.fallbackNodeId,
-                        ),
-                    )
-                }
-            }
-        }
-        val normalizedGroupServers = servers.toList().mergedSubscriptionGroupNodes(targetGroupId)
-        servers.clear()
-        servers.addAll(normalizedGroupServers)
-        normalizePreProxySelectionsInMemory()
-        val mergedNodeCount = servers.count { it.groupId == targetGroupId && !it.hiddenUnsupported }
-        val selectedAfter = if (selectedWasInTargetGroup && selectedBefore != null) {
-            servers.firstOrNull {
-                it.groupId == targetGroupId &&
-                    !it.hiddenUnsupported &&
-                    it.subscriptionNameKey() == selectedBefore.subscriptionNameKey()
-            } ?: servers.firstOrNull {
-                it.groupId == targetGroupId &&
-                    it.subscriptionNameKey() == selectedBefore.subscriptionNameKey()
-            } ?: servers.firstOrNull { it.groupId == targetGroupId && !it.hiddenUnsupported }
-                ?: servers.firstOrNull { it.groupId == targetGroupId }
+        val connectedServerId = if (connectionStatus == ConnectionStatus.Connected) {
+            vpnSnapshot.activeServerId?.takeIf { it.isNotBlank() } ?: appSettings.lastConnectedServerId
         } else {
             null
         }
-        selectedAfter?.let { nextSelection ->
-            selectedServerId = nextSelection.id
-            expandedGroups[targetGroupId] = true
-        }
-
-        preview.subscription?.let { subscription ->
-            val normalizedSubscription = subscription.copy(
-                id = targetGroupId,
-                name = targetGroup.name,
-                nodes = mergedNodeCount,
-                autoUpdate = targetGroup.sourceUrl != null && subscription.autoUpdate,
-                sourceUrl = targetGroup.sourceUrl,
-                nextSync = if (targetGroup.sourceUrl != null && subscription.autoUpdate) "手动" else "快照",
-                status = subscription.status,
-            )
-            val subscriptionIndex = subscriptions.indexOfFirst { it.id == targetGroupId }
-            if (subscriptionIndex >= 0) {
-                subscriptions[subscriptionIndex] = normalizedSubscription
-            } else {
-                subscriptions.add(0, normalizedSubscription)
-            }
-        }
-
-        val recentTitle = when (preview.group.type) {
-            ServerGroupType.Subscription -> "${preview.group.name} · 订阅 · 刚刚"
-            ServerGroupType.Local -> "${preview.nodes.firstOrNull()?.name ?: "Local"} · 单节点 · 刚刚"
-        }
-        recentImports.remove(recentTitle)
-        recentImports.add(0, recentTitle)
-        while (recentImports.size > 5) recentImports.removeAt(recentImports.lastIndex)
-
-        normalizeStreamingSelectionsInMemory()
-        warmServerSections()
-        val selectedNameStillExists = selectedAfter != null &&
-            selectedBefore != null &&
-            selectedAfter.subscriptionNameKey() == selectedBefore.subscriptionNameKey()
-        return if (selectedAfter != null && selectedBefore != null && !selectedNameStillExists) {
-            ImportApplyResult(
-                selectedServerChanged = true,
-                message = tr("原选中节点 ${selectedBefore.name} 已不存在，已切换到 ${selectedAfter.name}。", "The selected node ${selectedBefore.name} no longer exists; switched to ${selectedAfter.name}.", "Выбранного узла ${selectedBefore.name} больше нет, выбран ${selectedAfter.name}."),
-                reconnectServer = if (selectedWasConnected) selectedAfter else null,
-            )
-        } else if (selectedAfter != null && selectedWasConnected) {
-            ImportApplyResult(
-                reconnectServer = selectedAfter,
-            )
-        } else {
-            ImportApplyResult()
-        }
+        val outcome = StateOps.applyImport(currentPersistedState(), preview, connectedServerId)
+        applyPersistedState(outcome.state)
+        expandedGroups[preview.group.id] = true
+        return ImportApplyResult(
+            selectedServerChanged = outcome.selectedServerChanged,
+            message = outcome.message,
+            reconnectServer = outcome.reconnectServer,
+        )
     }
 
     fun openLocalNodeBuilder() {
@@ -1088,47 +872,25 @@ fun MallocGfwApp(
     }
 
     fun updateNodePreProxy(nodeId: String, preProxyNodeId: String) {
-        val nodeIndex = servers.indexOfFirst { it.id == nodeId }
-        if (nodeIndex < 0) return
-        val node = servers[nodeIndex]
-        val normalizedTargetId = preProxyNodeId.trim().takeIf { candidateId ->
-            isValidLinkedNodeCandidate(node, candidateId)
-        }.orEmpty()
-        if (normalizedTargetId == node.preProxyNodeId) return
-        servers[nodeIndex] = node.copy(preProxyNodeId = normalizedTargetId)
-        runtimeMessage = if (normalizedTargetId.isBlank()) {
-            tr("已清除 ${node.name} 的前置代理。重新连接后生效。", "Cleared the pre-proxy of ${node.name}. Takes effect after reconnecting.", "Предварительный прокси для ${node.name} удалён. Вступит в силу после переподключения.")
-        } else {
-            val targetName = servers.firstOrNull { it.id == normalizedTargetId }?.name ?: "所选节点"
-            tr("已将 ${targetName} 设为 ${node.name} 的前置代理。重新连接后生效。", "Set ${targetName} as the pre-proxy for ${node.name}. Takes effect after reconnecting.", "${targetName} назначен предварительным прокси для ${node.name}. Вступит в силу после переподключения.")
-        }
+        val node = servers.firstOrNull { it.id == nodeId } ?: return
+        // The picker only offers valid nodes; anything else clears the link.
+        val target = preProxyNodeId.trim().takeIf { isValidLinkedNodeCandidate(node, it) }.orEmpty()
+        var outcome: StateOps.LinkOutcome? = null
+        AppController.edit { state -> StateOps.setPreProxy(state, nodeId, target).also { outcome = it }.state }
+        val result = outcome ?: return
+        if (!result.changed) return
+        runtimeMessage = result.message
         warmServerSections()
     }
 
     fun updateNodeFallback(nodeId: String, fallbackNodeId: String) {
-        val nodeIndex = servers.indexOfFirst { it.id == nodeId }
-        if (nodeIndex < 0) return
-        val node = servers[nodeIndex]
-        if (!NodeLatencyTester.supportsHeartbeatFallback(node)) {
-            if (node.fallbackNodeId.isNotBlank()) {
-                servers[nodeIndex] = node.copy(fallbackNodeId = "")
-                warmServerSections()
-            }
-            runtimeMessage = NodeLatencyTester.heartbeatFallbackUnsupportedMessage(node)
-            return
-        }
-        val normalizedTargetId = fallbackNodeId.trim().takeIf { candidateId ->
-            isValidFallbackNodeCandidate(node, candidateId)
-        }.orEmpty()
-        if (normalizedTargetId == node.fallbackNodeId) return
-        servers[nodeIndex] = node.copy(fallbackNodeId = normalizedTargetId)
-        runtimeMessage = if (normalizedTargetId.isBlank()) {
-            tr("已清除 ${node.name} 的备用节点。", "Cleared the fallback node of ${node.name}.", "Резервный узел для ${node.name} удалён.")
-        } else {
-            val targetName = servers.firstOrNull { it.id == normalizedTargetId }?.name ?: "所选节点"
-            tr("已将 ${targetName} 设为 ${node.name} 的备用节点。当前节点检测失败时会自动切换。", "Set ${targetName} as the fallback for ${node.name}. The app switches to it automatically if the current node fails checks.", "${targetName} назначен резервным узлом для ${node.name}. Если текущий узел не пройдёт проверку, переключение произойдёт автоматически.")
-        }
-        warmServerSections()
+        val node = servers.firstOrNull { it.id == nodeId } ?: return
+        val target = fallbackNodeId.trim().takeIf { isValidFallbackNodeCandidate(node, it) }.orEmpty()
+        var outcome: StateOps.LinkOutcome? = null
+        AppController.edit { state -> StateOps.setFallback(state, nodeId, target).also { outcome = it }.state }
+        val result = outcome ?: return
+        if (result.changed) warmServerSections()
+        (result.error ?: result.message)?.let { runtimeMessage = it }
     }
 
     fun fallbackNodeFor(server: ServerNode?): ServerNode? {
@@ -1169,34 +931,8 @@ fun MallocGfwApp(
             ManualNodeFactory.buildServerNode(localNodeDraft)
         }.onSuccess { node ->
             localNodeBuilderMessage = null
-            val editingId = editingLocalNodeId
-            if (editingId != null) {
-                val existingIndex = servers.indexOfFirst { it.id == editingId }
-                if (existingIndex >= 0) {
-                    val existingNode = servers[existingIndex]
-                    servers[existingIndex] = node.copy(
-                        id = existingNode.id,
-                        groupId = existingNode.groupId,
-                        subscription = existingNode.subscription,
-                        latencyMs = existingNode.latencyMs,
-                        stable = existingNode.stable,
-                        favorite = existingNode.favorite,
-                        rawUri = existingNode.rawUri,
-                        hiddenUnsupported = existingNode.hiddenUnsupported,
-                        preProxyNodeId = existingNode.preProxyNodeId,
-                        fallbackNodeId = existingNode.fallbackNodeId,
-                        description = "手动编辑的 ${localNodeDraft.protocol.displayName} Local 节点",
-                    )
-                    selectedServerId = existingNode.id
-                } else {
-                    servers.add(0, node)
-                    selectedServerId = node.id
-                }
-            } else {
-                servers.add(0, node)
-                selectedServerId = node.id
-            }
-            normalizePreProxySelectionsInMemory()
+            val description = "手动编辑的 ${localNodeDraft.protocol.displayName} Local 节点"
+            AppController.edit { StateOps.saveLocalNode(it, node, editingLocalNodeId, description) }
             editingLocalNodeId = null
             localNodeCompatibilityWarning = null
             expandedGroups[ImportParser.LOCAL_GROUP_ID] = true
@@ -1212,47 +948,24 @@ fun MallocGfwApp(
     }
 
     fun removeServerNode(nodeId: String) {
-        val node = servers.firstOrNull { it.id == nodeId } ?: return
-        servers.removeAll { it.id == nodeId }
-        normalizePreProxySelectionsInMemory()
-        recentImports.removeAll { it.contains(node.name) }
-        if (selectedServerId == nodeId) {
-            selectedServerId = servers.firstOrNull()?.id.orEmpty()
-        }
+        val next = StateOps.removeNode(currentPersistedState(), nodeId) ?: return
+        applyPersistedState(next)
         if (screen == AppScreen.NodeDetail) {
             goToMain(MainTab.Servers)
         }
-        normalizeStreamingSelectionsInMemory()
-        warmServerSections()
     }
 
     fun removeSubscriptionGroup(groupId: String) {
-        val group = serverGroups.firstOrNull { it.id == groupId } ?: return
-        if (group.type != ServerGroupType.Subscription) return
-        val removedNodeIds = servers.filter { it.groupId == groupId }.map { it.id }.toSet()
-        serverGroups.removeAll { it.id == groupId }
-        subscriptions.removeAll { it.id == groupId }
-        servers.removeAll { it.groupId == groupId }
-        normalizePreProxySelectionsInMemory()
+        val next = StateOps.removeSubscriptionGroup(currentPersistedState(), groupId) ?: return
+        applyPersistedState(next)
         expandedGroups.remove(groupId)
-        recentImports.removeAll { it.contains(group.name) }
-        if (selectedServerId in removedNodeIds) {
-            selectedServerId = servers.firstOrNull()?.id.orEmpty()
-        }
         if (screen == AppScreen.Subscriptions || screen == AppScreen.NodeDetail) {
             goToMain(MainTab.Servers)
         }
-        normalizeStreamingSelectionsInMemory()
-        warmServerSections()
     }
 
     fun replaceRuleSource(updated: RuleSourceItem) {
-        val index = ruleSources.indexOfFirst { it.id == updated.id }
-        if (index >= 0) {
-            ruleSources[index] = updated
-        } else {
-            ruleSources.add(updated)
-        }
+        AppController.edit { StateOps.upsertRuleSource(it, updated) }
         selectedRuleSourceId = updated.id
     }
 
@@ -1481,14 +1194,10 @@ fun MallocGfwApp(
         customDnsValue: String,
     ) {
         val normalizedCustomValue = customDnsValue.trim()
-        if (dnsMode == AppDnsMode.Custom && normalizedCustomValue.isBlank()) {
+        if (AppController.edit { StateOps.setDns(it, dnsMode, normalizedCustomValue) } == null) {
             settingsMessage = "请输入自定义 DNS 地址。"
             return
         }
-        appSettings = appSettings.copy(
-            dnsMode = dnsMode,
-            customDnsValue = normalizedCustomValue,
-        )
         settingsMessage = when (dnsMode) {
             AppDnsMode.System -> "DNS 已切换为系统解析。"
             AppDnsMode.Remote -> "DNS 已切换为远端 1.1.1.1。"
@@ -1502,7 +1211,7 @@ fun MallocGfwApp(
             settingsMessage = tr("VPN MTU 已经是 $normalizedMtu。", "VPN MTU is already $normalizedMtu.", "VPN MTU уже равен $normalizedMtu.")
             return
         }
-        appSettings = appSettings.copy(vpnMtu = normalizedMtu)
+        AppController.edit { StateOps.setMtu(it, normalizedMtu) }
         val activeServer = resolveServerForSettingsReconnect()
         if (connectionStatus == ConnectionStatus.Connected && activeServer != null) {
             settingsMessage = tr("VPN MTU 已设置为 $normalizedMtu，正在重连以生效。", "VPN MTU set to $normalizedMtu. Reconnecting to apply it.", "VPN MTU установлен на $normalizedMtu. Переподключение для применения.")
@@ -1609,18 +1318,9 @@ fun MallocGfwApp(
     }
 
     fun toggleRuleSourceEnabled(sourceId: String) {
-        val index = ruleSources.indexOfFirst { it.id == sourceId }
-        if (index < 0) return
-        val current = ruleSources[index]
+        val current = ruleSources.firstOrNull { it.id == sourceId } ?: return
         val enabled = !current.enabled
-        ruleSources[index] = current.copy(
-            enabled = enabled,
-            status = if (enabled) {
-                if (current.convertedRules > 0) RuleSourceStatus.Ready else RuleSourceStatus.Idle
-            } else {
-                RuleSourceStatus.Disabled
-            },
-        )
+        AppController.edit { StateOps.setRuleSourceEnabled(it, sourceId, enabled) }
         ruleMessage = if (enabled) {
             tr("${current.name} 已启用。重新开关代理后生效。", "${current.name} enabled. Takes effect after turning the proxy off and on.", "${current.name}: включено. Вступит в силу после перезапуска прокси.")
         } else {
@@ -1631,23 +1331,9 @@ fun MallocGfwApp(
     fun deleteRuleSource(sourceId: String) {
         val source = ruleSources.firstOrNull { it.id == sourceId } ?: return
         RuleSourceManager.deleteSource(context, source)
-        if (source.systemDefault) {
-            replaceRuleSource(
-                source.copy(
-                    enabled = true,
-                    updatedAt = "未更新",
-                    status = RuleSourceStatus.Idle,
-                    totalRules = 0,
-                    convertedRules = 0,
-                    skippedRules = 0,
-                    lastError = null,
-                ),
-            )
-        } else {
-            ruleSources.removeAll { it.id == sourceId }
-            if (selectedRuleSourceId == sourceId) {
-                selectedRuleSourceId = ruleSources.firstOrNull()?.id.orEmpty()
-            }
+        AppController.edit { StateOps.removeRuleSource(it, sourceId) }
+        if (selectedRuleSourceId == sourceId && !source.systemDefault) {
+            selectedRuleSourceId = ruleSources.firstOrNull()?.id.orEmpty()
         }
         ruleMessage = tr("${source.name} 已移除。", "${source.name} removed.", "${source.name}: удалено.")
     }
@@ -1731,34 +1417,17 @@ fun MallocGfwApp(
             var latencyStateChanged = false
             runCatching { NodeLatencyTester.measure(context, server) }
                 .onSuccess { latency ->
-                    val latestIndex = servers.indexOfFirst { it.id == nodeId }
-                    if (latestIndex >= 0) {
-                        val current = servers[latestIndex]
-                        val updated = current.copy(
-                            latencyMs = latency,
-                            stable = true,
-                        )
-                        if (updated != current) {
-                            servers[latestIndex] = updated
-                            latencyStateChanged = true
-                        }
-                    }
+                    val before = servers.firstOrNull { it.id == nodeId }
+                    AppController.edit { StateOps.setNodeLatency(it, nodeId, latency) }
+                    if (before != null && before != servers.firstOrNull { it.id == nodeId }) latencyStateChanged = true
                     AppLogManager.append(context, "LATENCY", "节点检测成功：${server.name} -> ${latency} ms")
                     runtimeMessage = tr("节点 ${server.name} 检测完成，延迟 ${latency} ms。", "Node ${server.name} tested: ${latency} ms.", "Узел ${server.name} проверен: ${latency} мс.")
                 }
                 .onFailure { error ->
+                    val before = servers.firstOrNull { it.id == nodeId }
+                    AppController.edit { StateOps.setNodeLatency(it, nodeId, null) }
+                    if (before != null && before != servers.firstOrNull { it.id == nodeId }) latencyStateChanged = true
                     val latestIndex = servers.indexOfFirst { it.id == nodeId }
-                    if (latestIndex >= 0) {
-                        val current = servers[latestIndex]
-                        val updated = current.copy(
-                            latencyMs = 0,
-                            stable = false,
-                        )
-                        if (updated != current) {
-                            servers[latestIndex] = updated
-                            latencyStateChanged = true
-                        }
-                    }
                     AppLogManager.append(context, "LATENCY", "节点检测失败：${server.name}", error)
                     runtimeMessage = tr("节点 ${server.name} 检测失败：${error.message ?: "请稍后重试。"}", "Node ${server.name} test failed: ${error.message ?: "Try again later."}", "Не удалось проверить узел ${server.name}: ${error.message ?: "Повторите попытку позже."}")
                     val latestServer = latestIndex.takeIf { it >= 0 }?.let { servers[it] }
@@ -1844,16 +1513,64 @@ fun MallocGfwApp(
         }
     }
 
-    LaunchedEffect(Unit) {
-        @OptIn(FlowPreview::class)
-        snapshotFlow { currentPersistedState() }
-            .distinctUntilChanged()
-            .debounce(500L)
-            .collectLatest { state ->
-                withContext(Dispatchers.IO) {
-                    AppStateStore.save(context, state)
+    // Lets the MCP server and background sync change the state while the UI
+    // is open: they start from this in-memory copy and push results back.
+    DisposableEffect(Unit) {
+        val host = object : AppController.UiHost {
+            override fun showMessage(message: String) {
+                runtimeMessage = message
+            }
+
+            override fun connect(server: ServerNode) {
+                selectedServerId = server.id
+                connectOrSwitchServer(server)
+            }
+
+            override fun disconnect() {
+                // Drop reconnects queued by earlier setting changes, or the
+                // UI would start the VPN again right after it stops.
+                pendingReconnectServerId = null
+                pendingReconnectMessage = null
+                blockingReconnectInFlight = false
+                blockingReconnectMessage = null
+                manualDisconnectRequested = true
+                lastRequestedConnectionServerId = null
+                lastFallbackTargetServerId = null
+                appSettings = appSettings.copy(resumeConnectionOnLaunch = false)
+                if (VpnServiceController.isRunning() || connectionStatus != ConnectionStatus.Disconnected) {
+                    disconnectInFlight = true
+                    connectionStatus = ConnectionStatus.Disconnecting
+                    runtimeMessage = "正在断开 VPN…"
+                    VpnServiceController.disconnect(context)
                 }
             }
+
+            override fun reconnect(server: ServerNode, message: String) {
+                reconnectVpnForSettingsChange(server, message)
+            }
+
+            override fun restartTailscale(settings: com.mallocgfw.app.model.AppSettings, message: String) {
+                if (settings.tailscaleEnabled) {
+                    restartTailscaleForSettings(settings, message)
+                } else {
+                    appSettings = settings
+                    scope.launch {
+                        TailscaleRuntimeManager.stopNow(context)
+                        runtimeMessage = message
+                        reconnectForTailscaleChange(message)
+                    }
+                }
+            }
+        }
+        AppController.uiHost = host
+        onDispose {
+            if (AppController.uiHost === host) AppController.uiHost = null
+        }
+    }
+
+    // Keep the preloaded node list current when nodes change elsewhere (MCP, sync).
+    LaunchedEffect(servers, serverGroups) {
+        warmServerSections()
     }
 
     LaunchedEffect(Unit) {
@@ -2093,6 +1810,9 @@ fun MallocGfwApp(
         )
     }
 
+    // Changes an AI client asked for over MCP, waiting for the phone owner's answer.
+    McpApprovalDialogHost()
+
     if (showUpdatePrompt && updateState.info != null && screen != AppScreen.Launch) {
         val info = updateState.info
         AlertDialog(
@@ -2308,11 +2028,8 @@ fun MallocGfwApp(
                             expandedGroups[groupId] = !(expandedGroups[groupId] ?: true)
                         },
                         onToggleFavorite = { id ->
-                            val index = servers.indexOfFirst { it.id == id }
-                            if (index >= 0) {
-                                servers[index] = servers[index].copy(favorite = !servers[index].favorite)
-                                warmServerSections()
-                            }
+                            AppController.edit { StateOps.toggleFavorite(it, id) }
+                            warmServerSections()
                         },
                         latencyTestingIds = latencyTestInFlight.keys,
                         onTestLatency = ::testServerLatency,
@@ -2449,20 +2166,13 @@ fun MallocGfwApp(
                                 return@SubscriptionsScreen
                             }
                             subscriptionRefreshInFlight[subscriptionId] = true
-                            subscriptions[index] = subscription.copy(status = "刷新中")
+                            AppController.edit { StateOps.setSubscriptionStatus(it, subscriptionId, "刷新中") }
                             scope.launch {
                                 runCatching {
                                     ImportParser.buildPreview(subscription.sourceUrl)
                                 }.onSuccess { preview ->
                                     val applyResult = applyImport(preview)
-                                    val refreshedIndex = subscriptions.indexOfFirst { it.id == subscriptionId }
-                                    if (refreshedIndex >= 0) {
-                                        subscriptions[refreshedIndex] = subscriptions[refreshedIndex].copy(
-                                            status = "已同步",
-                                            updatedAt = "刚刚",
-                                            updatedAtMs = System.currentTimeMillis(),
-                                        )
-                                    }
+                                    AppController.edit { StateOps.setSubscriptionStatus(it, subscriptionId, "已同步", System.currentTimeMillis()) }
                                     subscriptionMessage = applyResult.message
                                         ?: tr("${preview.group.name} 刷新完成，共同步 ${preview.nodes.count { !it.hiddenUnsupported }} 个节点。", "${preview.group.name} refreshed: ${preview.nodes.count { !it.hiddenUnsupported }} nodes synced.", "${preview.group.name}: обновлено, синхронизировано узлов: ${preview.nodes.count { !it.hiddenUnsupported }}.")
                                     if (applyResult.selectedServerChanged) {
@@ -2475,10 +2185,7 @@ fun MallocGfwApp(
                                         )
                                     }
                                 }.onFailure { error ->
-                                    val failedIndex = subscriptions.indexOfFirst { it.id == subscriptionId }
-                                    if (failedIndex >= 0) {
-                                        subscriptions[failedIndex] = subscriptions[failedIndex].copy(status = "刷新失败")
-                                    }
+                                    AppController.edit { StateOps.setSubscriptionStatus(it, subscriptionId, "刷新失败") }
                                     subscriptionMessage = error.message ?: "订阅刷新失败。"
                                 }
                                 subscriptionRefreshInFlight.remove(subscriptionId)
@@ -2544,7 +2251,7 @@ fun MallocGfwApp(
                             }
                         },
                         onHeartbeatIntervalChange = { minutes ->
-                            appSettings = appSettings.copy(heartbeatIntervalMinutes = minutes)
+                            AppController.edit { StateOps.setHeartbeat(it, minutes) }
                             settingsMessage = appText("心跳检测间隔已设置为 $minutes 分钟。", "Fallback check interval set to $minutes minutes.", "Интервал проверки резервного узла: $minutes мин.", resolvedLanguage)
                         },
                         onVpnMtuChange = ::updateVpnMtu,
@@ -2567,6 +2274,7 @@ fun MallocGfwApp(
                         onAddQuickSettingsTile = ::requestQuickSettingsTile,
                         onViewLogs = ::openLogViewer,
                         onOpenLicenses = { navigateSecondary(AppScreen.OpenSourceLicenses) },
+                        onOpenMcp = { navigateSecondary(AppScreen.Mcp) },
                     )
 
                     AppScreen.Tailscale -> TailscaleScreen(
@@ -2575,10 +2283,7 @@ fun MallocGfwApp(
                         snapshot = tailscaleSnapshot,
                         onBack = ::onBack,
                         onEnabledChange = { enabled ->
-                            val next = appSettings.copy(
-                                tailscaleEnabled = enabled,
-                                tailscaleExitNodeId = if (enabled) appSettings.tailscaleExitNodeId else "",
-                            )
+                            val next = StateOps.setTailscaleEnabled(currentPersistedState(), enabled).settings
                             if (!enabled) {
                                 appSettings = next
                                 scope.launch {
@@ -2625,7 +2330,7 @@ fun MallocGfwApp(
                             val nextEffectiveRoutes = normalizedRoutes
                                 .filter { it in advertisedRoutes }
                                 .toSet()
-                            appSettings = appSettings.copy(tailscaleSubnetRoutes = normalizedRoutes)
+                            AppController.edit { StateOps.setTailscaleSubnets(it, normalizedRoutes) }
                             val message = when {
                                 normalizedRoutes.isEmpty() -> "已关闭 Tailscale 子网访问。"
                                 nextEffectiveRoutes.isEmpty() -> "子网设置已保存，当前 Tailnet 尚未公布对应路由。"
@@ -2642,7 +2347,7 @@ fun MallocGfwApp(
                             val targetNodeName = tailscaleSnapshot.peers
                                 .firstOrNull { it.id == nodeId }
                                 ?.let { peer -> peer.name.ifBlank { peer.dnsName } }
-                            appSettings = appSettings.copy(tailscaleExitNodeId = nodeId)
+                            AppController.edit { StateOps.setTailscaleExitNode(it, nodeId) }
                             scope.launch {
                                 TailscaleRuntimeManager.setExitNode(context, nodeId)
                                     .onSuccess {
@@ -2663,7 +2368,7 @@ fun MallocGfwApp(
                                         }
                                     }
                                     .onFailure { error ->
-                                        appSettings = appSettings.copy(tailscaleExitNodeId = previousNodeId)
+                                        AppController.edit { StateOps.setTailscaleExitNode(it, previousNodeId) }
                                         val failureMessage = error.message ?: "无法切换 Tailscale 出口节点。"
                                         runtimeMessage = failureMessage
                                         Toast.makeText(context, failureMessage, Toast.LENGTH_SHORT).show()
@@ -2687,6 +2392,11 @@ fun MallocGfwApp(
                     )
 
                     AppScreen.OpenSourceLicenses -> OpenSourceLicensesScreen(
+                        padding = padding,
+                        onBack = ::onBack,
+                    )
+
+                    AppScreen.Mcp -> McpScreen(
                         padding = padding,
                         onBack = ::onBack,
                     )

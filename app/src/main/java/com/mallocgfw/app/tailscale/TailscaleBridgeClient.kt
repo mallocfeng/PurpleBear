@@ -38,6 +38,10 @@ object TailscaleBridgeClient {
 
     suspend fun logout(context: Context, stateDir: String): String = service(context).logout(stateDir)
 
+    suspend fun serveForward(context: Context, config: String): String = service(context).serveForward(config)
+
+    suspend fun stopForward(context: Context): String = service(context).stopForward()
+
     private suspend fun service(context: Context): ITailscaleBridge {
         bridge?.let { return it }
         return bindMutex.withLock {

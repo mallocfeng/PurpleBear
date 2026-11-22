@@ -7,4 +7,6 @@ interface ITailscaleBridge {
     String stop();
     String setExitNode(String nodeId);
     String logout(String stateDir);
+    String serveForward(String config);
+    String stopForward();
 }
