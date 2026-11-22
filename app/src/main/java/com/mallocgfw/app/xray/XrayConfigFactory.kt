@@ -24,6 +24,7 @@ object XrayConfigFactory {
     private const val SPEED_TEST_INBOUND_TAG = "speedtest-http-in"
     private const val APP_SOCKS_INBOUND_TAG = "app-socks-in"
     private const val MAGIC_DNS_OUTBOUND_TAG = "magic-dns-out"
+    private const val REMOTE_DNS_OUTBOUND_TAG = "remote-dns-out"
     private const val MAGIC_DNS_PASSTHROUGH_TAG = "magic-dns-pass"
     /** Tailscale's resolver; also the DNS address the VPN advertises for MagicDNS. */
     const val TAILSCALE_RESOLVER = "100.100.100.100"
@@ -131,6 +132,10 @@ object XrayConfigFactory {
         tailscale: TailscaleRouting? = null,
         /** Let foreign QUIC go through the proxy (good for UDP nodes such as Hysteria2 and TUIC). */
         proxyQuicEnabled: Boolean = false,
+        /** The DNS server Android was given (bare IP); its port-53 traffic is pinned, see [dnsRules]. */
+        dnsServer: String? = null,
+        /** Remote DNS: send it as DNS-over-TCP through the proxy, so nodes without UDP still resolve. */
+        dnsOverProxy: Boolean = false,
         localProxy: LocalProxyAllocation = LocalProxyRuntime.current() ?: LocalProxyAllocation.ephemeral(),
     ): String {
         val normalizedMtu = normalizedAppVpnMtu(vpnMtu)
@@ -172,6 +177,9 @@ object XrayConfigFactory {
                     }
                     tailscale?.let { put(tailscaleOutbound(it)) }
                     magicDnsUpstream?.let { upstream -> magicDnsOutbounds(upstream, tailscale).forEach(::put) }
+                    if (dnsServer != null && dnsOverProxy) {
+                        put(remoteDnsOutbound(dnsServer, if (tailscale?.routeAllTraffic == true) "tailscale" else "proxy"))
+                    }
                     put(JSONObject().apply {
                         put("tag", "direct")
                         put("protocol", "freedom")
@@ -200,6 +208,8 @@ object XrayConfigFactory {
                             geoRoutingRegion = geoRoutingRegion,
                             tailscale = tailscale,
                             magicDns = magicDnsUpstream != null,
+                            dnsServer = dnsServer,
+                            dnsOverProxy = dnsOverProxy,
                         ),
                     )
                 },
@@ -219,6 +229,8 @@ object XrayConfigFactory {
         geoRoutingRegion: AppGeoRoutingRegion = AppGeoRoutingRegion.defaultForLanguage(AppLanguage.System),
         tailscale: TailscaleRouting? = null,
         magicDns: Boolean = false,
+        dnsServer: String? = null,
+        dnsOverProxy: Boolean = false,
     ): JSONArray {
         val rules = JSONArray()
 
@@ -234,6 +246,20 @@ object XrayConfigFactory {
                     put("ip", JSONArray().put(TAILSCALE_RESOLVER))
                     put("port", "53")
                     put("outboundTag", MAGIC_DNS_OUTBOUND_TAG)
+                },
+            )
+        }
+
+        dnsServer?.let { server ->
+            // DNS to the configured server must not depend on the normal rules:
+            // routed through a node without UDP, every lookup would fail.
+            // System / custom DNS go direct; remote DNS becomes TCP through the proxy.
+            rules.put(
+                JSONObject().apply {
+                    put("type", "field")
+                    put("ip", JSONArray().put(server))
+                    put("port", "53")
+                    put("outboundTag", if (dnsOverProxy) REMOTE_DNS_OUTBOUND_TAG else "direct")
                 },
             )
         }
@@ -403,6 +429,21 @@ object XrayConfigFactory {
      *   hands the query back to routing, so it takes exactly the path it took
      *   without MagicDNS (private resolver direct, remote resolver via proxy, …).
      */
+    /** Forwards DNS queries to [server] over TCP through [via] (the proxy), whatever the node's UDP support. */
+    private fun remoteDnsOutbound(server: String, via: String) = JSONObject().apply {
+        put("tag", REMOTE_DNS_OUTBOUND_TAG)
+        put("protocol", "dns")
+        put(
+            "settings",
+            JSONObject().apply {
+                put("network", "tcp")
+                put("address", server)
+                put("port", 53)
+            },
+        )
+        put("streamSettings", JSONObject().put("sockopt", JSONObject().put("dialerProxy", via)))
+    }
+
     private fun magicDnsOutbounds(upstream: String, tailscale: TailscaleRouting?): List<JSONObject> {
         val (upstreamHost, upstreamPort) = splitHostPort(upstream)
         val rules = JSONArray()

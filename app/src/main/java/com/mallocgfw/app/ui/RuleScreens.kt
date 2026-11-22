@@ -1,6 +1,16 @@
 package com.mallocgfw.app.ui
 
 import androidx.compose.foundation.background
+import com.mallocgfw.app.ui.theme.Success
+import com.mallocgfw.app.model.RuleUrlPresets
+import com.mallocgfw.app.model.RuleTextHelper
+import com.mallocgfw.app.model.tr
+import com.mallocgfw.app.model.RuleTargetPolicy
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.layout.widthIn
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -360,31 +370,181 @@ internal fun RuleSourceDetailScreen(
 }
 
 @Composable
+private fun ruleFieldColors() = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+    focusedContainerColor = SurfaceHigh,
+    unfocusedContainerColor = SurfaceHigh,
+    focusedBorderColor = Primary.copy(alpha = 0.3f),
+    unfocusedBorderColor = Color.Transparent,
+    cursorColor = Primary,
+    focusedTextColor = TextPrimary,
+    unfocusedTextColor = TextPrimary,
+)
+
+@Composable
+private fun SectionTitle(text: String) {
+    Text(text = text, fontSize = TypeScale.Body, lineHeight = TypeScale.BodyLine, fontWeight = FontWeight.Bold)
+}
+
+@Composable
+private fun SectionHint(text: String) {
+    Text(
+        text = text,
+        color = TextSecondary,
+        fontSize = TypeScale.Meta,
+        lineHeight = TypeScale.MetaLine,
+        modifier = Modifier.padding(top = 4.dp),
+    )
+}
+
+@Composable
+private fun ChipRow(content: @Composable () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) { content() }
+}
+
+@Composable
+private fun RuleTextHelper.Match.label(): String = when (this) {
+    RuleTextHelper.Match.Suffix -> uiText("整个网站", "Whole site", "Весь сайт")
+    RuleTextHelper.Match.Exact -> uiText("仅此域名", "This domain only", "Только этот домен")
+    RuleTextHelper.Match.Keyword -> uiText("包含关键词", "Contains keyword", "Содержит слово")
+    RuleTextHelper.Match.IpRange -> uiText("IP / IP 段", "IP / range", "IP / диапазон")
+}
+
+@Composable
+private fun RuleTextHelper.Action.label(): String = when (this) {
+    RuleTextHelper.Action.Proxy -> uiText("走代理", "Proxy", "Через прокси")
+    RuleTextHelper.Action.Direct -> uiText("直连", "Direct", "Напрямую")
+    RuleTextHelper.Action.Reject -> uiText("拦截", "Block", "Блокировать")
+}
+
+@Composable
+private fun RuleTargetPolicy.label(): String = when (this) {
+    RuleTargetPolicy.Proxy -> uiText("走代理", "Proxy", "Через прокси")
+    RuleTargetPolicy.Direct -> uiText("直连", "Direct", "Напрямую")
+    RuleTargetPolicy.Block -> uiText("拦截", "Block", "Блокировать")
+}
+
+@Composable
+private fun RuleTextHelper.LineView.describe(): String = when (kind) {
+    RuleTextHelper.Kind.Suffix -> uiText("$target 及其所有子域名", "$target and all its subdomains", "$target и все поддомены")
+    RuleTextHelper.Kind.Exact -> uiText("仅 $target", "Only $target", "Только $target")
+    RuleTextHelper.Kind.Keyword -> uiText("域名包含“$target”", "Domains containing \"$target\"", "Домены со словом «$target»")
+    RuleTextHelper.Kind.IpRange -> uiText("IP 段 $target", "IP range $target", "Диапазон IP $target")
+    RuleTextHelper.Kind.GeoIp -> if (target.equals("CN", ignoreCase = true)) {
+        uiText("中国的 IP", "IPs in China", "IP Китая")
+    } else {
+        uiText("$target 的 IP", "IPs in $target", "IP региона $target")
+    }
+    RuleTextHelper.Kind.Regex -> uiText("符合正则 $target", "Matching pattern $target", "По шаблону $target")
+    RuleTextHelper.Kind.Other -> raw
+}
+
+private val templateLabels = mapOf(
+    "ai" to Triple("AI 服务走代理", "AI services via proxy", "ИИ-сервисы через прокси"),
+    "google" to Triple("Google 与 YouTube 走代理", "Google & YouTube via proxy", "Google и YouTube через прокси"),
+    "telegram" to Triple("Telegram 走代理", "Telegram via proxy", "Telegram через прокси"),
+    "github" to Triple("GitHub 走代理", "GitHub via proxy", "GitHub через прокси"),
+    "apple" to Triple("苹果服务直连", "Apple services direct", "Сервисы Apple напрямую"),
+    "cn" to Triple("中国 IP 直连", "China IPs direct", "IP Китая напрямую"),
+)
+
+/** Chip whose unselected state is still visible on a card. */
+@Composable
+private fun OptionChip(text: String, selected: Boolean, onClick: () -> Unit) {
+    Text(
+        text = text,
+        color = if (selected) AccentContentColor else TextPrimary,
+        fontSize = TypeScale.Meta,
+        lineHeight = TypeScale.MetaLine,
+        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+        maxLines = 1,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (selected) Primary else SurfaceHigh)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    )
+}
+
+/** "+ something" chip that adds a set of rules. */
+@Composable
+private fun AddChip(text: String, onClick: () -> Unit) {
+    Text(
+        text = "+ $text",
+        color = Primary,
+        fontSize = TypeScale.Meta,
+        lineHeight = TypeScale.MetaLine,
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(Primary.copy(alpha = 0.14f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    )
+}
+
+private enum class NodePickerPurpose { InsertIntoText, QuickAdd }
+
+private sealed interface LinkCheck {
+    data object Idle : LinkCheck
+    data object Checking : LinkCheck
+    data class Ok(val rules: Int, val skipped: Int) : LinkCheck
+    data class Failed(val message: String) : LinkCheck
+}
+
+@Composable
 internal fun AddRuleSourceScreen(
     padding: PaddingValues,
     editingSource: RuleSourceItem?,
     sourceKind: RuleSourceKind,
     servers: List<ServerNode>,
     onBack: () -> Unit,
-    onSubmit: (String, String, RuleSourceType, RuleSourceKind) -> Unit,
+    onSubmit: (String, String, RuleSourceType, RuleSourceKind, RuleTargetPolicy) -> Unit,
 ) {
-    var name by remember(editingSource?.id) { mutableStateOf(editingSource?.name.orEmpty()) }
     val effectiveKind = editingSource?.sourceKind ?: sourceKind
+    val isText = effectiveKind == RuleSourceKind.LocalText
+    var name by remember(editingSource?.id) { mutableStateOf(editingSource?.name.orEmpty()) }
     var input by remember(editingSource?.id, effectiveKind) {
-        mutableStateOf(TextFieldValue(if (effectiveKind == RuleSourceKind.LocalText) editingSource?.content.orEmpty() else editingSource?.url.orEmpty()))
+        mutableStateOf(TextFieldValue(if (isText) editingSource?.content.orEmpty() else editingSource?.url.orEmpty()))
     }
     var type by remember(editingSource?.id) { mutableStateOf(editingSource?.type ?: RuleSourceType.Auto) }
-    var validationError by remember { mutableStateOf<String?>(null) }
-    var validationErrorLineNumbers by remember { mutableStateOf(emptySet<Int>()) }
-    var nodePickerVisible by remember { mutableStateOf(false) }
+    var policy by remember(editingSource?.id) { mutableStateOf(editingSource?.policy ?: RuleTargetPolicy.Proxy) }
+    var saveError by remember { mutableStateOf<String?>(null) }
+    var nodePicker by remember { mutableStateOf<NodePickerPurpose?>(null) }
     val visibleServers = servers.filterNot { it.hiddenUnsupported }
-    val missingNodeLabels = remember(input.text, visibleServers) {
-        if (effectiveKind == RuleSourceKind.LocalText) {
-            RuleSourceManager.missingNodePolicyLabels(input.text, visibleServers)
-        } else {
-            emptyList()
-        }
+    val language = LocalAppLanguage.current
+
+    fun updateInput(value: TextFieldValue) {
+        input = value
+        saveError = null
     }
+
+    // Text rules: live check and a readable list.
+    val validation = remember(input.text, type, isText) {
+        if (isText && input.text.isNotBlank()) RuleSourceManager.validateTextRules(input.text, type) else null
+    }
+    val errorLines = validation?.errorLineNumbers.orEmpty()
+    val lineViews = remember(input.text, isText) { if (isText) RuleTextHelper.describe(input.text) else emptyList() }
+    val missingNodeLabels = remember(input.text, visibleServers) {
+        if (isText) RuleSourceManager.missingNodePolicyLabels(input.text, visibleServers) else emptyList()
+    }
+    var advancedOpen by remember(editingSource?.id) { mutableStateOf(false) }
+    var templateMessage by remember { mutableStateOf<String?>(null) }
+
+    // Quick add.
+    var quickTarget by remember { mutableStateOf("") }
+    var quickMatch by remember { mutableStateOf(RuleTextHelper.Match.Suffix) }
+    var quickAction by remember { mutableStateOf<RuleTextHelper.Action?>(RuleTextHelper.Action.Proxy) }
+    var quickNode by remember { mutableStateOf<ServerNode?>(null) }
+    val quickLine = RuleTextHelper.buildLine(quickTarget, quickMatch, quickAction, quickNode?.let(RuleSourceManager::nodePolicyToken))
+
+    // URL rules.
+    val scope = rememberCoroutineScope()
+    var linkCheck by remember { mutableStateOf<LinkCheck>(LinkCheck.Idle) }
+    val normalizedUrl = RuleUrlPresets.normalizeUrl(input.text)
 
     LazyColumn(
         modifier = Modifier
@@ -397,131 +557,265 @@ internal fun AddRuleSourceScreen(
         item {
             AppTopBar(
                 title = if (editingSource == null) "新增规则源" else "编辑规则源",
-                subtitle = if (effectiveKind == RuleSourceKind.LocalText) "本地文本规则" else "规则来源",
+                subtitle = if (isText) "本地文本规则" else "规则来源",
                 onBack = onBack,
             )
         }
         item {
             ScreenHeader(
                 title = when {
-                    effectiveKind == RuleSourceKind.LocalText && editingSource == null -> "添加文本规则"
-                    effectiveKind == RuleSourceKind.LocalText -> "编辑文本规则"
-                    editingSource == null -> "添加规则 URL"
-                    else -> "修改规则 URL"
+                    isText && editingSource == null -> uiText("添加文本规则")
+                    isText -> uiText("编辑文本规则")
+                    editingSource == null -> uiText("添加规则 URL")
+                    else -> uiText("修改规则 URL")
                 },
-                subtitle = if (effectiveKind == RuleSourceKind.LocalText) {
-                    "手动输入 Shadowrocket / Surge 文本规则。"
+                subtitle = if (isText) {
+                    uiText(
+                        "告诉 App 哪些网站走代理、哪些直连或拦截。用“快速添加”或模板就行，不需要懂规则格式。",
+                        "Tell the app which sites use the proxy, go direct or are blocked. Use Quick add or a template; no rule syntax needed.",
+                        "Укажите, какие сайты идут через прокси, напрямую или блокируются. Используйте быстрое добавление или шаблон — знать синтаксис не нужно.",
+                    )
                 } else {
-                    "支持 Shadowrocket / Surge 文本规则。"
+                    uiText(
+                        "订阅一份别人维护的规则列表，会自动定期更新。可以直接选下面的常用规则源。",
+                        "Subscribe to a rule list someone maintains; it updates automatically. Pick a common source below to start.",
+                        "Подпишитесь на поддерживаемый список правил — он обновляется сам. Можно выбрать готовый источник ниже.",
+                    )
                 },
             )
-        }
-        if (effectiveKind == RuleSourceKind.LocalText) {
-            item {
-                SurfaceCard {
-                    Text(
-                        text = uiText("编写规则"),
-                        fontSize = TypeScale.Body,
-                        lineHeight = TypeScale.BodyLine,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(
-                        text = uiText("每行一条规则：规则类型,匹配内容,策略。支持 DOMAIN-SUFFIX、DOMAIN、DOMAIN-KEYWORD、URL-REGEX、IP-CIDR、IP-CIDR6、GEOIP。策略支持 DIRECT、PROXY、REJECT，也可以用下方节点菜单插入 NODE 策略。IP 规则可追加 no-resolve。"),
-                        color = TextSecondary,
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(
-                        text = uiText("示例：\nDOMAIN-SUFFIX,openai.com,PROXY\nDOMAIN-SUFFIX,apple.com,DIRECT\nGEOIP,CN,DIRECT,no-resolve\nURL-REGEX,^(.+\\.)?example\\.com$,REJECT"),
-                        color = TextSecondary,
-                    )
-                }
-            }
         }
         item {
             SurfaceCard {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(64.dp),
+                    modifier = Modifier.fillMaxWidth().height(64.dp),
                     textStyle = compactInputTextStyle(),
                     label = { CompactInputLabel("规则名称") },
-                    placeholder = { CompactInputPlaceholder("例如：OpenAI 代理规则") },
-                    shape = RoundedCornerShape(14.dp),
-                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = SurfaceHigh,
-                        unfocusedContainerColor = SurfaceHigh,
-                        focusedBorderColor = Primary.copy(alpha = 0.3f),
-                        unfocusedBorderColor = Color.Transparent,
-                        cursorColor = Primary,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                    ),
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = input,
-                    onValueChange = {
-                        input = it
-                        validationError = null
-                        validationErrorLineNumbers = emptySet()
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    textStyle = compactInputTextStyle(),
-                    minLines = if (effectiveKind == RuleSourceKind.LocalText) 12 else 3,
-                    maxLines = if (effectiveKind == RuleSourceKind.LocalText) 24 else 5,
-                    visualTransformation = if (effectiveKind == RuleSourceKind.LocalText && validationErrorLineNumbers.isNotEmpty()) {
-                        RuleErrorLineVisualTransformation(validationErrorLineNumbers)
-                    } else {
-                        VisualTransformation.None
-                    },
-                    label = { CompactInputLabel(if (effectiveKind == RuleSourceKind.LocalText) "规则文本" else "规则 URL") },
                     placeholder = {
-                        CompactInputPlaceholder(
-                            if (effectiveKind == RuleSourceKind.LocalText) {
-                                "DOMAIN-SUFFIX,example.com,PROXY"
-                            } else {
-                                "https://raw.githubusercontent.com/..."
-                            },
-                        )
+                        CompactInputPlaceholder(uiText("可不填，会自动命名", "Optional; named automatically", "Необязательно, назовём сами"))
                     },
                     shape = RoundedCornerShape(14.dp),
-                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = SurfaceHigh,
-                        unfocusedContainerColor = SurfaceHigh,
-                        focusedBorderColor = Primary.copy(alpha = 0.3f),
-                        unfocusedBorderColor = Color.Transparent,
-                        cursorColor = Primary,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                    ),
+                    colors = ruleFieldColors(),
+                    singleLine = true,
                 )
-                Spacer(modifier = Modifier.height(16.dp))
-                if (effectiveKind == RuleSourceKind.LocalText) {
-                    RuleTextAutocompleteBar(
+                if (!isText) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
                         value = input,
                         onValueChange = {
-                            input = it
-                            validationError = null
-                            validationErrorLineNumbers = emptySet()
+                            updateInput(it)
+                            linkCheck = LinkCheck.Idle
                         },
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    CompactPrimaryActionButton(
-                        text = "插入节点策略",
-                        enabled = visibleServers.isNotEmpty(),
-                        onClick = { nodePickerVisible = true },
                         modifier = Modifier.fillMaxWidth(),
+                        textStyle = compactInputTextStyle(),
+                        minLines = 2,
+                        maxLines = 4,
+                        label = { CompactInputLabel("规则 URL") },
+                        placeholder = { CompactInputPlaceholder("https://raw.githubusercontent.com/...") },
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ruleFieldColors(),
                     )
+                    if (normalizedUrl != input.text.trim() && normalizedUrl.isNotBlank()) {
+                        SectionHint(uiText("GitHub 网页链接会自动换成原始文件链接：$normalizedUrl", "GitHub page links are switched to the raw file: $normalizedUrl", "Ссылка на страницу GitHub заменится прямой ссылкой: $normalizedUrl"))
+                    }
+                }
+            }
+        }
+
+        if (isText) {
+            // Quick add: one rule from a link, domain or IP.
+            item {
+                SurfaceCard {
+                    SectionTitle(uiText("快速添加一条规则", "Quick add a rule", "Быстро добавить правило"))
+                    SectionHint(uiText("粘贴网址、域名或 IP，选好怎么处理，点“添加”。", "Paste a link, domain or IP, choose what to do, tap Add.", "Вставьте ссылку, домен или IP, выберите действие и нажмите «Добавить»."))
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = quickTarget,
+                        onValueChange = {
+                            quickTarget = it
+                            quickMatch = RuleTextHelper.detectMatch(it, quickMatch)
+                        },
+                        modifier = Modifier.fillMaxWidth().height(64.dp),
+                        textStyle = compactInputTextStyle(),
+                        label = { CompactInputLabel(uiText("网址、域名或 IP", "Link, domain or IP", "Ссылка, домен или IP")) },
+                        placeholder = { CompactInputPlaceholder("chatgpt.com") },
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ruleFieldColors(),
+                        singleLine = true,
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Eyebrow(uiText("匹配范围", "Match", "Охват"))
+                    Spacer(modifier = Modifier.height(6.dp))
+                    ChipRow {
+                        RuleTextHelper.Match.entries.forEach { match ->
+                            OptionChip(text = match.label(), selected = quickMatch == match, onClick = { quickMatch = match })
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Eyebrow(uiText("命中后", "Then", "Затем"))
+                    Spacer(modifier = Modifier.height(6.dp))
+                    ChipRow {
+                        RuleTextHelper.Action.entries.forEach { action ->
+                            OptionChip(
+                                text = action.label(),
+                                selected = quickNode == null && quickAction == action,
+                                onClick = {
+                                    quickAction = action
+                                    quickNode = null
+                                },
+                            )
+                        }
+                        if (visibleServers.isNotEmpty()) {
+                            OptionChip(
+                                text = quickNode?.let { uiText("节点：${it.name}", "Node: ${it.name}", "Узел: ${it.name}") }
+                                    ?: uiText("指定节点…", "Pick a node…", "Выбрать узел…"),
+                                selected = quickNode != null,
+                                onClick = { nodePicker = NodePickerPurpose.QuickAdd },
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = uiText("选择节点会把可识别的 NODE 策略插入到光标位置。订阅刷新后会优先按稳定节点信息重新绑定；找不到节点时默认走 PROXY。"),
-                        color = TextSecondary,
+                        text = when {
+                            quickTarget.isBlank() -> uiText("例如：chatgpt.com、https://claude.ai/new、1.2.3.4", "e.g. chatgpt.com, https://claude.ai/new, 1.2.3.4", "например: chatgpt.com, https://claude.ai/new, 1.2.3.4")
+                            quickLine == null -> uiText("这个地址不太对，请检查（整个网站和仅此域名需要带“.”的域名，IP 段需要 IP）。", "That doesn't look right. Whole-site and single-domain rules need a domain with a dot; IP rules need an IP.", "Похоже, адрес неверный: для сайта или домена нужен домен с точкой, для IP — IP-адрес.")
+                            else -> uiText("将添加：$quickLine", "Will add: $quickLine", "Будет добавлено: $quickLine")
+                        },
+                        color = if (quickTarget.isNotBlank() && quickLine == null) Error else TextSecondary,
                         fontSize = TypeScale.Meta,
                         lineHeight = TypeScale.MetaLine,
-                        modifier = Modifier.padding(top = 8.dp),
                     )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    CompactPrimaryActionButton(
+                        text = uiText("添加", "Add", "Добавить"),
+                        enabled = quickLine != null,
+                        onClick = {
+                            val line = quickLine ?: return@CompactPrimaryActionButton
+                            val (next, added) = RuleTextHelper.appendLines(input.text, listOf(line))
+                            updateInput(TextFieldValue(next, TextRange(next.length)))
+                            templateMessage = if (added == 0) tr("这条规则已经在列表里了。", "That rule is already in the list.", "Это правило уже есть в списке.") else null
+                            quickTarget = ""
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+            // Templates.
+            item {
+                SurfaceCard {
+                    SectionTitle(uiText("常用模板", "Templates", "Шаблоны"))
+                    SectionHint(uiText("点一下就加入一组常用规则，已有的不会重复添加。", "One tap adds a set of common rules; nothing is added twice.", "Одно нажатие добавляет набор правил; повторы пропускаются."))
+                    Spacer(modifier = Modifier.height(10.dp))
+                    ChipRow {
+                        RuleTextHelper.templates.forEach { template ->
+                            val label = templateLabels[template.id]
+                            AddChip(
+                                text = label?.let { uiText(it.first, it.second, it.third) } ?: template.id,
+                                onClick = {
+                                    val (next, added) = RuleTextHelper.appendLines(input.text, template.lines)
+                                    updateInput(TextFieldValue(next, TextRange(next.length)))
+                                    templateMessage = if (added == 0) {
+                                        tr("这些规则已经都在了。", "These rules are already there.", "Эти правила уже есть.")
+                                    } else {
+                                        tr("已添加 $added 条规则。", "Added $added rules.", "Добавлено правил: $added.")
+                                    }
+                                },
+                            )
+                        }
+                    }
+                    templateMessage?.let {
+                        Text(it, color = Primary, fontSize = TypeScale.Meta, lineHeight = TypeScale.MetaLine, modifier = Modifier.padding(top = 8.dp))
+                    }
+                }
+            }
+            // Readable list.
+            item {
+                SurfaceCard {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        SectionTitle(uiText("规则列表 · ${lineViews.size} 条", "Rules · ${lineViews.size}", "Правила · ${lineViews.size}"))
+                    }
+                    if (errorLines.isNotEmpty()) {
+                        SectionHint(uiText("有 ${errorLines.size} 条无法识别（红色），修改或删除后才能保存。", "${errorLines.size} can't be recognized (red). Fix or delete them to save.", "Не распознано: ${errorLines.size} (красные). Исправьте или удалите их, чтобы сохранить."))
+                    } else {
+                        SectionHint(uiText("从上往下匹配，先命中的规则生效。", "Checked top to bottom; the first match wins.", "Проверяются сверху вниз, срабатывает первое совпадение."))
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    if (lineViews.isEmpty()) {
+                        Text(
+                            uiText("还没有规则。用上面的“快速添加”或模板开始。", "No rules yet. Start with Quick add or a template above.", "Правил пока нет. Начните с быстрого добавления или шаблона."),
+                            color = TextSecondary,
+                        )
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        lineViews.forEach { view ->
+                            RuleLineRow(
+                                view = view,
+                                broken = view.lineNumber in errorLines,
+                                onDelete = {
+                                    val next = RuleTextHelper.removeLine(input.text, view.lineNumber)
+                                    updateInput(TextFieldValue(next, TextRange(next.length)))
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+            // Raw text, for people who know the format.
+            item {
+                SurfaceCard {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable { advancedOpen = !advancedOpen },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            SectionTitle(uiText("高级：直接编辑文本", "Advanced: edit the text", "Дополнительно: редактировать текст"))
+                            SectionHint(uiText("Shadowrocket / Surge 格式，每行一条。", "Shadowrocket / Surge format, one rule per line.", "Формат Shadowrocket / Surge, по одному правилу в строке."))
+                        }
+                        TextAction(text = if (advancedOpen) uiText("收起", "Hide", "Скрыть") else uiText("展开", "Show", "Показать"), onClick = { advancedOpen = !advancedOpen })
+                    }
+                    if (advancedOpen) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = uiText("每行一条规则：规则类型,匹配内容,策略。支持 DOMAIN-SUFFIX、DOMAIN、DOMAIN-KEYWORD、URL-REGEX、IP-CIDR、IP-CIDR6、GEOIP。策略支持 DIRECT、PROXY、REJECT，也可以用下方节点菜单插入 NODE 策略。IP 规则可追加 no-resolve。"),
+                            color = TextSecondary,
+                            fontSize = TypeScale.Meta,
+                            lineHeight = TypeScale.MetaLine,
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        OutlinedTextField(
+                            value = input,
+                            onValueChange = ::updateInput,
+                            modifier = Modifier.fillMaxWidth(),
+                            textStyle = compactInputTextStyle(),
+                            minLines = 8,
+                            maxLines = 24,
+                            visualTransformation = if (errorLines.isNotEmpty()) RuleErrorLineVisualTransformation(errorLines) else VisualTransformation.None,
+                            label = { CompactInputLabel("规则文本") },
+                            placeholder = { CompactInputPlaceholder("DOMAIN-SUFFIX,example.com,PROXY") },
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ruleFieldColors(),
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        RuleTextAutocompleteBar(value = input, onValueChange = ::updateInput)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        CompactPrimaryActionButton(
+                            text = "插入节点策略",
+                            enabled = visibleServers.isNotEmpty(),
+                            onClick = { nodePicker = NodePickerPurpose.InsertIntoText },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        SectionHint(uiText("选择节点会把可识别的 NODE 策略插入到光标位置。订阅刷新后会优先按稳定节点信息重新绑定；找不到节点时默认走 PROXY。"))
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Eyebrow(uiText("格式（一般选自动）", "Format (Auto is fine)", "Формат (обычно «Авто»)"))
+                        Spacer(modifier = Modifier.height(6.dp))
+                        ChipRow {
+                            listOf(RuleSourceType.Auto, RuleSourceType.Shadowrocket, RuleSourceType.Surge).forEach { candidate ->
+                                OptionChip(text = uiText(candidate.displayName()), selected = type == candidate, onClick = { type = candidate })
+                            }
+                        }
+                    }
                     if (missingNodeLabels.isNotEmpty()) {
                         Text(
                             text = uiText(
@@ -532,56 +826,128 @@ internal fun AddRuleSourceScreen(
                             modifier = Modifier.padding(top = 10.dp),
                         )
                     }
-                    Spacer(modifier = Modifier.height(16.dp))
                 }
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    listOf(
-                        RuleSourceType.Auto,
-                        RuleSourceType.Shadowrocket,
-                        RuleSourceType.Surge,
-                    ).forEach { candidate ->
-                        ModeChip(
-                            text = candidate.displayName(),
-                            selected = type == candidate,
-                        ) {
-                            type = candidate
+            }
+        } else {
+            // URL: common sources.
+            item {
+                SurfaceCard {
+                    SectionTitle(uiText("常用规则源", "Common sources", "Популярные источники"))
+                    SectionHint(uiText("点一下自动填好名称、链接和处理方式（来自 blackmatrix7 规则库）。", "One tap fills in the name, link and action (from the blackmatrix7 rule collection).", "Одно нажатие заполнит название, ссылку и действие (из коллекции blackmatrix7)."))
+                    Spacer(modifier = Modifier.height(10.dp))
+                    ChipRow {
+                        RuleUrlPresets.all.forEach { preset ->
+                            OptionChip(
+                                text = uiText(preset.name),
+                                selected = normalizedUrl == preset.url,
+                                onClick = {
+                                    updateInput(TextFieldValue(preset.url, TextRange(preset.url.length)))
+                                    policy = preset.policy
+                                    if (name.isBlank() || RuleUrlPresets.all.any { it.name == name || appText(it.name, language) == name }) {
+                                        name = appText(preset.name, language)
+                                    }
+                                    linkCheck = LinkCheck.Idle
+                                },
+                            )
                         }
                     }
                 }
-                if (validationError != null) {
-                    Text(
-                        text = validationError ?: "",
-                        color = Error,
-                        modifier = Modifier.padding(top = 14.dp),
+            }
+            // URL: action for lines without one.
+            item {
+                SurfaceCard {
+                    SectionTitle(uiText("命中后怎么处理", "When a rule matches", "При совпадении"))
+                    SectionHint(uiText("大多数规则列表只写网站、不写处理方式，就按这里处理；写了的以列表为准。", "Most lists only name sites; those use this. Lines that say what to do keep their own action.", "Большинство списков содержат только сайты — к ним применяется это действие. Строки со своим действием сохраняют его."))
+                    Spacer(modifier = Modifier.height(10.dp))
+                    ChipRow {
+                        listOf(RuleTargetPolicy.Proxy, RuleTargetPolicy.Direct, RuleTargetPolicy.Block).forEach { candidate ->
+                            OptionChip(text = candidate.label(), selected = policy == candidate, onClick = { policy = candidate })
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Eyebrow(uiText("格式（一般选自动）", "Format (Auto is fine)", "Формат (обычно «Авто»)"))
+                    Spacer(modifier = Modifier.height(6.dp))
+                    ChipRow {
+                        listOf(RuleSourceType.Auto, RuleSourceType.Shadowrocket, RuleSourceType.Surge).forEach { candidate ->
+                            OptionChip(text = uiText(candidate.displayName()), selected = type == candidate, onClick = { type = candidate })
+                        }
+                    }
+                }
+            }
+            // URL: check before saving.
+            item {
+                SurfaceCard {
+                    SectionTitle(uiText("检测链接", "Check the link", "Проверить ссылку"))
+                    SectionHint(uiText("先下载试试，看能识别多少条规则。", "Download it once to see how many rules are recognized.", "Скачать один раз и посмотреть, сколько правил распознано."))
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedActionButton(
+                        text = if (linkCheck == LinkCheck.Checking) uiText("检测中…", "Checking…", "Проверка…") else uiText("检测链接", "Check link", "Проверить"),
+                        enabled = linkCheck != LinkCheck.Checking && (normalizedUrl.startsWith("http://") || normalizedUrl.startsWith("https://")),
+                        onClick = {
+                            linkCheck = LinkCheck.Checking
+                            val url = normalizedUrl
+                            scope.launch {
+                                linkCheck = runCatching { RuleSourceManager.previewUrl(url, type, policy) }.fold(
+                                    onSuccess = { LinkCheck.Ok(it.convertedRules, it.skippedRules) },
+                                    onFailure = { LinkCheck.Failed(it.message ?: "") },
+                                )
+                            }
+                        },
                     )
+                    when (val check = linkCheck) {
+                        is LinkCheck.Ok -> Text(
+                            text = if (check.skipped == 0) {
+                                uiText("可用：识别到 ${check.rules} 条规则。", "Works: ${check.rules} rules recognized.", "Работает: распознано правил: ${check.rules}.")
+                            } else {
+                                uiText("可用：识别到 ${check.rules} 条，另有 ${check.skipped} 条本 App 不支持会被跳过。", "Works: ${check.rules} recognized; ${check.skipped} unsupported will be skipped.", "Работает: распознано ${check.rules}, неподдерживаемых будет пропущено: ${check.skipped}.")
+                            },
+                            color = Success,
+                            modifier = Modifier.padding(top = 10.dp),
+                        )
+                        is LinkCheck.Failed -> Text(
+                            text = uiText("无法使用：${check.message}", "Can't use it: ${check.message}", "Не удалось: ${check.message}"),
+                            color = Error,
+                            modifier = Modifier.padding(top = 10.dp),
+                        )
+                        else -> Unit
+                    }
                 }
             }
         }
+
         item {
+            saveError?.let {
+                Text(text = it, color = Error, modifier = Modifier.padding(bottom = 10.dp))
+            }
+            val emptyName = uiText("我的规则", "My rules", "Мои правила")
+            val missingText = uiText("还没有规则，请先添加。", "No rules yet. Add some first.", "Правил пока нет. Сначала добавьте их.")
+            val missingUrl = uiText("请输入规则 URL。")
+            val badUrl = uiText("规则 URL 必须以 http:// 或 https:// 开头。")
             ButtonRow(
                 primaryText = "保存",
                 onPrimary = {
-                    validationErrorLineNumbers = emptySet()
-                    validationError = when {
-                        input.text.isBlank() -> {
-                            if (effectiveKind == RuleSourceKind.LocalText) "请输入规则文本。" else "请输入规则 URL。"
+                    if (isText) {
+                        saveError = when {
+                            input.text.isBlank() -> missingText
+                            validation != null && !validation.valid -> validation.message
+                            else -> null
                         }
-                        effectiveKind == RuleSourceKind.RemoteUrl &&
-                            !(input.text.startsWith("http://") || input.text.startsWith("https://")) -> {
-                            "规则 URL 必须以 http:// 或 https:// 开头。"
+                        if (saveError == null) {
+                            val finalName = name.trim().ifBlank { RuleTextHelper.suggestName(input.text) ?: emptyName }
+                            onSubmit(finalName, input.text, type, effectiveKind, policy)
                         }
-                        effectiveKind == RuleSourceKind.LocalText -> {
-                            val result = RuleSourceManager.validateTextRules(input.text, type)
-                            validationErrorLineNumbers = result.errorLineNumbers
-                            result.takeUnless { it.valid }?.message
+                    } else {
+                        val url = normalizedUrl
+                        saveError = when {
+                            url.isBlank() -> missingUrl
+                            !(url.startsWith("http://") || url.startsWith("https://")) -> badUrl
+                            else -> null
                         }
-                        else -> null
-                    }
-                    if (validationError == null) {
-                        onSubmit(name, input.text, type, effectiveKind)
+                        if (saveError == null) {
+                            val fileName = url.substringAfterLast('/').substringBefore('?').substringBeforeLast('.')
+                            val finalName = name.trim().ifBlank { fileName.ifBlank { emptyName } }
+                            onSubmit(finalName, url, type, effectiveKind, policy)
+                        }
                     }
                 },
                 secondaryText = "取消",
@@ -590,18 +956,75 @@ internal fun AddRuleSourceScreen(
         }
     }
 
-    if (nodePickerVisible) {
+    nodePicker?.let { purpose ->
         NodePolicyPickerDialog(
             servers = visibleServers,
-            onDismiss = { nodePickerVisible = false },
+            onDismiss = { nodePicker = null },
             onSelect = { server ->
-                val token = RuleSourceManager.nodePolicyToken(server)
-                input = input.insertText(token)
-                validationError = null
-                validationErrorLineNumbers = emptySet()
-                nodePickerVisible = false
+                when (purpose) {
+                    NodePickerPurpose.InsertIntoText -> updateInput(input.insertText(RuleSourceManager.nodePolicyToken(server)))
+                    NodePickerPurpose.QuickAdd -> quickNode = server
+                }
+                nodePicker = null
             },
         )
+    }
+}
+
+@Composable
+private fun RuleLineRow(
+    view: RuleTextHelper.LineView,
+    broken: Boolean,
+    onDelete: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (broken) Error.copy(alpha = 0.10f) else SurfaceHigh)
+            .padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = if (broken) uiText("第 ${view.lineNumber} 行无法识别", "Line ${view.lineNumber} isn't recognized", "Строка ${view.lineNumber} не распознана") else view.describe(),
+                color = if (broken) Error else TextPrimary,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = view.raw,
+                color = TextSecondary,
+                fontSize = TypeScale.Tiny,
+                lineHeight = TypeScale.TinyLine,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (!broken) {
+            val (label, color) = when {
+                view.nodeLabel != null -> uiText("节点 ${view.nodeLabel}", "Node ${view.nodeLabel}", "Узел ${view.nodeLabel}") to Primary
+                view.action == RuleTextHelper.Action.Direct -> view.action.label() to Success
+                view.action == RuleTextHelper.Action.Reject -> view.action.label() to Error
+                else -> RuleTextHelper.Action.Proxy.label() to Primary
+            }
+            Text(
+                text = label,
+                color = color,
+                fontSize = TypeScale.Tiny,
+                lineHeight = TypeScale.TinyLine,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                modifier = Modifier
+                    .widthIn(max = 120.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(color.copy(alpha = 0.14f))
+                    .padding(horizontal = 8.dp, vertical = 3.dp),
+            )
+        }
+        CompactIconAction(icon = Icons.Rounded.Close, tint = TextSecondary, onClick = onDelete)
     }
 }
 

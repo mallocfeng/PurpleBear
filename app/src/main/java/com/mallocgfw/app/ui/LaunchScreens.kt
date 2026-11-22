@@ -602,6 +602,8 @@ private fun RouteNode(
 @Composable
 internal fun PermissionScreen(
     padding: PaddingValues,
+    granted: Boolean,
+    onGrant: () -> Unit,
     onClose: () -> Unit,
 ) {
     LazyColumn(
@@ -638,9 +640,15 @@ internal fun PermissionScreen(
                     Spacer(modifier = Modifier.height(20.dp))
                     ScreenHeader(
                         title = "建立安全隧道",
-                        subtitle = "需要系统 VPN 权限来建立加密隧道。",
+                        subtitle = if (granted) "已获得系统 VPN 权限，可以直接连接。" else "需要系统 VPN 权限来建立加密隧道。",
                         align = TextAlign.Center,
                     )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    if (granted) {
+                        StatusPill(text = "已授权", color = Success, background = Success.copy(alpha = 0.16f))
+                    } else {
+                        PrimaryActionButton(text = "授予 VPN 权限", onClick = onGrant)
+                    }
                 }
             }
         }

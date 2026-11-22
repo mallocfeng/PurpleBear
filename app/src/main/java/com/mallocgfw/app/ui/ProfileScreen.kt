@@ -54,6 +54,8 @@ internal fun MeScreen(
     onOpenTailscale: () -> Unit,
     onOpenMediaRouting: () -> Unit,
     onOpenPermission: () -> Unit,
+    vpnPermissionGranted: Boolean = true,
+    updateBadge: Boolean = false,
 ) {
     val hostView = LocalView.current
     DisposableEffect(hostView) {
@@ -144,9 +146,14 @@ internal fun MeScreen(
                 GroupDivider(startIndent = 58.dp)
                 ListRow(title = "系统诊断", icon = Icons.Rounded.GppGood, onClick = onOpenDiagnostics)
                 GroupDivider(startIndent = 58.dp)
-                ListRow(title = "VPN 权限", value = "已授权", icon = Icons.Rounded.VpnKey, onClick = onOpenPermission)
+                ListRow(
+                    title = "VPN 权限",
+                    value = if (vpnPermissionGranted) "已授权" else "未授权",
+                    icon = Icons.Rounded.VpnKey,
+                    onClick = onOpenPermission,
+                )
                 GroupDivider(startIndent = 58.dp)
-                ListRow(title = "设置", icon = Icons.Rounded.Settings, onClick = onOpenSettings)
+                ListRow(title = "设置", icon = Icons.Rounded.Settings, onClick = onOpenSettings, badge = updateBadge)
             }
         }
     }

@@ -101,10 +101,10 @@ internal fun AppScaffold(
     lightThemeEnabled: Boolean,
     onSelectTab: (MainTab) -> Unit,
     onToggleTheme: () -> Unit,
-    onOpenSettings: () -> Unit,
     onOpenScan: () -> Unit,
     onOpenImport: () -> Unit = { onSelectTab(MainTab.Import) },
     onBack: () -> Unit = {},
+    updateBadge: Boolean = false,
     content: @Composable (PaddingValues) -> Unit,
 ) {
     // Everything under the tab bar is recorded so the glass can refract it.
@@ -123,7 +123,6 @@ internal fun AppScaffold(
                 if (screenHasFixedMainTopBar(screen)) {
                     FixedMainTopBar(
                         screen = screen,
-                        onOpenSettings = onOpenSettings,
                         onOpenScan = onOpenScan,
                         onOpenImport = onOpenImport,
                         onBack = onBack,
@@ -135,6 +134,7 @@ internal fun AppScaffold(
                 currentTab = currentTab,
                 onSelectTab = onSelectTab,
                 backdrop = backdrop,
+                meBadge = updateBadge,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
@@ -158,6 +158,7 @@ private fun FloatingTabBar(
     onSelectTab: (MainTab) -> Unit,
     backdrop: Backdrop,
     modifier: Modifier = Modifier,
+    meBadge: Boolean = false,
 ) {
     val tabs = VisibleTabs.map { it.first }
     val screenTab = tabs.firstOrNull { tab ->
@@ -166,7 +167,9 @@ private fun FloatingTabBar(
     val activeTab = screenTab ?: if (currentTab == MainTab.Import) MainTab.Servers else currentTab
     val selectedIndex = tabs.indexOf(activeTab).coerceAtLeast(0)
     LiquidGlassTabBar(
-        items = VisibleTabs.map { it.second },
+        items = VisibleTabs.map { (tab, item) ->
+            if (tab == MainTab.Me && meBadge) GlassTabItem(item.label, item.icon, badge = true) else item
+        },
         selectedIndex = selectedIndex,
         onSelect = { index -> onSelectTab(tabs[index]) },
         backdrop = backdrop,
@@ -237,7 +240,6 @@ internal fun screenHasFixedMainTopBar(screen: AppScreen): Boolean {
 @Composable
 internal fun FixedMainTopBar(
     screen: AppScreen,
-    onOpenSettings: () -> Unit,
     onOpenScan: () -> Unit,
     onOpenImport: () -> Unit,
     onBack: () -> Unit,
@@ -249,7 +251,6 @@ internal fun FixedMainTopBar(
     ) {
         MainTopBar(
             screen = screen,
-            onOpenSettings = onOpenSettings,
             onOpenScan = onOpenScan,
             onOpenImport = onOpenImport,
             onBack = onBack,
@@ -261,7 +262,6 @@ internal fun FixedMainTopBar(
 @Composable
 internal fun MainTopBar(
     screen: AppScreen,
-    onOpenSettings: () -> Unit,
     onOpenScan: () -> Unit,
     onOpenImport: () -> Unit,
     onBack: () -> Unit = {},
@@ -331,7 +331,6 @@ internal fun MainTopBar(
                     tint = AccentContentColor,
                     background = Primary,
                 )
-                AppScreen.Me -> IconButtonCard(icon = Icons.Rounded.Settings, onClick = onOpenSettings)
                 else -> Unit
             }
         }

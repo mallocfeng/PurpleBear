@@ -19,6 +19,7 @@ import android.os.ParcelFileDescriptor
 import android.util.Log
 import com.mallocgfw.app.MainActivity
 import com.mallocgfw.app.model.AppDnsMode
+import com.mallocgfw.app.model.DnsInput
 import com.mallocgfw.app.core.AppController
 import com.mallocgfw.app.model.AppTextLanguage
 import com.mallocgfw.app.model.tr
@@ -440,6 +441,8 @@ class XrayVpnService : VpnService() {
             additionalOutbounds = streamingRouting.outbounds + ruleRouting.outbounds,
             vpnMtu = vpnMtu,
             magicDnsUpstream = activeMagicDnsUpstream,
+            dnsServer = dnsServer,
+            dnsOverProxy = state.settings.dnsMode == AppDnsMode.Remote,
         )
             .getOrElse { throw it }
     }
@@ -450,6 +453,7 @@ class XrayVpnService : VpnService() {
             ?: error(tr("未找到要切换的节点。", "Couldn't find the node to switch to.", "Узел для переключения не найден."))
         val tunFd = vpnInterface?.fd ?: error(tr("系统 VPN 还没有建立，无法热切换线路。", "The system VPN isn't up yet, so nodes can't be hot-switched.", "Системный VPN ещё не установлен, горячее переключение узла невозможно."))
         val vpnMtu = normalizedAppVpnMtu(state.settings.vpnMtu)
+        val dnsServer = resolveDnsAddress(applicationContext, state.settings)
         val dnsEndpoint = resolveDnsEndpoint(applicationContext, state.settings)
         val globalProxyEnabled = state.settings.globalProxyEnabled
         val ruleRouting = if (globalProxyEnabled) {
@@ -480,6 +484,8 @@ class XrayVpnService : VpnService() {
             additionalOutbounds = streamingRouting.outbounds + ruleRouting.outbounds,
             vpnMtu = vpnMtu,
             magicDnsUpstream = activeMagicDnsUpstream,
+            dnsServer = dnsServer,
+            dnsOverProxy = state.settings.dnsMode == AppDnsMode.Remote,
         ).getOrElse { throw it }
     }
 
@@ -945,7 +951,8 @@ class XrayVpnService : VpnService() {
         return when (settings.dnsMode) {
             AppDnsMode.System -> resolveSystemDns(context) ?: DEFAULT_REMOTE_DNS
             AppDnsMode.Remote -> DEFAULT_REMOTE_DNS
-            AppDnsMode.Custom -> settings.customDnsValue.substringBefore(":").trim().takeIf { it.isNotBlank() }
+            // An invalid saved value (e.g. an old DoH link) falls back to the system DNS.
+            AppDnsMode.Custom -> DnsInput.hostOf(settings.customDnsValue) ?: resolveSystemDns(context) ?: DEFAULT_REMOTE_DNS
         }
     }
 
@@ -956,7 +963,9 @@ class XrayVpnService : VpnService() {
         return when (settings.dnsMode) {
             AppDnsMode.System -> dnsEndpointOf(resolveSystemDns(context) ?: DEFAULT_REMOTE_DNS)
             AppDnsMode.Remote -> dnsEndpointOf(DEFAULT_REMOTE_DNS)
-            AppDnsMode.Custom -> settings.customDnsValue.trim().takeIf { it.isNotBlank() }?.let(::dnsEndpointOf)
+            AppDnsMode.Custom -> dnsEndpointOf(
+                settings.customDnsValue.trim().takeIf { DnsInput.isValid(it) } ?: resolveSystemDns(context) ?: DEFAULT_REMOTE_DNS,
+            )
         }
     }
 

@@ -4,6 +4,10 @@ import android.graphics.drawable.Icon
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import com.mallocgfw.app.model.FakeRepository
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -69,6 +73,16 @@ import com.mallocgfw.app.ui.theme.TextPrimary
 import com.mallocgfw.app.ui.theme.TextSecondary
 import com.mallocgfw.app.xray.XrayCoreStatus
 
+private const val PER_APP_TAB_INSTALLED = "__installed__"
+private const val PER_APP_TAB_ALL = "__all__"
+
+private fun installedPackageIds(context: android.content.Context, apps: List<ProtectedApp>): Set<String> =
+    apps.mapNotNull { app ->
+        app.id.takeIf {
+            runCatching { context.packageManager.getApplicationInfo(it, 0) }.isSuccess
+        }
+    }.toSet()
+
 @Composable
 internal fun PerAppScreen(
     padding: PaddingValues,
@@ -81,21 +95,44 @@ internal fun PerAppScreen(
     onModeChange: (ProxyMode) -> Unit,
     onSearchChange: (String) -> Unit,
     onToggleApp: (String) -> Unit,
+    onSetApps: (List<String>, Boolean) -> Unit,
     onApplyChanges: () -> Unit,
 ) {
     val language = LocalAppLanguage.current
+    val context = LocalContext.current
+    // Which presets are on this phone (visible through <queries> in the manifest).
+    var installedIds by remember { mutableStateOf(installedPackageIds(context, apps)) }
+    LifecycleResumeEffect(apps.size) {
+        installedIds = installedPackageIds(context, apps)
+        onPauseOrDispose { }
+    }
+    // Tab: INSTALLED, ALL or a category; opens on the installed apps when there are any.
+    var tab by rememberSaveable { mutableStateOf(if (installedIds.isNotEmpty()) PER_APP_TAB_INSTALLED else PER_APP_TAB_ALL) }
     val normalizedSearch = search.trim().lowercase()
-    val filteredApps = remember(apps, normalizedSearch, language) {
-        if (normalizedSearch.isBlank()) {
-            apps
+    val filteredApps = remember(apps, normalizedSearch, language, tab, installedIds) {
+        val scoped = when {
+            normalizedSearch.isNotBlank() -> apps
+            tab == PER_APP_TAB_INSTALLED -> apps.filter { it.id in installedIds }
+            tab == PER_APP_TAB_ALL -> apps
+            else -> apps.filter { it.category == tab }
+        }
+        val matched = if (normalizedSearch.isBlank()) {
+            scoped
         } else {
-            apps.filter { app ->
+            scoped.filter { app ->
                 app.name.lowercase().contains(normalizedSearch) ||
+                    app.id.lowercase().contains(normalizedSearch) ||
                     app.category.lowercase().contains(normalizedSearch) ||
                     appText(app.category, language).lowercase().contains(normalizedSearch)
             }
         }
+        // Installed apps first within each category; categories in preset order.
+        matched.sortedWith(
+            compareBy<ProtectedApp> { FakeRepository.protectedAppCategories.indexOf(it.category).let { i -> if (i < 0) Int.MAX_VALUE else i } }
+                .thenBy { if (it.id in installedIds) 0 else 1 },
+        )
     }
+    val grouped = tab == PER_APP_TAB_ALL || tab == PER_APP_TAB_INSTALLED || normalizedSearch.isNotBlank()
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -157,13 +194,6 @@ internal fun PerAppScreen(
             }
         }
         item {
-            SearchField(
-                search = search,
-                placeholder = "搜索应用名称或分类…",
-                onValueChange = onSearchChange,
-            )
-        }
-        item {
             SurfaceCard {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
@@ -183,33 +213,98 @@ internal fun PerAppScreen(
                 }
             }
         }
-        items(filteredApps, key = { it.id }) { app ->
-            SurfaceCard {
+        item {
+            SearchField(
+                search = search,
+                placeholder = "搜索应用名称或分类…",
+                onValueChange = onSearchChange,
+            )
+        }
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                val tabs = buildList {
+                    if (installedIds.isNotEmpty()) add(PER_APP_TAB_INSTALLED to installedIds.size)
+                    add(PER_APP_TAB_ALL to apps.size)
+                    FakeRepository.protectedAppCategories.forEach { category ->
+                        val count = apps.count { it.category == category }
+                        if (count > 0) add(category to count)
+                    }
+                }
+                tabs.forEach { (id, count) ->
+                    val label = when (id) {
+                        PER_APP_TAB_INSTALLED -> uiText("已安装")
+                        PER_APP_TAB_ALL -> uiText("全部")
+                        else -> uiText(id)
+                    }
+                    ChoiceChip(text = "$label $count", selected = tab == id && normalizedSearch.isBlank(), onClick = { tab = id })
+                }
+            }
+        }
+        val sections = if (grouped) {
+            filteredApps.groupBy { it.category }.toList()
+        } else {
+            listOf((filteredApps.firstOrNull()?.category ?: tab) to filteredApps)
+        }
+        sections.forEach { (category, sectionApps) ->
+            item(key = "header_$category") {
+                val allOn = sectionApps.all { it.enabled }
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    Text(
+                        text = "${uiText(category)} · ${sectionApps.count { it.enabled }}/${sectionApps.size}",
+                        color = TextSecondary,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    TextAction(
+                        text = if (allOn) "全部关闭" else "全部开启",
+                        onClick = { onSetApps(sectionApps.map { it.id }, !allOn) },
+                    )
+                }
+            }
+            items(sectionApps, key = { it.id }) { app ->
+                val installed = app.id in installedIds
+                SurfaceCard {
                     Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
-                        GlassBadge(
-                            icon = Icons.Rounded.Apps,
-                            modifier = Modifier.size(44.dp),
-                            innerPadding = 10.dp,
-                        )
-                        Column {
-                            Text(
-                                text = app.name,
-                                fontSize = TypeScale.ListTitle,
-                                lineHeight = TypeScale.ListTitleLine,
-                                fontWeight = FontWeight.Bold,
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        ) {
+                            GlassBadge(
+                                icon = Icons.Rounded.Apps,
+                                modifier = Modifier.size(44.dp),
+                                innerPadding = 10.dp,
                             )
-                            Text(uiText(app.category), color = TextSecondary)
+                            Column {
+                                Text(
+                                    text = app.name,
+                                    fontSize = TypeScale.ListTitle,
+                                    lineHeight = TypeScale.ListTitleLine,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (installed) TextPrimary else TextSecondary,
+                                )
+                                Text(
+                                    text = if (installed) uiText("已安装") else uiText("未安装"),
+                                    color = if (installed) Success else TextSecondary,
+                                    fontSize = TypeScale.Meta,
+                                    lineHeight = TypeScale.MetaLine,
+                                )
+                            }
                         }
+                        TogglePill(checked = app.enabled, onClick = { onToggleApp(app.id) })
                     }
-                    TogglePill(checked = app.enabled, onClick = { onToggleApp(app.id) })
                 }
             }
         }
@@ -288,6 +383,7 @@ internal fun SettingsScreen(
     onDailyAutoUpdateChange: (Boolean) -> Unit,
     onUpdateNotificationsChange: (Boolean) -> Unit,
     onOpenUpdates: () -> Unit,
+    updateBadge: Boolean = false,
     onSyncNow: () -> Unit,
     onDnsChange: (AppDnsMode, String) -> Unit,
     onLogLevelChange: (AppLogLevel) -> Unit,
@@ -300,6 +396,7 @@ internal fun SettingsScreen(
     var showLogLevelDialog by remember { mutableStateOf(false) }
     var showHeartbeatDialog by remember { mutableStateOf(false) }
     var showMtuDialog by remember { mutableStateOf(false) }
+    var showQuickTileDialog by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier
@@ -395,7 +492,7 @@ internal fun SettingsScreen(
                     title = "快捷开关",
                     subtitle = "添加到系统下拉菜单。",
                     actionText = "添加",
-                    onAction = onAddQuickSettingsTile,
+                    onAction = { showQuickTileDialog = true },
                 )
             }
         }
@@ -413,6 +510,7 @@ internal fun SettingsScreen(
                     subtitle = "查看 GitHub Release 最新版本。",
                     actionText = "进入",
                     onAction = onOpenUpdates,
+                    badge = updateBadge,
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 SettingActionRow(
@@ -440,7 +538,7 @@ internal fun SettingsScreen(
                 SettingActionRow(
                     title = uiText("AI 远程控制（MCP）", "AI remote control (MCP)", "Удалённое управление ИИ (MCP)"),
                     subtitle = mcpSettingsSubtitle(),
-                    actionText = uiText("打开", "Open", "Открыть"),
+                    actionText = uiText("进入", "Open", "Открыть"),
                     onAction = onOpenMcp,
                 )
             }
@@ -499,6 +597,18 @@ internal fun SettingsScreen(
             onConfirm = { dnsMode, customDns ->
                 onDnsChange(dnsMode, customDns)
                 showDnsDialog = false
+            },
+        )
+    }
+
+    if (showQuickTileDialog) {
+        QuickTileDialog(
+            // Android 13+ lets apps ask to add a tile; older versions need the manual steps.
+            canRequest = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU,
+            onDismiss = { showQuickTileDialog = false },
+            onContinue = {
+                showQuickTileDialog = false
+                onAddQuickSettingsTile()
             },
         )
     }

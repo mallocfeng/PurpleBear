@@ -18,78 +18,130 @@ object RuleSourceManager {
     private const val USER_RULE_PRIORITY = 2_000
     private const val SYSTEM_RULE_PRIORITY = 0
     private const val DEFAULT_SHADOWROCKET_ID = "rule_default_shadowrocket"
-    private const val DEFAULT_SURGE_ID = "rule_default_surge"
+    /** Was a second built-in with the same China list in Surge format; merged into the Shadowrocket one. */
+    private const val LEGACY_SURGE_ID = "rule_default_surge"
     private const val CONNECT_TIMEOUT_MS = 10_000
     private const val READ_TIMEOUT_MS = 15_000
 
-    val defaultSources = listOf(
-        RuleSourceItem(
-            id = DEFAULT_SHADOWROCKET_ID,
-            name = "Shadowrocket 默认规则",
-            url = "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/China/China_Domain.list",
-            type = RuleSourceType.Shadowrocket,
-            policy = RuleTargetPolicy.Direct,
-            enabled = true,
-            systemDefault = true,
-            updatedAt = "未更新",
-            status = RuleSourceStatus.Idle,
-            totalRules = 0,
-            convertedRules = 0,
-            skippedRules = 0,
-        ),
-        RuleSourceItem(
-            id = DEFAULT_SURGE_ID,
-            name = "Surge 默认规则",
-            url = "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Surge/China/China_Domain.list",
-            type = RuleSourceType.Surge,
-            policy = RuleTargetPolicy.Direct,
-            enabled = true,
-            systemDefault = true,
-            updatedAt = "未更新",
-            status = RuleSourceStatus.Idle,
-            totalRules = 0,
-            convertedRules = 0,
-            skippedRules = 0,
-        ),
+    private fun builtIn(
+        id: String,
+        name: String,
+        url: String,
+        type: RuleSourceType,
+        policy: RuleTargetPolicy,
+        enabled: Boolean,
+    ) = RuleSourceItem(
+        id = id,
+        name = name,
+        url = url,
+        type = type,
+        policy = policy,
+        enabled = enabled,
+        systemDefault = true,
+        updatedAt = "未更新",
+        status = RuleSourceStatus.Idle,
+        totalRules = 0,
+        convertedRules = 0,
+        skippedRules = 0,
     )
+
+    private fun blackmatrix(folder: String) =
+        "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Surge/$folder/$folder.list"
+
+    /**
+     * Built-in sources: the China-direct list (on) and optional ones that
+     * start off. Existing users keep their own on / off choices.
+     */
+    val defaultSources = listOf(
+        builtIn(
+            DEFAULT_SHADOWROCKET_ID, "国内网站直连",
+            "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/China/China_Domain.list",
+            RuleSourceType.Shadowrocket, RuleTargetPolicy.Direct, enabled = true,
+        ),
+        builtIn("rule_default_ads", "广告拦截（精简）", blackmatrix("AdvertisingLite"), RuleSourceType.Surge, RuleTargetPolicy.Block, enabled = false),
+        builtIn("rule_default_httpdns", "屏蔽国内 App 私有 DNS", blackmatrix("BlockHttpDNS"), RuleSourceType.Surge, RuleTargetPolicy.Block, enabled = false),
+        builtIn("rule_default_steam", "Steam 下载直连", blackmatrix("SteamCN"), RuleSourceType.Surge, RuleTargetPolicy.Direct, enabled = false),
+        builtIn("rule_default_tracker", "BT Tracker 直连", blackmatrix("PrivateTracker"), RuleSourceType.Surge, RuleTargetPolicy.Direct, enabled = false),
+    )
+
+    private val defaultIds = defaultSources.map { it.id }.toSet()
+
+    /** One line on what a built-in source does: Chinese, English, Russian. */
+    fun builtInHint(id: String): Triple<String, String, String>? = when (id) {
+        DEFAULT_SHADOWROCKET_ID -> Triple(
+            "国内常用网站（3600+ 个域名）直连，不走代理。",
+            "Common Chinese sites (3,600+ domains) go direct, not through the proxy.",
+            "Популярные китайские сайты (3600+ доменов) напрямую, без прокси.",
+        )
+        "rule_default_ads" -> Triple(
+            "拦截常见广告和统计域名；个别网站或 App 可能显示异常。",
+            "Blocks common ad and tracking domains; a few sites or apps may misbehave.",
+            "Блокирует рекламу и трекеры; отдельные сайты или приложения могут работать неправильно.",
+        )
+        "rule_default_httpdns" -> Triple(
+            "拦截国内 App 自带的 DNS，让它们按系统 DNS 和分流规则走，分流更准。",
+            "Blocks Chinese apps' built-in DNS so they follow the system DNS and routing rules.",
+            "Блокирует встроенный DNS китайских приложений, чтобы они следовали системному DNS и правилам.",
+        )
+        "rule_default_steam" -> Triple(
+            "Steam 国内下载节点直连，更快、不占代理流量。",
+            "Steam's China download servers go direct: faster, no proxy traffic.",
+            "Серверы загрузки Steam в Китае напрямую: быстрее и без трафика прокси.",
+        )
+        "rule_default_tracker" -> Triple(
+            "BT 下载的 Tracker 直连，不占用代理。",
+            "BT trackers go direct instead of through the proxy.",
+            "BT-трекеры напрямую, не через прокси.",
+        )
+        else -> null
+    }
 
     fun ensureDefaults(sources: List<RuleSourceItem>): List<RuleSourceItem> {
         val currentById = sources.associateBy { it.id }
-        val merged = buildList {
+        // Someone who had only the old Surge copy on keeps China sites direct.
+        val legacyOn = currentById[LEGACY_SURGE_ID]?.enabled == true
+        return buildList {
             defaultSources.forEach { default ->
                 val existing = currentById[default.id]
-                add(
-                    if (existing == null) {
-                        default
-                    } else {
-                        existing.copy(
-                            url = default.url,
-                            type = default.type,
-                            policy = default.policy,
-                            systemDefault = true,
-                        )
-                    },
-                )
+                val merged = existing?.copy(
+                    name = default.name,
+                    url = default.url,
+                    type = default.type,
+                    policy = default.policy,
+                    systemDefault = true,
+                ) ?: default
+                add(if (default.id == DEFAULT_SHADOWROCKET_ID && legacyOn) merged.copy(enabled = true) else merged)
             }
             sources
-                .filterNot { it.id == DEFAULT_SHADOWROCKET_ID || it.id == DEFAULT_SURGE_ID }
+                .filterNot { it.id in defaultIds || it.id == LEGACY_SURGE_ID }
                 .sortedBy { it.name.lowercase() }
                 .forEach(::add)
         }
-        return merged
+    }
+
+    /** Removes downloaded rule files that no rule source uses any more (e.g. the old Surge copy). */
+    fun removeOrphanFiles(context: Context, sources: List<RuleSourceItem>) {
+        // Built-ins are always there once state is loaded; an empty list means it isn't.
+        if (sources.none { it.systemDefault }) return
+        val keep = sources.map { it.id }.toSet()
+        val dir = compiledRuleFile(context, LEGACY_SURGE_ID).parentFile ?: return
+        dir.listFiles { file -> file.isFile && file.name.endsWith(".json") }
+            ?.filter { it.name.removeSuffix(".json") !in keep }
+            ?.forEach { it.delete() }
     }
 
     fun createDraft(
         name: String,
         url: String,
         requestedType: RuleSourceType,
+        policy: RuleTargetPolicy = RuleTargetPolicy.Proxy,
     ): RuleSourceItem {
         return RuleSourceItem(
             id = "rule_${UUID.randomUUID().toString().replace("-", "").take(12)}",
             name = name.ifBlank { "自定义规则" },
             url = url.trim(),
             type = requestedType,
-            policy = RuleTargetPolicy.Proxy,
+            policy = policy,
             enabled = true,
             systemDefault = false,
             updatedAt = "未更新",
@@ -138,6 +190,12 @@ object RuleSourceManager {
             .map { nodePolicyLabel(it) }
             .distinct()
     }
+
+    /** Downloads and parses a rule link without saving it, for the "check link" button. */
+    suspend fun previewUrl(url: String, requestedType: RuleSourceType, policy: RuleTargetPolicy): CompiledRuleSet =
+        withContext(Dispatchers.IO) {
+            compileText(sourceId = "rule_preview", rawText = fetchText(url), requestedType = requestedType, fallbackPolicy = policy)
+        }
 
     fun validateTextRules(
         rawText: String,

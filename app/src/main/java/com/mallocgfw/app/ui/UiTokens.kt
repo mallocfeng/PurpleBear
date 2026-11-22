@@ -28,7 +28,12 @@ internal val BottomBarSurfaceColor: Color get() = if (IsLightTheme) Color(0xF7FF
 internal val FixedTopBarSurfaceColor: Color get() = if (IsLightTheme) Color(0xF2F2F2F7) else Color(0xF20C0C10)
 internal val CardOutlineColor: Color get() = if (IsLightTheme) Color(0x0F16151B) else Color(0x14FFFFFF)
 /** Shade under a group's node rows, so they read as its contents. */
-internal val GroupContentTint: Color get() = if (IsLightTheme) Color(0x0816151B) else Color(0x33000000)
+// Nodes tab: the group header is tinted with the accent and its node rows sit
+// on a darker shade with an accent line down the left, so groups and the nodes
+// inside them don't read as one list.
+internal val GroupHeaderTint: Color get() = Primary.copy(alpha = if (IsLightTheme) 0.09f else 0.16f)
+internal val GroupContentTint: Color get() = if (IsLightTheme) Color(0x0D16151B) else Color(0x59000000)
+internal val GroupContentAccent: Color get() = Primary.copy(alpha = if (IsLightTheme) 0.45f else 0.55f)
 internal val DividerColor: Color get() = if (IsLightTheme) Color(0x1416151B) else Color(0x1AFFFFFF)
 internal val PromoGradientStartColor: Color get() = if (IsLightTheme) Color(0xFFEFEAFF) else Color(0xFF221D38)
 internal val PromoGradientEndColor: Color get() = if (IsLightTheme) Color(0xFFFFFFFF) else Color(0xFF18181D)

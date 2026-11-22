@@ -33,6 +33,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.mallocgfw.app.model.RuleSourceManager
+import com.mallocgfw.app.model.RuleTargetPolicy
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
@@ -108,10 +110,40 @@ internal fun RuleSourceCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (source.systemDefault) {
+                RuleSourceManager.builtInHint(source.id)?.let { hint ->
+                    Text(
+                        text = uiText(hint.first, hint.second, hint.third),
+                        color = TextSecondary,
+                        fontSize = TypeScale.Tiny,
+                        lineHeight = TypeScale.TinyLine,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 1.dp),
+                    )
+                }
+            }
             Text(
                 text = buildList {
-                    add(uiText("${source.convertedRules} 条规则", "${source.convertedRules} rules", "Правил: ${source.convertedRules}"))
-                    if (remote) add(uiText(source.updatedAt)) else add(uiText("本地文本"))
+                    if (remote) {
+                        add(
+                            when (source.policy) {
+                                RuleTargetPolicy.Proxy -> uiText("走代理", "Proxy", "Через прокси")
+                                RuleTargetPolicy.Direct -> uiText("直连", "Direct", "Напрямую")
+                                RuleTargetPolicy.Block -> uiText("拦截", "Block", "Блокировать")
+                            },
+                        )
+                    }
+                    if (source.status == RuleSourceStatus.Ready || source.convertedRules > 0) {
+                        add(uiText("${source.convertedRules} 条规则", "${source.convertedRules} rules", "Правил: ${source.convertedRules}"))
+                    } else if (!source.enabled) {
+                        add(uiText("开启后下载", "Downloads when turned on", "Загрузится после включения"))
+                    }
+                    if (remote) {
+                        if (source.status == RuleSourceStatus.Ready || source.convertedRules > 0) add(uiText(source.updatedAt))
+                    } else {
+                        add(uiText("本地文本"))
+                    }
                 }.joinToString(" · "),
                 color = TextSecondary,
                 fontSize = TypeScale.Tiny,

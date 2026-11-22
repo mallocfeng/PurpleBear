@@ -222,6 +222,7 @@ internal fun ListRow(
     showChevron: Boolean = true,
     onClick: (() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
+    badge: Boolean = false,
 ) {
     Row(
         modifier = modifier
@@ -254,6 +255,7 @@ internal fun ListRow(
                 )
             }
         }
+        if (badge) RedDot()
         if (!value.isNullOrBlank()) {
             Text(
                 text = uiText(value),
@@ -336,6 +338,7 @@ internal fun SettingActionRow(
     actionText: String,
     onAction: () -> Unit,
     actionEnabled: Boolean = true,
+    badge: Boolean = false,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -343,7 +346,13 @@ internal fun SettingActionRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-            SettingTitle(title)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SettingTitle(title)
+                if (badge) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    RedDot()
+                }
+            }
             SettingSubtitle(subtitle)
         }
         TextAction(text = actionText, enabled = actionEnabled, onClick = onAction)
@@ -1227,6 +1236,17 @@ internal fun GlassBadge(
 @Composable
 internal fun MiniIcon(icon: ImageVector) {
     RowIcon(icon = icon)
+}
+
+/** Small red "something new here" dot. */
+@Composable
+internal fun RedDot(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(9.dp)
+            .clip(CircleShape)
+            .background(Color(0xFFFF3B30)),
+    )
 }
 
 @Composable

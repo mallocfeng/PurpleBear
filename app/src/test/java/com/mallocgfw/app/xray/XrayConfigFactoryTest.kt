@@ -126,6 +126,31 @@ class XrayConfigFactoryTest {
     }
 
     @Test
+    fun customDnsServerAlwaysGoesDirect() {
+        val config = JSONObject(XrayConfigFactory.buildVpn(node = testNode(), dnsServer = "223.5.5.5"))
+        val rules = config.getJSONObject("routing").getJSONArray("rules")
+        val first = rules.getJSONObject(0)
+        assertEquals(listOf("223.5.5.5"), first.ipValues())
+        assertEquals("53", first.optString("port"))
+        assertEquals("direct", first.optString("outboundTag"))
+        val outbounds = config.getJSONArray("outbounds")
+        assertTrue((0 until outbounds.length()).none { outbounds.getJSONObject(it).optString("tag") == "remote-dns-out" })
+    }
+
+    @Test
+    fun remoteDnsGoesOverTcpThroughTheProxy() {
+        val config = JSONObject(XrayConfigFactory.buildVpn(node = testNode(), dnsServer = "1.1.1.1", dnsOverProxy = true))
+        val rules = config.getJSONObject("routing").getJSONArray("rules")
+        val dnsRule = rules.getJSONObject(rules.indexOfFirstRule { it.ipValues() == listOf("1.1.1.1") })
+        assertEquals("remote-dns-out", dnsRule.optString("outboundTag"))
+        val outbounds = config.getJSONArray("outbounds")
+        val dnsOut = (0 until outbounds.length()).map { outbounds.getJSONObject(it) }.single { it.optString("tag") == "remote-dns-out" }
+        assertEquals("dns", dnsOut.optString("protocol"))
+        assertEquals("tcp", dnsOut.getJSONObject("settings").optString("network"))
+        assertEquals("proxy", dnsOut.getJSONObject("streamSettings").getJSONObject("sockopt").optString("dialerProxy"))
+    }
+
+    @Test
     fun standaloneProxyDoesNotGloballyBlockUdp443() {
         val config = JSONObject(XrayConfigFactory.build(node = testNode()))
         val rules = config.getJSONObject("routing").getJSONArray("rules")

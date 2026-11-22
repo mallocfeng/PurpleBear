@@ -165,7 +165,7 @@ Tailnet 模式下，`:tailscale` 进程里的 tsnet 节点在 Tailnet 地址上�
 
 | 工具 | 参数 | 说明 |
 |---|---|---|
-| `get_status` | — | 连接状态、当前节点、代理模式（规则 / 全局）、分应用模式、DNS 模式、Tailscale 状态、App 版本、本次连接时长和流量 |
+| `get_status` | — | 连接状态、当前节点、代理模式（规则 / 全局）、分应用模式、DNS 模式、Tailscale 状态、VPN 权限是否已授权（`vpn_permission`）、App 版本、本次连接时长和流量 |
 | `list_nodes` | `group_id?`、`query?`、`limit?` | ID、名称、分组、协议 / 传输 / 安全、地址:端口、最近延迟、由哪个内核运行（xray / 兼容内核）、前置代理、备用节点、不可用原因 |
 | `get_node` | `node_id` | 单个节点的全部参数（已打码） |
 | `list_groups` | — | 分组和订阅：名称、节点数、上次同步时间、是否自动更新，URL 已打码 |
@@ -173,7 +173,7 @@ Tailnet 模式下，`:tailscale` 进程里的 tsnet 节点在 Tailnet 地址上�
 | `connect` | `node_id?` | 连接；不传则用当前节点。VPN 权限尚未授权时返回错误，提示到手机上授权 |
 | `disconnect` | — | 断开连接 |
 | `switch_node` | `node_id` | 已连接时热切换，未连接时只改当前选择 |
-| `get_settings` | — | DNS、MTU、代理模式、直连地区、流媒体分流、心跳等（不含 Tailscale 密钥） |
+| `get_settings` | — | DNS、MTU、代理模式、直连地区、流媒体分流、心跳、是否允许 QUIC 走代理（`proxy_quic`）等（不含 Tailscale 密钥） |
 | `get_logs` | `source: app\|error`、`lines≤200` | 应用日志或 Xray 错误日志，已打码 |
 | `run_diagnostics` | — | 运行现有诊断并返回结果 |
 
@@ -186,11 +186,13 @@ Tailnet 模式下，`:tailscale` 进程里的 tsnet 节点在 Tailnet 地址上�
 | `delete_node` / `delete_group` | 危险 | |
 | `set_pre_proxy` / `set_fallback` | 修改 | 沿用 App 里同样的校验 |
 | `set_proxy_mode` | 修改 | 规则分流 / 全局代理 |
-| `set_dns` | 修改 | 系统 / 远端 / 自定义 |
+| `set_dns` | 修改 | 系统 / 远端（Cloudflare 1.1.1.1，经代理）/ 自定义；自定义只接受 IP 地址（不支持域名和 DoH / DoT），VPN 开着时自动重连 |
 | `set_direct_region`、`set_mtu`、`set_heartbeat` | 修改 | |
-| `list_rule_sources` / `get_custom_rules` / `set_custom_rules` / `toggle_rule_source` / `refresh_rule_source` | 读 / 修改 | |
-| `list_streaming_services` / `set_streaming_route` | 读 / 修改 | 例如“奈飞走日本节点” |
-| `list_apps` / `set_per_app` | 读 / 修改 | 分应用代理 |
+| `set_proxy_quic` | 修改 | 是否允许国外 QUIC（UDP 443）走代理；关闭（默认）时回退到 TCP，发往本地区的 QUIC 始终直连 |
+| `list_rule_sources` / `get_custom_rules` / `set_custom_rules` / `toggle_rule_source` / `refresh_rule_source` | 读 / 修改 | 内置规则源带 `about` 说明；可选内置源（广告拦截、屏蔽国内 App 私有 DNS、Steam 下载直连、BT Tracker 直连）默认关闭，用 `toggle_rule_source` 开启，从未下载过的会先下载 |
+| `add_rule_url` | 修改 | 添加远程规则源：`url` 或常用规则源 `preset`，`policy`（代理 / 直连 / 拦截，用于没写策略的行）。GitHub 网页链接自动转为原始链接；先下载检测，确认框里显示可识别的条数 |
+| `list_streaming_services` / `set_streaming_route` | 读 / 修改 | 例如“奈飞走日本节点”。列表带国家标签，可按 `region` 筛选；只有指定了节点的服务单独分流，`node_id` 为空表示取消单独线路、按普通规则走 |
+| `list_apps` / `set_per_app` | 读 / 修改 | 分应用代理。列表带分类和是否已安装，可按 `category`、`installed_only` 筛选 |
 
 ### 第三期
 
@@ -290,7 +292,7 @@ Tailnet 模式下，`:tailscale` 进程里的 tsnet 节点在 Tailnet 地址上�
 **已验证（模拟器）：**
 
 - 401、405、403（Origin）、锁定、413；`initialize` 和 `server/discover` 两条路径。
-- 35 个工具的读、改、删；手机确认的允许、拒绝两条路径，以及对话框和通知两种方式；危险操作不提供“10 分钟内同类都允许”。
+- 37 个工具的读、改、删；手机确认的允许、拒绝两条路径，以及对话框和通知两种方式；危险操作不提供“10 分钟内同类都允许”。
 - 界面开着时改动即时显示，界面关着时改动由 controller 写入并重连。
 - 输出中没有凭据。
 - Tailnet 模式：本地测试 tailnet 中，另一台节点经 tailnet 访问成功，审计记录带 Tailscale 用户和设备；Tailnet 下仍校验令牌。

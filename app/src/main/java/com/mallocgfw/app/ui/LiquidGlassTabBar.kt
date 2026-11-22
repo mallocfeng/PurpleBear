@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -96,7 +97,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.sign
 
-internal class GlassTabItem(val label: String, val icon: ImageVector)
+internal class GlassTabItem(val label: String, val icon: ImageVector, val badge: Boolean = false)
 
 /** Height of the glass capsule itself, without outer margins. */
 internal val GlassTabBarHeight = 64.dp
@@ -347,7 +348,10 @@ private fun RowScope.GlassTab(
 @Composable
 private fun GlassTabContent(item: GlassTabItem, color: Color, selected: Boolean) {
     val label = uiText(item.label)
-    Icon(item.icon, contentDescription = label, tint = color, modifier = Modifier.size(24.dp))
+    Box {
+        Icon(item.icon, contentDescription = label, tint = color, modifier = Modifier.size(24.dp))
+        if (item.badge) RedDot(Modifier.align(Alignment.TopEnd).offset(x = 3.dp, y = (-2).dp))
+    }
     Text(
         text = label,
         color = color,

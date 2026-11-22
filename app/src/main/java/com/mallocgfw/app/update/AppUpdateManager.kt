@@ -68,6 +68,19 @@ object AppUpdateManager {
     private const val MAX_REDIRECTS = 6
     private const val USER_AGENT = "PurpleBear-Updater/1.0"
 
+    private const val SEEN_UPDATE_TAG_KEY = "seen_update_tag"
+
+    /** The release the user has already opened the update page for (no more red dots for it). */
+    fun seenUpdateTag(context: Context): String? =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getString(SEEN_UPDATE_TAG_KEY, null)
+
+    fun markUpdateSeen(context: Context, tagName: String) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(SEEN_UPDATE_TAG_KEY, tagName)
+            .apply()
+    }
+
     fun shouldRunAutoCheckToday(context: Context): Boolean {
         val today = LocalDate.now().toString()
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

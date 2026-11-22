@@ -40,6 +40,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
@@ -83,6 +85,7 @@ internal fun GroupSectionCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .background(GroupHeaderTint)
                 .clickable(onClick = onToggleGroup)
                 .padding(start = 14.dp, end = 4.dp, top = 14.dp, bottom = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -197,7 +200,13 @@ internal fun GroupSectionCard(
             // Full-width line and a slightly different shade: the rows below
             // read as the contents of this group, not as more groups.
             GroupDivider(startIndent = 0.dp)
-            Column(modifier = Modifier.fillMaxWidth().background(GroupContentTint)) {
+            val accent = GroupContentAccent
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(GroupContentTint)
+                    .drawBehind { drawRect(accent, size = Size(3.dp.toPx(), size.height)) },
+            ) {
                 if (section.servers.isEmpty()) {
                     Text(
                         text = uiText(

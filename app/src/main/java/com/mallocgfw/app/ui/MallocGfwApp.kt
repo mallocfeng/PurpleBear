@@ -39,6 +39,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -89,6 +90,7 @@ import com.mallocgfw.app.model.isSameImportedNode
 import com.mallocgfw.app.model.tr
 import com.mallocgfw.app.model.mergedSubscriptionGroupNodes
 import com.mallocgfw.app.model.normalizedAppVpnMtu
+import com.mallocgfw.app.model.RuleTargetPolicy
 import com.mallocgfw.app.model.StreamingMediaManager
 import com.mallocgfw.app.model.subscriptionMergeKey
 import com.mallocgfw.app.model.subscriptionNameKey
@@ -193,6 +195,17 @@ fun MallocGfwApp(
     var subscriptionMessage by remember { mutableStateOf<String?>(null) }
     var settingsMessage by remember { mutableStateOf<String?>(null) }
     var updateState by remember { mutableStateOf(AppUpdateUiState()) }
+    var seenUpdateTag by remember { mutableStateOf(AppUpdateManager.seenUpdateTag(context)) }
+    // Red dots on Me, the settings gear and "Check for updates" while a newer
+    // release exists that the user hasn't opened the update page for.
+    val updateBadge by remember {
+        derivedStateOf {
+            val info = updateState.info
+            info != null &&
+                info.tagName != seenUpdateTag &&
+                info.isNewerThan(AppUpdateManager.currentVersionCode(context), AppUpdateManager.currentVersionName(context))
+        }
+    }
     var showUpdatePrompt by rememberSaveable { mutableStateOf(false) }
     var showLatestVersionDialog by rememberSaveable { mutableStateOf(false) }
     var pendingVpnServerId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -412,9 +425,23 @@ fun MallocGfwApp(
         }
     }
 
+    // Real VPN permission state for the Me row and the permission page.
+    // Refreshed on every resume: the user can revoke it in system settings,
+    // or another VPN app can take it over.
+    var vpnPermissionGranted by remember { mutableStateOf(VpnService.prepare(context) == null) }
+    LifecycleResumeEffect(Unit) {
+        vpnPermissionGranted = VpnService.prepare(context) == null
+        onPauseOrDispose { }
+    }
+
     val vpnPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val serverId = pendingVpnServerId
         pendingVpnServerId = null
+        vpnPermissionGranted = VpnService.prepare(context) == null
+        if (serverId == null) {
+            // Asked from the permission page only: no connection to start.
+            return@rememberLauncherForActivityResult
+        }
         if (result.resultCode == Activity.RESULT_OK && !serverId.isNullOrBlank()) {
             disconnectInFlight = false
             connectionStatus = ConnectionStatus.Connecting
@@ -469,6 +496,16 @@ fun MallocGfwApp(
             runtimeMessage = "正在申请系统 VPN 并启动连接…"
             startVpnService(server.id)
         }
+    }
+
+    fun requestVpnPermission() {
+        val prepareIntent = VpnService.prepare(context)
+        if (prepareIntent == null) {
+            vpnPermissionGranted = true
+            return
+        }
+        pendingVpnServerId = null
+        vpnPermissionLauncher.launch(prepareIntent)
     }
 
     fun requestQuickSettingsTile() {
@@ -636,6 +673,12 @@ fun MallocGfwApp(
         }
     }
 
+    fun setProtectedAppsEnabled(appIds: List<String>, enabled: Boolean) {
+        if (appIds.isEmpty()) return
+        AppController.edit { StateOps.setProtectedApps(it, appIds.associateWith { enabled }) }
+        pendingProtectedAppsApply = true
+    }
+
     fun applyProtectedAppsSelection() {
         if (proxyMode != ProxyMode.PerApp) {
             settingsMessage = "请先启用分应用代理，再应用当前应用名单。"
@@ -729,10 +772,6 @@ fun MallocGfwApp(
         if (screen == AppScreen.Launch) return
         if (screen == AppScreen.Onboarding) {
             screen = AppScreen.Launch
-            return
-        }
-        if (screen == AppScreen.Permission) {
-            screen = AppScreen.Onboarding
             return
         }
         // Import is still a main "tab" internally but is opened from another page
@@ -1203,6 +1242,14 @@ fun MallocGfwApp(
             AppDnsMode.Remote -> "DNS 已切换为远端 1.1.1.1。"
             AppDnsMode.Custom -> tr("DNS 已更新为 $normalizedCustomValue。", "DNS set to $normalizedCustomValue.", "DNS изменён на $normalizedCustomValue.")
         }
+        // Like MTU: the tunnel picks up DNS only when it starts.
+        val activeServer = resolveServerForSettingsReconnect()
+        if (connectionStatus == ConnectionStatus.Connected && activeServer != null) {
+            reconnectVpnForSettingsChange(
+                server = activeServer,
+                message = tr("DNS 已更新，正在重连 VPN…", "DNS updated. Reconnecting VPN…", "DNS обновлён. Переподключение VPN…"),
+            )
+        }
     }
 
     fun updateVpnMtu(mtu: Int) {
@@ -1281,8 +1328,8 @@ fun MallocGfwApp(
         }
     }
 
-    fun addRuleSource(name: String, url: String, type: RuleSourceType) {
-        val draft = RuleSourceManager.createDraft(name = name, url = url, requestedType = type)
+    fun addRuleSource(name: String, url: String, type: RuleSourceType, policy: RuleTargetPolicy = RuleTargetPolicy.Proxy) {
+        val draft = RuleSourceManager.createDraft(name = name, url = url, requestedType = type, policy = policy)
         replaceRuleSource(draft.copy(status = RuleSourceStatus.Updating))
         goToMain(MainTab.Rules)
         scrollRulesToCustomSources = true
@@ -1303,24 +1350,17 @@ fun MallocGfwApp(
         content: String,
         type: RuleSourceType,
         sourceKind: RuleSourceKind,
+        policy: RuleTargetPolicy = RuleTargetPolicy.Proxy,
     ) {
-        if (editingSourceId.isNullOrBlank()) {
+        if (editingSourceId.isNullOrBlank() || ruleSources.none { it.id == editingSourceId }) {
             if (sourceKind == RuleSourceKind.LocalText) {
                 addTextRuleSource(name, content, type)
             } else {
-                addRuleSource(name, content, type)
+                addRuleSource(name, content, type, policy)
             }
             return
         }
         val index = ruleSources.indexOfFirst { it.id == editingSourceId }
-        if (index < 0) {
-            if (sourceKind == RuleSourceKind.LocalText) {
-                addTextRuleSource(name, content, type)
-            } else {
-                addRuleSource(name, content, type)
-            }
-            return
-        }
         val current = ruleSources[index]
         val updated = current.copy(
             name = name.ifBlank { current.name },
@@ -1328,6 +1368,7 @@ fun MallocGfwApp(
             content = if (sourceKind == RuleSourceKind.LocalText) content else "",
             type = type,
             sourceKind = sourceKind,
+            policy = if (sourceKind == RuleSourceKind.RemoteUrl) policy else current.policy,
             status = RuleSourceStatus.Updating,
             lastError = null,
         )
@@ -1341,6 +1382,10 @@ fun MallocGfwApp(
         val current = ruleSources.firstOrNull { it.id == sourceId } ?: return
         val enabled = !current.enabled
         AppController.edit { StateOps.setRuleSourceEnabled(it, sourceId, enabled) }
+        // A built-in or added source that was never downloaded has no rules yet.
+        if (enabled && current.status != RuleSourceStatus.Ready && current.sourceKind == RuleSourceKind.RemoteUrl) {
+            refreshRuleSource(sourceId)
+        }
         ruleMessage = if (enabled) {
             tr("${current.name} 已启用。重新开关代理后生效。", "${current.name} enabled. Takes effect after turning the proxy off and on.", "${current.name}: включено. Вступит в силу после перезапуска прокси.")
         } else {
@@ -1522,10 +1567,31 @@ fun MallocGfwApp(
         onLaunchRequestConsumed()
     }
 
+    // Notices at the top of Settings and Rules are confirmations, not states:
+    // let them go after a few seconds instead of staying until the next one.
+    LaunchedEffect(settingsMessage) {
+        if (settingsMessage != null) {
+            delay(NOTICE_VISIBLE_MS)
+            settingsMessage = null
+        }
+    }
+    LaunchedEffect(ruleMessage) {
+        if (ruleMessage != null) {
+            delay(NOTICE_VISIBLE_MS)
+            ruleMessage = null
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        val sources = ruleSources
+        withContext(Dispatchers.IO) { RuleSourceManager.removeOrphanFiles(context, sources) }
+    }
+
     LaunchedEffect(ruleSources.size, defaultRulesBootstrapped) {
         if (defaultRulesBootstrapped) return@LaunchedEffect
         val bootstrapCandidates = ruleSources
-            .filter { it.systemDefault }
+            // Optional built-ins start off; they download when turned on.
+            .filter { it.systemDefault && it.enabled }
             .filter { it.convertedRules == 0 && it.status != RuleSourceStatus.Ready }
         if (bootstrapCandidates.isNotEmpty()) {
             defaultRulesBootstrapped = true
@@ -1602,16 +1668,25 @@ fun MallocGfwApp(
         DailySyncScheduler.schedule(context, appSettings.dailyAutoUpdate)
     }
 
+    // Checked on every launch; a newer release shows red dots (no dialog)
+    // until the user opens the update page for it.
     LaunchedEffect(Unit) {
-        if (AppUpdateManager.shouldRunAutoCheckToday(context)) {
-            AppUpdateManager.markAutoCheckToday(context)
-            runCatching {
-                AppUpdateManager.checkLatest()
-            }.onSuccess { info ->
-                applyUpdateCheckResult(info, promptIfAvailable = true)
-            }.onFailure { error ->
-                AppLogManager.append(context, "UPDATE", "自动检查更新失败", error)
+        runCatching {
+            AppUpdateManager.checkLatest()
+        }.onSuccess { info ->
+            if (updateState.status != AppUpdateStatus.Checking && updateState.status != AppUpdateStatus.Downloading) {
+                applyUpdateCheckResult(info, promptIfAvailable = false)
             }
+        }.onFailure { error ->
+            AppLogManager.append(context, "UPDATE", "自动检查更新失败", error)
+        }
+    }
+
+    LaunchedEffect(screen, updateBadge) {
+        val tag = updateState.info?.tagName
+        if (screen == AppScreen.Update && updateBadge && tag != null) {
+            AppUpdateManager.markUpdateSeen(context, tag)
+            seenUpdateTag = tag
         }
     }
 
@@ -1994,14 +2069,16 @@ fun MallocGfwApp(
                     lightThemeEnabled = appSettings.lightThemeEnabled,
                     onSelectTab = ::goToMain,
                     onToggleTheme = ::toggleThemeMode,
-                    onOpenSettings = { navigateSecondary(AppScreen.Settings) },
                     onOpenScan = ::scanSubscriptionQr,
                     onBack = ::onBack,
+                    updateBadge = updateBadge,
                 ) { padding ->
                     when (screen) {
                     AppScreen.Permission -> PermissionScreen(
                         padding = padding,
-                        onClose = { goToMain(MainTab.Home) },
+                        granted = vpnPermissionGranted,
+                        onGrant = ::requestVpnPermission,
+                        onClose = ::onBack,
                     )
 
                     AppScreen.Home -> HomeScreen(
@@ -2232,6 +2309,7 @@ fun MallocGfwApp(
                         onModeChange = ::updateProxyMode,
                         onSearchChange = { perAppSearch = it },
                         onToggleApp = ::updateProtectedAppEnabled,
+                        onSetApps = ::setProtectedAppsEnabled,
                         onApplyChanges = ::applyProtectedAppsSelection,
                     )
 
@@ -2289,6 +2367,7 @@ fun MallocGfwApp(
                         },
                         onUpdateNotificationsChange = ::setUpdateNotificationsEnabled,
                         onOpenUpdates = ::openUpdateScreen,
+                        updateBadge = updateBadge,
                         onSyncNow = ::syncAllResources,
                         onDnsChange = ::updateDnsSettings,
                         onLogLevelChange = { level ->
@@ -2483,6 +2562,8 @@ fun MallocGfwApp(
                         onOpenTailscale = { navigateSecondary(AppScreen.Tailscale) },
                         onOpenMediaRouting = { navigateSecondary(AppScreen.MediaRouting) },
                         onOpenPermission = { navigateSecondary(AppScreen.Permission) },
+                        vpnPermissionGranted = vpnPermissionGranted,
+                        updateBadge = updateBadge,
                     )
 
                     AppScreen.MediaRouting -> MediaRoutingScreen(
@@ -2584,8 +2665,8 @@ fun MallocGfwApp(
                         sourceKind = ruleEditorKind,
                         servers = servers,
                         onBack = ::onBack,
-                        onSubmit = { name, content, type, sourceKind ->
-                            saveRuleSourceEdits(ruleEditorSourceId, name, content, type, sourceKind)
+                        onSubmit = { name, content, type, sourceKind, policy ->
+                            saveRuleSourceEdits(ruleEditorSourceId, name, content, type, sourceKind, policy)
                         },
                     )
 
@@ -2665,3 +2746,6 @@ fun MallocGfwApp(
     }
     }
 }
+
+/** How long a confirmation notice stays at the top of Settings / Rules. */
+private const val NOTICE_VISIBLE_MS = 4_000L

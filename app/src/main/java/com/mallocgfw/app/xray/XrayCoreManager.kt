@@ -108,6 +108,8 @@ object XrayCoreManager {
         additionalOutbounds: List<XrayNamedOutbound> = emptyList(),
         vpnMtu: Int = XrayConfigFactory.DEFAULT_VPN_MTU,
         magicDnsUpstream: String? = null,
+        dnsServer: String? = null,
+        dnsOverProxy: Boolean = false,
     ): Result<XrayCoreSnapshot> {
         return startWithConfig(
             context = context,
@@ -132,6 +134,8 @@ object XrayCoreManager {
                 geoRoutingRegion = settings.geoRoutingRegion,
                 tailscale = TailscaleRuntimeManager.snapshot.value.routing(settings),
                 proxyQuicEnabled = settings.proxyQuicEnabled,
+                dnsServer = dnsServer,
+                dnsOverProxy = dnsOverProxy,
                 localProxy = localProxy,
             )
         }

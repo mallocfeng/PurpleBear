@@ -1,9 +1,14 @@
 package com.mallocgfw.app.mcp
 
 import android.content.Context
+import com.mallocgfw.app.model.StreamingRegion
+import com.mallocgfw.app.model.RuleUrlPresets
+import com.mallocgfw.app.model.RuleTargetPolicy
+import android.net.VpnService
 import com.mallocgfw.app.core.AppController
 import com.mallocgfw.app.core.StateOps
 import com.mallocgfw.app.model.AppDnsMode
+import com.mallocgfw.app.model.DnsInput
 import com.mallocgfw.app.model.AppGeoRoutingRegion
 import com.mallocgfw.app.model.AppVpnMtuOptions
 import com.mallocgfw.app.model.ConnectionStatus
@@ -61,8 +66,8 @@ object McpTools {
             switchNode(), getSettings(), getLogs(), runDiagnostics(),
             // ---- phase 2: changes
             importNodes(), refreshSubscription(), deleteNode(), deleteGroup(), setPreProxy(), setFallback(),
-            setProxyMode(), setDns(), setDirectRegion(), setMtu(), setHeartbeat(),
-            listRuleSources(), getCustomRules(), setCustomRules(), toggleRuleSource(), refreshRuleSource(),
+            setProxyMode(), setDns(), setDirectRegion(), setMtu(), setHeartbeat(), setProxyQuic(),
+            listRuleSources(), getCustomRules(), setCustomRules(), addRuleUrl(), toggleRuleSource(), refreshRuleSource(),
             listStreamingServices(), setStreamingRoute(), listApps(), setPerApp(),
             // ---- phase 3: Tailscale
             getTailscale(), setTailscaleExitNode(), setTailscaleSubnets(), setTailscaleEnabled(),
@@ -74,7 +79,7 @@ object McpTools {
 
         private fun getStatus() = tool(
             "get_status", "Get status", ToolLevel.Read,
-            "Connection status, current node, routing mode, per-app mode, DNS mode, Tailscale state, app version, and this session's duration and traffic.",
+            "Connection status, current node, routing mode, per-app mode, DNS mode, Tailscale state, whether Android's VPN permission is granted, app version, and this session's duration and traffic.",
             schema(),
         ) {
             ready(tr("查看状态", "Get status", "Статус")) {
@@ -91,6 +96,7 @@ object McpTools {
                     .put("per_app_mode", s.proxyMode == ProxyMode.PerApp)
                     .put("dns_mode", s.settings.dnsMode.name.lowercase())
                     .put("tailscale", JSONObject().put("enabled", s.settings.tailscaleEnabled).put("status", ts.status.name.lowercase()))
+                    .put("vpn_permission", if (VpnService.prepare(context) == null) "granted" else "not_granted")
                     .put("app_version", AppUpdateManager.currentVersionName(context))
                     .put(
                         "session_seconds",
@@ -187,7 +193,7 @@ object McpTools {
 
         private fun getSettings() = tool(
             "get_settings", "Get settings", ToolLevel.Read,
-            "DNS, MTU, routing mode, direct-connect region, media routing, fallback check interval and other settings (no Tailscale keys).",
+            "DNS, MTU, routing mode, direct-connect region, media routing, fallback check interval, whether QUIC may use the proxy (proxy_quic) and other settings (no Tailscale keys).",
             schema(),
         ) {
             ready(tr("查看设置", "Get settings", "Настройки")) {
@@ -486,10 +492,12 @@ object McpTools {
 
         private fun setDns() = tool(
             "set_dns", "Set DNS", ToolLevel.Modify,
-            "system: the network's DNS. remote: 1.1.1.1 through the proxy. custom: custom_value (e.g. 8.8.8.8 or https://dns.example/dns-query). Takes effect after reconnecting.",
+            "DNS server the phone uses while the VPN is on. system: the current network's DNS (recommended). remote: Cloudflare 1.1.1.1, queried through the proxy. " +
+                "custom: custom_value must be an IP address, e.g. 223.5.5.5 (AliDNS), 119.29.29.29 (DNSPod), 8.8.8.8, 1.1.1.1, 9.9.9.9 or an IPv6 address; " +
+                "host names and DoH / DoT links are not supported. Reconnects if the VPN is on.",
             schema(
                 "mode" to str("system, remote or custom.", listOf("system", "remote", "custom")),
-                "custom_value" to str("DNS server for custom mode."),
+                "custom_value" to str("IP address for custom mode, e.g. 223.5.5.5 or 2001:4860:4860::8888."),
                 required = listOf("mode"),
             ),
         ) { args ->
@@ -501,10 +509,21 @@ object McpTools {
             }
             val custom = args.optStr("custom_value")?.trim().orEmpty()
             if (mode == AppDnsMode.Custom && custom.isBlank()) throw ToolError("custom_value is required for custom mode.")
-            if (custom.length > 200) throw ToolError("custom_value is too long.")
-            PreparedCall(tr("DNS 改为 ${mode.name.lowercase()} $custom", "Set DNS to ${mode.name.lowercase()} $custom", "DNS: ${mode.name.lowercase()} $custom").trim()) {
+            if (mode == AppDnsMode.Custom && !DnsInput.isValid(custom)) {
+                throw ToolError("custom_value must be an IP address such as 223.5.5.5 or 2001:4860:4860::8888; host names and DoH / DoT links are not supported.")
+            }
+            val target = when (mode) {
+                AppDnsMode.System -> tr("系统 DNS", "the system DNS", "системный DNS")
+                AppDnsMode.Remote -> "Cloudflare 1.1.1.1"
+                AppDnsMode.Custom -> custom
+            }
+            PreparedCall(tr("DNS 改为 $target", "Set DNS to $target", "DNS: $target")) {
                 AppController.update { StateOps.setDns(it, mode, custom) }
-                ToolResult(JSONObject().put("mode", mode.name.lowercase()).put("custom_value", custom), "DNS set to ${mode.name.lowercase()}; applies after reconnecting.")
+                val reconnected = AppController.reconnectIfRunning("DNS 已更新，正在重连 VPN…")
+                ToolResult(
+                    JSONObject().put("mode", mode.name.lowercase()).put("custom_value", custom).put("reconnected", reconnected),
+                    "DNS set to ${mode.name.lowercase()}${if (custom.isNotBlank() && mode == AppDnsMode.Custom) " ($custom)" else ""}.",
+                )
             }
         }
 
@@ -553,11 +572,32 @@ object McpTools {
             }
         }
 
+        private fun setProxyQuic() = tool(
+            "set_proxy_quic", "Allow QUIC through the proxy", ToolLevel.Modify,
+            "Off (default): QUIC (UDP 443) to foreign sites is dropped so apps fall back to TCP, which is steadier on most nodes. " +
+                "On: foreign QUIC goes through the proxy, for UDP-based nodes such as Hysteria2 and TUIC. QUIC to the home region always goes direct. Reconnects if the VPN is on.",
+            schema("enabled" to bool("true: QUIC may use the proxy; false: foreign QUIC falls back to TCP."), required = listOf("enabled")),
+        ) { args ->
+            if (!args.has("enabled")) throw ToolError("enabled is required.")
+            val enabled = args.optBoolean("enabled")
+            PreparedCall(
+                if (enabled) tr("允许 QUIC 走代理", "Let QUIC use the proxy", "Разрешить QUIC через прокси")
+                else tr("国外 QUIC 改用 TCP", "Make foreign QUIC fall back to TCP", "Зарубежный QUIC через TCP"),
+            ) {
+                AppController.update { StateOps.setProxyQuic(it, enabled) }
+                val reconnected = AppController.reconnectIfRunning("QUIC 设置已更新，正在重连 VPN…")
+                ToolResult(JSONObject().put("proxy_quic", enabled).put("reconnected", reconnected), if (enabled) "QUIC may use the proxy." else "Foreign QUIC falls back to TCP.")
+            }
+        }
+
         // ---- rules ---------------------------------------------------------------
 
         private fun listRuleSources() = tool(
             "list_rule_sources", "List rule sources", ToolLevel.Read,
-            "Rule sources: id, name, format, policy, enabled, status, rule counts, and whether it is a remote URL (host only) or local text." + DATA_NOTE,
+            "Rule sources: id, name, format, policy, enabled, status, rule counts, and whether it is a remote URL (host only) or local text. " +
+                "Built-in sources (system_default) include optional ones that start off: rule_default_ads (block ads), rule_default_httpdns " +
+                "(block Chinese apps' own DNS), rule_default_steam (Steam China downloads direct), rule_default_tracker (BT trackers direct); " +
+                "their \"about\" says what each does. Turn them on with toggle_rule_source." + DATA_NOTE,
             schema(),
         ) {
             ready(tr("查看规则源", "List rule sources", "Источники правил")) {
@@ -619,9 +659,74 @@ object McpTools {
             }
         }
 
+        private fun addRuleUrl() = tool(
+            "add_rule_url", "Add a rule list link", ToolLevel.Modify,
+            "Subscribes to a remote rule list (Shadowrocket / Surge text) that updates by itself. Give url, or preset for a well-known list: " +
+                RuleUrlPresets.all.joinToString(", ") { it.id } + ". GitHub page links are turned into raw links. " +
+                "policy applies to lines that name a site without an action (most lists): proxy, direct or block. " +
+                "The list is downloaded and checked before the phone is asked to confirm. Reconnects if the VPN is on.",
+            schema(
+                "url" to str("Link to the rule list. Omit when using preset."),
+                "preset" to str("A well-known list instead of url.", RuleUrlPresets.all.map { it.id }),
+                "name" to str("Name (default: the preset's name or the file name)."),
+                "policy" to str("proxy (default), direct or block.", listOf("proxy", "direct", "block")),
+                "format" to str("auto, shadowrocket or surge (default auto).", listOf("auto", "shadowrocket", "surge")),
+            ),
+        ) { args ->
+            val preset = args.optStr("preset")?.let { id -> RuleUrlPresets.all.firstOrNull { it.id == id } ?: throw ToolError("Unknown preset $id.") }
+            val url = RuleUrlPresets.normalizeUrl(args.optStr("url") ?: preset?.url ?: throw ToolError("Give url or preset."))
+            if (!(url.startsWith("https://") || url.startsWith("http://"))) throw ToolError("url must start with http:// or https://.")
+            state().ruleSources.firstOrNull { it.url == url }?.let {
+                throw ToolError(
+                    if (it.systemDefault) "That list is built in as ${it.id}; turn it on with toggle_rule_source."
+                    else "Already added as ${it.id} (${Redactor.name(it.name)}).",
+                )
+            }
+            val policy = when (args.optStr("policy")) {
+                null -> preset?.policy ?: RuleTargetPolicy.Proxy
+                "proxy" -> RuleTargetPolicy.Proxy
+                "direct" -> RuleTargetPolicy.Direct
+                "block" -> RuleTargetPolicy.Block
+                else -> throw ToolError("policy must be proxy, direct or block.")
+            }
+            val type = when (args.optStr("format") ?: "auto") {
+                "auto" -> RuleSourceType.Auto
+                "shadowrocket" -> RuleSourceType.Shadowrocket
+                "surge" -> RuleSourceType.Surge
+                else -> throw ToolError("format must be auto, shadowrocket or surge.")
+            }
+            val preview = runCatching { RuleSourceManager.previewUrl(url, type, policy) }
+                .getOrElse { throw ToolError("Couldn't use the link: ${Redactor.text(it.message ?: "download failed")}") }
+            val name = args.optStr("name") ?: preset?.name
+                ?: url.substringAfterLast('/').substringBefore('?').substringBeforeLast('.').ifBlank { "MCP" }
+            val draft = RuleSourceManager.createDraft(name = name, url = url, requestedType = type, policy = policy)
+            val action = when (policy) {
+                RuleTargetPolicy.Proxy -> tr("走代理", "proxy", "через прокси")
+                RuleTargetPolicy.Direct -> tr("直连", "direct", "напрямую")
+                RuleTargetPolicy.Block -> tr("拦截", "block", "блокировать")
+            }
+            PreparedCall(
+                tr(
+                    "添加规则源「${Redactor.name(name)}」（${preview.convertedRules} 条，命中后$action）",
+                    "Add rule list \"${Redactor.name(name)}\" (${preview.convertedRules} rules, $action)",
+                    "Добавить список правил «${Redactor.name(name)}» (правил: ${preview.convertedRules}, $action)",
+                ),
+            ) {
+                val refreshed = runCatching { RuleSourceManager.refreshSource(context, draft).source }
+                    .getOrElse { throw ToolError("Couldn't download the list: ${Redactor.text(it.message ?: "unknown error")}") }
+                AppController.update { s -> StateOps.upsertRuleSource(s, refreshed) }
+                val reconnected = AppController.reconnectIfRunning("规则源已添加，正在重连 VPN…")
+                ToolResult(
+                    ruleJson(refreshed).put("reconnected", reconnected),
+                    "Added ${Redactor.name(refreshed.name)}: ${refreshed.convertedRules} rules" +
+                        (if (refreshed.skippedRules > 0) ", ${refreshed.skippedRules} unsupported skipped." else "."),
+                )
+            }
+        }
+
         private fun toggleRuleSource() = tool(
             "toggle_rule_source", "Enable or disable a rule source", ToolLevel.Modify,
-            "Turns a rule source on or off. Reconnects if the VPN is on.",
+            "Turns a rule source on or off; a source that was never downloaded is downloaded first. Reconnects if the VPN is on.",
             schema("source_id" to str("Rule source id."), "enabled" to bool("On or off."), required = listOf("source_id", "enabled")),
         ) { args ->
             val id = args.reqStr("source_id")
@@ -629,6 +734,11 @@ object McpTools {
             val enabled = args.optBoolean("enabled")
             val source = state().ruleSources.firstOrNull { it.id == id } ?: throw ToolError("Rule source $id not found.")
             PreparedCall(tr("${if (enabled) "启用" else "停用"}规则源 ${Redactor.name(source.name)}", "${if (enabled) "Enable" else "Disable"} rule source ${Redactor.name(source.name)}", "${if (enabled) "Включить" else "Отключить"} источник правил ${Redactor.name(source.name)}")) {
+                if (enabled && source.status != RuleSourceStatus.Ready && source.sourceKind == RuleSourceKind.RemoteUrl) {
+                    val refreshed = runCatching { RuleSourceManager.refreshSource(context, source).source }
+                        .getOrElse { throw ToolError("Couldn't download ${Redactor.name(source.name)}: ${Redactor.text(it.message ?: "unknown error")}") }
+                    AppController.update { s -> StateOps.upsertRuleSource(s, refreshed) }
+                }
                 AppController.update { s -> StateOps.setRuleSourceEnabled(s, id, enabled) }
                 val reconnected = AppController.reconnectIfRunning("规则源已变更，正在重连 VPN…")
                 ToolResult(JSONObject().put("source_id", id).put("enabled", enabled).put("reconnected", reconnected), "Rule source ${if (enabled) "enabled" else "disabled"}.")
@@ -655,18 +765,22 @@ object McpTools {
 
         private fun listStreamingServices() = tool(
             "list_streaming_services", "List media services", ToolLevel.Read,
-            "Streaming services that can use their own node (e.g. Netflix through a Japanese node), with the node chosen for each.",
-            schema(),
-        ) {
+            "Streaming services that can use their own node (e.g. Netflix through a Japanese node), with the node chosen for each " +
+                "and the countries each is mainly used in (us, japan, hongkong, taiwan, singapore, uk, global). " +
+                "Only services with a chosen node get their own route; the rest follow the normal rules.",
+            schema("region" to str("Only services of this country.", StreamingRegion.entries.map { it.name.lowercase() })),
+        ) { args ->
+            val region = args.optStr("region")?.let { r -> StreamingRegion.entries.firstOrNull { it.name.equals(r, ignoreCase = true) } ?: throw ToolError("Unknown region $r.") }
             ready(tr("查看流媒体服务", "List media services", "Медиасервисы")) {
                 val s = state()
                 val arr = JSONArray()
-                StreamingMediaManager.services.forEach { service ->
+                StreamingMediaManager.services(region).forEach { service ->
                     val nodeId = s.settings.streamingSelections.firstOrNull { it.serviceId == service.id }?.serverId
                     arr.put(
                         JSONObject().put("service_id", service.id).put("name", service.name)
                             .put("suggested_region", service.suggestedRegion)
                             .put("regions", JSONArray(service.regions.map { it.name.lowercase() }))
+                            .put("routed", !nodeId.isNullOrBlank())
                             .put("node_id", nodeId ?: JSONObject.NULL)
                             .put("node_name", nodeId?.let { id -> s.servers.firstOrNull { it.id == id }?.name?.let(Redactor::name) } ?: JSONObject.NULL),
                     )
@@ -677,10 +791,10 @@ object McpTools {
 
         private fun setStreamingRoute() = tool(
             "set_streaming_route", "Set media route", ToolLevel.Modify,
-            "Sends one streaming service through a chosen node (empty node_id: the default node). Turns media routing on unless enable_media_routing is false. Reconnects if the VPN is on.",
+            "Sends one streaming service through a chosen node. An empty node_id removes its own route, so it follows the normal rules again. Turns media routing on unless enable_media_routing is false. Reconnects if the VPN is on.",
             schema(
                 "service_id" to str("From list_streaming_services."),
-                "node_id" to str("Node id, or empty for the default node."),
+                "node_id" to str("Node id, or empty to drop the service's own route."),
                 "enable_media_routing" to bool("Also switch media routing on (default true)."),
                 required = listOf("service_id", "node_id"),
             ),
@@ -693,25 +807,50 @@ object McpTools {
                 if (!ManualNodeFactory.isRunnable(node)) throw ToolError("Node $nodeId can't run.")
             }
             val enable = args.optBoolean("enable_media_routing", true)
-            PreparedCall(tr("${service.name} 改走 ${nodeLabel(nodeId, "默认线路")}", "Route ${service.name} through ${nodeLabel(nodeId, "the default node")}", "${service.name} через ${nodeLabel(nodeId, "узел по умолчанию")}")) {
+            PreparedCall(
+                if (nodeId.isBlank()) {
+                    tr("${service.name} 取消单独线路，按普通规则走", "Remove ${service.name}'s own route (normal rules apply)", "${service.name}: убрать отдельный маршрут (обычные правила)")
+                } else {
+                    tr("${service.name} 改走 ${nodeLabel(nodeId, "")}", "Route ${service.name} through ${nodeLabel(nodeId, "")}", "${service.name} через ${nodeLabel(nodeId, "")}")
+                },
+            ) {
                 AppController.update { s ->
                     val next = StateOps.setStreamingRoute(s, serviceId, nodeId)
                     if (enable) StateOps.setStreamingRoutingEnabled(next, true) else next
                 }
                 val reconnected = AppController.reconnectIfRunning("正在重连 VPN 以应用新的流媒体分流设置…")
-                ToolResult(JSONObject().put("service_id", serviceId).put("node_id", nodeId).put("reconnected", reconnected), "${service.name} → ${nodeId.ifBlank { "default node" }}.")
+                ToolResult(JSONObject().put("service_id", serviceId).put("node_id", nodeId).put("reconnected", reconnected), "${service.name} → ${nodeId.ifBlank { "normal rules" }}.")
             }
         }
 
         private fun listApps() = tool(
             "list_apps", "List per-app proxy apps", ToolLevel.Read,
-            "Apps in the per-app proxy list and whether each is proxied; per_app_mode says whether only these apps use the VPN.",
-            schema(),
-        ) {
+            "Apps in the per-app proxy list: package id, name, category (" + APP_CATEGORY_KEYS.values.joinToString(", ") + "), " +
+                "whether it is installed on this phone and whether it is proxied; per_app_mode says whether only these apps use the VPN. " +
+                "Only installed apps can actually use the VPN.",
+            schema(
+                "category" to str("Only apps of this category.", APP_CATEGORY_KEYS.values.toList()),
+                "installed_only" to bool("Only apps installed on this phone (default false)."),
+            ),
+        ) { args ->
+            val category = args.optStr("category")?.let { key ->
+                APP_CATEGORY_KEYS.entries.firstOrNull { it.value == key }?.key ?: throw ToolError("Unknown category $key.")
+            }
+            val installedOnly = args.optBoolean("installed_only", false)
             ready(tr("查看分应用名单", "List apps", "Список приложений")) {
                 val s = state()
                 val arr = JSONArray()
-                s.protectedApps.forEach { arr.put(JSONObject().put("app_id", it.id).put("name", Redactor.name(it.name)).put("proxied", it.enabled)) }
+                s.protectedApps
+                    .filter { category == null || it.category == category }
+                    .forEach { app ->
+                        val installed = runCatching { context.packageManager.getApplicationInfo(app.id, 0) }.isSuccess
+                        if (installedOnly && !installed) return@forEach
+                        arr.put(
+                            JSONObject().put("app_id", app.id).put("name", Redactor.name(app.name))
+                                .put("category", APP_CATEGORY_KEYS[app.category] ?: app.category)
+                                .put("installed", installed).put("proxied", app.enabled),
+                        )
+                    }
                 ToolResult(JSONObject().put("per_app_mode", s.proxyMode == ProxyMode.PerApp).put("apps", arr), "${arr.length()} apps.")
             }
         }
@@ -936,6 +1075,7 @@ object McpTools {
             .put("total_rules", source.totalRules)
             .put("converted_rules", source.convertedRules)
             .put("skipped_rules", source.skippedRules)
+            .put("about", RuleSourceManager.builtInHint(source.id)?.second ?: JSONObject.NULL)
             .put("error", source.lastError?.let(Redactor::text) ?: JSONObject.NULL)
 
         private fun regionName(region: AppGeoRoutingRegion) = when (region) {
@@ -959,6 +1099,19 @@ object McpTools {
     }
 
     // ---- building blocks ---------------------------------------------------------------
+
+    /** Per-app categories (stored in Chinese) as stable keys for AI clients. */
+    private val APP_CATEGORY_KEYS = linkedMapOf(
+        "AI" to "ai",
+        "通讯" to "messaging",
+        "社交" to "social",
+        "视频" to "video",
+        "音乐" to "music",
+        "Google 与系统" to "google_system",
+        "浏览器" to "browsers",
+        "办公效率" to "work",
+        "新闻阅读" to "news",
+    )
 
     private fun tool(
         name: String,
