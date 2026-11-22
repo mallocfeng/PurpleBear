@@ -41,7 +41,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
@@ -79,13 +78,17 @@ internal fun GroupSectionCard(
     val isLocal = section.group.type == ServerGroupType.Local
     val fastestLatency = section.servers.mapNotNull { it.latencyMs.takeIf { ms -> ms > 0 } }.minOrNull()
     var menuOpen by remember { mutableStateOf(false) }
-    GroupedCard {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(CardRadius))
+            .background(GroupCardColor),
+    ) {
         // Group header: a rounded-square type icon, bold name and a full-width
         // divider set it apart from the round-avatar node rows it contains.
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(GroupHeaderTint)
                 .clickable(onClick = onToggleGroup)
                 .padding(start = 14.dp, end = 4.dp, top = 14.dp, bottom = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -197,15 +200,13 @@ internal fun GroupSectionCard(
         }
 
         if (expanded) {
-            // Full-width line and a slightly different shade: the rows below
-            // read as the contents of this group, not as more groups.
-            GroupDivider(startIndent = 0.dp)
-            val accent = GroupContentAccent
+            // The nodes sit in an inset panel inside the group card.
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(GroupContentTint)
-                    .drawBehind { drawRect(accent, size = Size(3.dp.toPx(), size.height)) },
+                    .padding(start = 8.dp, end = 8.dp, bottom = 8.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(GroupPanelColor),
             ) {
                 if (section.servers.isEmpty()) {
                     Text(
