@@ -177,6 +177,10 @@ Release 包输出在 `app/build/outputs/apk/release/app-release.apk`。签名读
 
 ## 更新日志
 
+### 0.8.7.3
+
+- 发往国外的 QUIC 一律回退到 TCP，代理节点不再承载 QUIC；发往国内的 QUIC 照常直连。
+
 ### 0.8.7.2
 
 - 修复规则分流下微信图片、视频加载不出来：发往国内的 QUIC 不再被丢弃，照常直连。

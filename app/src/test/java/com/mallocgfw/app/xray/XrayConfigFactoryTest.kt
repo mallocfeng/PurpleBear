@@ -4,6 +4,7 @@ import com.mallocgfw.app.model.AppGeoRoutingRegion
 import com.mallocgfw.app.model.ServerNode
 import org.json.JSONArray
 import org.json.JSONObject
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -50,7 +51,7 @@ class XrayConfigFactoryTest {
     }
 
     @Test
-    fun vpnConfigLetsChinaQuicGoDirectBeforeBlockingProxiedQuic() {
+    fun vpnConfigBlocksOnlyForeignQuicBeforeUserRules() {
         val config = JSONObject(
             XrayConfigFactory.buildVpn(
                 node = testNode(),
@@ -60,23 +61,43 @@ class XrayConfigFactoryTest {
         )
         val rules = config.getJSONObject("routing").getJSONArray("rules")
 
-        val globalUdp443BlockIndex = rules.indexOfFirstRule { rule ->
+        val udp443BlockIndex = rules.indexOfFirstRule { rule ->
             rule.optString("outboundTag") == "block" &&
                 rule.optString("network") == "udp" &&
                 rule.optString("port") == "443" &&
                 rule.optJSONArray("domain") == null
         }
-        val lastDirectIndex = (0 until rules.length()).lastOrNull { index ->
-            rules.getJSONObject(index).optString("outboundTag") == "direct"
-        } ?: -1
-        val fallbackIndex = rules.indexOfFirstRule { rule ->
-            rule.optString("network") == "tcp,udp"
+        val geoDirectIndex = rules.indexOfFirstRule { rule ->
+            rule.optString("outboundTag") == "direct" &&
+                rule.domainValues().contains("geosite:cn")
         }
 
-        assertTrue("VPN should still block proxied UDP/443", globalUdp443BlockIndex >= 0)
-        assertTrue("China and private direct rules should exist", lastDirectIndex >= 0)
-        assertTrue("UDP/443 block should run after every direct rule", globalUdp443BlockIndex > lastDirectIndex)
-        assertTrue("UDP/443 block should run before the proxy fallback", globalUdp443BlockIndex < fallbackIndex)
+        assertTrue("VPN should block foreign UDP/443", udp443BlockIndex >= 0)
+        assertEquals(
+            listOf("geoip:!cn"),
+            rules.getJSONObject(udp443BlockIndex).ipValues(),
+        )
+        assertTrue("Foreign UDP/443 block should run before geo direct", udp443BlockIndex < geoDirectIndex)
+    }
+
+    @Test
+    fun globalProxyVpnBlocksAllUdp443() {
+        val config = JSONObject(
+            XrayConfigFactory.buildVpn(
+                node = testNode(),
+                geoRoutingRegion = AppGeoRoutingRegion.China,
+                globalProxyEnabled = true,
+            ),
+        )
+        val rules = config.getJSONObject("routing").getJSONArray("rules")
+        val udp443BlockIndex = rules.indexOfFirstRule { rule ->
+            rule.optString("outboundTag") == "block" &&
+                rule.optString("network") == "udp" &&
+                rule.optString("port") == "443" &&
+                rule.optJSONArray("domain") == null &&
+                rule.optJSONArray("ip") == null
+        }
+        assertTrue("Global proxy should block every UDP/443", udp443BlockIndex >= 0)
     }
 
     @Test
@@ -122,6 +143,11 @@ class XrayConfigFactoryTest {
             if (predicate(getJSONObject(index))) return index
         }
         return -1
+    }
+
+    private fun JSONObject.ipValues(): List<String> {
+        val ips = optJSONArray("ip") ?: return emptyList()
+        return List(ips.length()) { index -> ips.getString(index) }
     }
 
     private fun JSONObject.domainValues(): List<String> {

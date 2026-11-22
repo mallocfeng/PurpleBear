@@ -2,6 +2,12 @@
 
 PurpleBear 各版本的完整更新记录。安装包见 [GitHub Releases](https://github.com/mallocfeng/PurpleBear/releases)。
 
+## 0.8.7.3
+
+1. 调整 QUIC（UDP 443）处理：发往国外的 QUIC 一律丢弃、回退到 TCP，包括命中流媒体或代理规则的流量，代理节点不再承载 QUIC，避免节点 UDP 不佳时首次加载卡顿；发往国内的 QUIC 照常直连（微信图片、视频正常）。全局代理模式下仍丢弃全部 QUIC，Google Play 下载行为不变。
+
+2. 更新版本号到 `0.8.7.3`，`versionCode` 更新为 `287`。
+
 ## 0.8.7.2
 
 1. 修复开启代理（规则分流、中国直连）后微信图片、视频加载不出来：VPN 模式为了让 Google Play 下载回退到 TCP，会丢弃所有 UDP 443（QUIC）流量，而且这条规则排在“中国直连”之前，连发往国内的 QUIC 也被丢掉了。现在 QUIC 先经过直连规则，发往国内和局域网的照常直连；只有将要走代理的 QUIC 才会被丢弃并回退到 TCP，Google Play 下载行为不变。

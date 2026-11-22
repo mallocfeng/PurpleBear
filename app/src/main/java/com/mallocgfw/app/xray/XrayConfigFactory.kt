@@ -279,6 +279,24 @@ object XrayConfigFactory {
             )
         }
 
+        if (forceUdp443Fallback) {
+            // QUIC to the proxy is dropped so apps fall back to TCP (QUIC
+            // sniffing is best-effort, so this also covers Play downloads
+            // whose domain was not extracted). QUIC to the home region (WeChat
+            // images and videos, for example) is left to the direct rules.
+            rules.put(
+                JSONObject().apply {
+                    put("type", "field")
+                    put("network", "udp")
+                    put("port", "443")
+                    if (!globalProxyEnabled) {
+                        put("ip", JSONArray().put("geoip:!${geoRoutingRegion.geoipCode}"))
+                    }
+                    put("outboundTag", "block")
+                },
+            )
+        }
+
         val effectiveRoutingRules = if (globalProxyEnabled) emptyList() else routingRules
 
         effectiveRoutingRules
@@ -355,22 +373,6 @@ object XrayConfigFactory {
                         put("geoip:${geoRoutingRegion.geoipCode}")
                     })
                     put("outboundTag", "direct")
-                },
-            )
-        }
-
-        if (forceUdp443Fallback) {
-            // QUIC that is about to go through the proxy is dropped so apps
-            // fall back to TCP (QUIC domain sniffing is best-effort, so this
-            // also covers Play downloads whose domain was not extracted). It
-            // sits after the direct rules: QUIC to China and private networks
-            // (WeChat images and videos, for example) must go direct.
-            rules.put(
-                JSONObject().apply {
-                    put("type", "field")
-                    put("network", "udp")
-                    put("port", "443")
-                    put("outboundTag", "block")
                 },
             )
         }
@@ -518,7 +520,7 @@ object XrayConfigFactory {
         }
         if (forceUdp443Fallback) {
             // Sniffed Play QUIC falls back to TCP. Unsniffed QUIC is caught by
-            // the general UDP/443 block after the direct rules.
+            // the UDP/443 block after the Tailscale rules.
             rules.put(
                 JSONObject().apply {
                     put("type", "field")
