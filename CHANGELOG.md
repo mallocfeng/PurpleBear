@@ -2,6 +2,14 @@
 
 PurpleBear 各版本的完整更新记录。安装包见 [GitHub Releases](https://github.com/mallocfeng/PurpleBear/releases)。
 
+## 0.8.7.4
+
+1. 新增“允许 QUIC 走代理”开关（设置 → 连接设置，默认关闭）：开启后发往国外的 QUIC（UDP 443）通过代理节点转发，适合 Hysteria2、TUIC 等 UDP 节点；关闭时与 0.8.7.3 相同，国外 QUIC 回退到 TCP。无论开关如何，发往国内的 QUIC 都直连，Google Play 的 QUIC 仍回退到 TCP。连接中切换会自动重连生效。
+
+2. AI 远程控制的“查看设置”会返回该开关的状态。
+
+3. 更新版本号到 `0.8.7.4`，`versionCode` 更新为 `288`。
+
 ## 0.8.7.3
 
 1. 调整 QUIC（UDP 443）处理：发往国外的 QUIC 一律丢弃、回退到 TCP，包括命中流媒体或代理规则的流量，代理节点不再承载 QUIC，避免节点 UDP 不佳时首次加载卡顿；发往国内的 QUIC 照常直连（微信图片、视频正常）。全局代理模式下仍丢弃全部 QUIC，Google Play 下载行为不变。

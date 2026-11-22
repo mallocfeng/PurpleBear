@@ -70,6 +70,7 @@ object DiagnosticsManager {
                 server,
                 globalProxyEnabled = settings.globalProxyEnabled,
                 geoRoutingRegion = settings.geoRoutingRegion,
+                proxyQuicEnabled = settings.proxyQuicEnabled,
             )
             JSONObject(config)
         }.fold(

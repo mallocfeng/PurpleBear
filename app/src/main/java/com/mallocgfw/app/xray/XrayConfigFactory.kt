@@ -129,6 +129,8 @@ object XrayConfigFactory {
         globalProxyEnabled: Boolean = false,
         geoRoutingRegion: AppGeoRoutingRegion = AppGeoRoutingRegion.defaultForLanguage(AppLanguage.System),
         tailscale: TailscaleRouting? = null,
+        /** Let foreign QUIC go through the proxy (good for UDP nodes such as Hysteria2 and TUIC). */
+        proxyQuicEnabled: Boolean = false,
         localProxy: LocalProxyAllocation = LocalProxyRuntime.current() ?: LocalProxyAllocation.ephemeral(),
     ): String {
         val normalizedMtu = normalizedAppVpnMtu(vpnMtu)
@@ -193,6 +195,7 @@ object XrayConfigFactory {
                             routingRules,
                             forceSpeedTestToProxy = true,
                             forceUdp443Fallback = true,
+                            blockForeignUdp443 = !proxyQuicEnabled,
                             globalProxyEnabled = globalProxyEnabled,
                             geoRoutingRegion = geoRoutingRegion,
                             tailscale = tailscale,
@@ -211,6 +214,7 @@ object XrayConfigFactory {
         routingRules: List<XrayRoutingRule>,
         forceSpeedTestToProxy: Boolean = false,
         forceUdp443Fallback: Boolean = false,
+        blockForeignUdp443: Boolean = forceUdp443Fallback,
         globalProxyEnabled: Boolean = false,
         geoRoutingRegion: AppGeoRoutingRegion = AppGeoRoutingRegion.defaultForLanguage(AppLanguage.System),
         tailscale: TailscaleRouting? = null,
@@ -279,7 +283,7 @@ object XrayConfigFactory {
             )
         }
 
-        if (forceUdp443Fallback) {
+        if (blockForeignUdp443) {
             // QUIC to the proxy is dropped so apps fall back to TCP (QUIC
             // sniffing is best-effort, so this also covers Play downloads
             // whose domain was not extracted). QUIC to the home region (WeChat

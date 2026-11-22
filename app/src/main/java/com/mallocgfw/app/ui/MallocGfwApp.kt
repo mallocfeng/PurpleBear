@@ -1224,6 +1224,26 @@ fun MallocGfwApp(
         }
     }
 
+    fun updateProxyQuic(enabled: Boolean) {
+        if (enabled == appSettings.proxyQuicEnabled) return
+        AppController.edit { StateOps.setProxyQuic(it, enabled) }
+        val state = if (enabled) {
+            tr("已允许 QUIC 走代理", "QUIC through the proxy is on", "QUIC через прокси включён")
+        } else {
+            tr("国外 QUIC 已改用 TCP", "Foreign QUIC now falls back to TCP", "Зарубежный QUIC теперь переходит на TCP")
+        }
+        val activeServer = resolveServerForSettingsReconnect()
+        if (connectionStatus == ConnectionStatus.Connected && activeServer != null) {
+            settingsMessage = tr("$state，正在重连以生效。", "$state. Reconnecting to apply it.", "$state. Переподключение для применения.")
+            reconnectVpnForSettingsChange(
+                server = activeServer,
+                message = tr("$state，正在重连 VPN…", "$state. Reconnecting VPN…", "$state. Переподключение VPN…"),
+            )
+        } else {
+            settingsMessage = tr("$state，下次连接生效。", "$state. Takes effect on the next connection.", "$state. Вступит в силу при следующем подключении.")
+        }
+    }
+
     fun openLogViewer() {
         logViewerText = AppLogManager.readRecentLogs(context)
         navigateSecondary(AppScreen.LogViewer)
@@ -2258,6 +2278,7 @@ fun MallocGfwApp(
                             settingsMessage = appText("心跳检测间隔已设置为 $minutes 分钟。", "Fallback check interval set to $minutes minutes.", "Интервал проверки резервного узла: $minutes мин.", resolvedLanguage)
                         },
                         onVpnMtuChange = ::updateVpnMtu,
+                        onProxyQuicChange = ::updateProxyQuic,
                         onDailyAutoUpdateChange = { enabled ->
                             appSettings = appSettings.copy(dailyAutoUpdate = enabled)
                             settingsMessage = if (enabled) {

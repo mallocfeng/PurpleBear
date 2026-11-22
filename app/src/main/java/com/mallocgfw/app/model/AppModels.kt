@@ -376,4 +376,6 @@ data class AppSettings(
     val tailscaleSubnetRoutes: List<String>,
     val tailscaleExitNodeId: String,
     val tailscaleAlwaysUseDerp: Boolean,
+    /** Send foreign QUIC (UDP 443) through the proxy instead of making apps fall back to TCP. */
+    val proxyQuicEnabled: Boolean = false,
 )

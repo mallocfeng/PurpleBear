@@ -200,6 +200,7 @@ object McpTools {
                     .put("custom_dns", st.customDnsValue)
                     .put("mtu", st.vpnMtu)
                     .put("mtu_options", JSONArray(AppVpnMtuOptions))
+                    .put("proxy_quic", st.proxyQuicEnabled)
                     .put("direct_region", regionName(st.geoRoutingRegion))
                     .put("media_routing_enabled", st.streamingRoutingEnabled)
                     .put("media_routes", JSONArray().also { arr -> st.streamingSelections.forEach { arr.put(JSONObject().put("service_id", it.serviceId).put("node_id", it.serverId)) } })

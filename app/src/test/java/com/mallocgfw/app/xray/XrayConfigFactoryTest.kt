@@ -101,6 +101,31 @@ class XrayConfigFactoryTest {
     }
 
     @Test
+    fun proxyQuicSettingKeepsOnlyThePlayQuicBlock() {
+        val config = JSONObject(
+            XrayConfigFactory.buildVpn(
+                node = testNode(),
+                geoRoutingRegion = AppGeoRoutingRegion.China,
+                globalProxyEnabled = false,
+                proxyQuicEnabled = true,
+            ),
+        )
+        val rules = config.getJSONObject("routing").getJSONArray("rules")
+        val generalUdp443BlockIndex = rules.indexOfFirstRule { rule ->
+            rule.optString("outboundTag") == "block" &&
+                rule.optString("port") == "443" &&
+                rule.optJSONArray("domain") == null
+        }
+        val playUdp443BlockIndex = rules.indexOfFirstRule { rule ->
+            rule.optString("outboundTag") == "block" &&
+                rule.optString("port") == "443" &&
+                rule.domainValues().contains("domain:play.googleapis.com")
+        }
+        assertTrue("Proxy QUIC should not block foreign UDP/443", generalUdp443BlockIndex < 0)
+        assertTrue("Play QUIC should still fall back to TCP", playUdp443BlockIndex >= 0)
+    }
+
+    @Test
     fun standaloneProxyDoesNotGloballyBlockUdp443() {
         val config = JSONObject(XrayConfigFactory.build(node = testNode()))
         val rules = config.getJSONObject("routing").getJSONArray("rules")

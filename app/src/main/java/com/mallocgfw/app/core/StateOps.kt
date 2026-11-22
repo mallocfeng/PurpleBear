@@ -440,6 +440,9 @@ object StateOps {
     fun setMtu(state: PersistedAppState, mtu: Int): PersistedAppState =
         state.copy(settings = state.settings.copy(vpnMtu = normalizedAppVpnMtu(mtu)))
 
+    fun setProxyQuic(state: PersistedAppState, enabled: Boolean): PersistedAppState =
+        state.copy(settings = state.settings.copy(proxyQuicEnabled = enabled))
+
     fun setHeartbeat(state: PersistedAppState, minutes: Int): PersistedAppState =
         state.copy(settings = state.settings.copy(heartbeatIntervalMinutes = minutes.takeIf { it in HeartbeatOptionsMinutes } ?: 5))
 

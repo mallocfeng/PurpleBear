@@ -283,6 +283,7 @@ internal fun SettingsScreen(
     onLanguageChange: (AppLanguage) -> Unit,
     onHeartbeatIntervalChange: (Int) -> Unit,
     onVpnMtuChange: (Int) -> Unit,
+    onProxyQuicChange: (Boolean) -> Unit,
     onDailyAutoUpdateChange: (Boolean) -> Unit,
     onUpdateNotificationsChange: (Boolean) -> Unit,
     onOpenUpdates: () -> Unit,
@@ -380,6 +381,13 @@ internal fun SettingsScreen(
                     subtitle = settings.vpnMtuSummary(),
                     actionText = "设置",
                     onAction = { showMtuDialog = true },
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                SettingToggleRow(
+                    title = "允许 QUIC 走代理",
+                    subtitle = "适合 Hysteria2、TUIC 节点。关闭时国外 QUIC 改用 TCP，更稳定。",
+                    checked = settings.proxyQuicEnabled,
+                    onToggle = { onProxyQuicChange(!settings.proxyQuicEnabled) },
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 SettingActionRow(

@@ -177,6 +177,10 @@ Release 包输出在 `app/build/outputs/apk/release/app-release.apk`。签名读
 
 ## 更新日志
 
+### 0.8.7.4
+
+- 新增“允许 QUIC 走代理”开关（默认关闭），适合 Hysteria2、TUIC 等 UDP 节点。
+
 ### 0.8.7.3
 
 - 发往国外的 QUIC 一律回退到 TCP，代理节点不再承载 QUIC；发往国内的 QUIC 照常直连。

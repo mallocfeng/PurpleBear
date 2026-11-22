@@ -131,6 +131,7 @@ object XrayCoreManager {
                 globalProxyEnabled = settings.globalProxyEnabled,
                 geoRoutingRegion = settings.geoRoutingRegion,
                 tailscale = TailscaleRuntimeManager.snapshot.value.routing(settings),
+                proxyQuicEnabled = settings.proxyQuicEnabled,
                 localProxy = localProxy,
             )
         }

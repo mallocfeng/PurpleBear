@@ -35,6 +35,7 @@ object AppStateStore {
             tailscaleSubnetRoutes = emptyList(),
             tailscaleExitNodeId = "",
             tailscaleAlwaysUseDerp = false,
+            proxyQuicEnabled = false,
         )
     }
 
@@ -375,6 +376,7 @@ object AppStateStore {
                 put("tailscaleSubnetRoutes", JSONArray(state.settings.tailscaleSubnetRoutes))
                 put("tailscaleExitNodeId", state.settings.tailscaleExitNodeId)
                 put("tailscaleAlwaysUseDerp", state.settings.tailscaleAlwaysUseDerp)
+                put("proxyQuicEnabled", state.settings.proxyQuicEnabled)
                 put("streamingSelections", JSONArray().apply {
                     state.settings.streamingSelections.forEach { selection ->
                         put(JSONObject().apply {
@@ -418,6 +420,7 @@ object AppStateStore {
             tailscaleSubnetRoutes = optJSONArray("tailscaleSubnetRoutes").toStrings(),
             tailscaleExitNodeId = optString("tailscaleExitNodeId", defaults.tailscaleExitNodeId),
             tailscaleAlwaysUseDerp = optBoolean("tailscaleAlwaysUseDerp", defaults.tailscaleAlwaysUseDerp),
+            proxyQuicEnabled = optBoolean("proxyQuicEnabled", defaults.proxyQuicEnabled),
         )
     }
 
