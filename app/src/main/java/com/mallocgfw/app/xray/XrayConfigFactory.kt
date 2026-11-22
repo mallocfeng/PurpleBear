@@ -359,6 +359,22 @@ object XrayConfigFactory {
             )
         }
 
+        if (forceUdp443Fallback) {
+            // QUIC that is about to go through the proxy is dropped so apps
+            // fall back to TCP (QUIC domain sniffing is best-effort, so this
+            // also covers Play downloads whose domain was not extracted). It
+            // sits after the direct rules: QUIC to China and private networks
+            // (WeChat images and videos, for example) must go direct.
+            rules.put(
+                JSONObject().apply {
+                    put("type", "field")
+                    put("network", "udp")
+                    put("port", "443")
+                    put("outboundTag", "block")
+                },
+            )
+        }
+
         // Explicit fallback so the default outbound never depends on the order
         // of the outbounds array (streaming/pre-proxy chains can re-order it).
         rules.put(
@@ -501,12 +517,12 @@ object XrayConfigFactory {
             GOOGLE_PLAY_DOWNLOAD_DOMAINS.forEach { put("domain:$it") }
         }
         if (forceUdp443Fallback) {
-            // QUIC domain sniffing is best-effort. Blocking UDP/443 at the VPN
-            // layer makes Play downloads deterministically fall back to TCP
-            // even when the ClientHello domain cannot be extracted.
+            // Sniffed Play QUIC falls back to TCP. Unsniffed QUIC is caught by
+            // the general UDP/443 block after the direct rules.
             rules.put(
                 JSONObject().apply {
                     put("type", "field")
+                    put("domain", JSONArray(domains.toString()))
                     put("network", "udp")
                     put("port", "443")
                     put("outboundTag", "block")

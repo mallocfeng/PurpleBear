@@ -19,11 +19,11 @@ class XrayConfigFactoryTest {
         )
 
         val rules = config.getJSONObject("routing").getJSONArray("rules")
-        val udp443FallbackIndex = rules.indexOfFirstRule { rule ->
+        val playUdp443BlockIndex = rules.indexOfFirstRule { rule ->
             rule.optString("outboundTag") == "block" &&
                 rule.optString("network") == "udp" &&
                 rule.optString("port") == "443" &&
-                rule.optJSONArray("domain") == null
+                rule.domainValues().contains("domain:play.googleapis.com")
         }
         val googlePlayProxyIndex = rules.indexOfFirstRule { rule ->
             rule.optString("outboundTag") == "proxy" &&
@@ -42,11 +42,41 @@ class XrayConfigFactoryTest {
                 rule.domainValues().contains("geosite:cn")
         }
 
-        assertTrue("VPN UDP/443 fallback rule should exist", udp443FallbackIndex >= 0)
+        assertTrue("Play UDP/443 block rule should exist", playUdp443BlockIndex >= 0)
         assertTrue("Google Play proxy rule should exist", googlePlayProxyIndex >= 0)
         assertTrue("Geo direct rule should exist in China smart routing", geoDirectIndex >= 0)
-        assertTrue("UDP/443 fallback should run before Google Play proxy", udp443FallbackIndex < googlePlayProxyIndex)
+        assertTrue("Play UDP/443 block should run before Google Play proxy", playUdp443BlockIndex < googlePlayProxyIndex)
         assertTrue("Google Play proxy should run before Geo direct", googlePlayProxyIndex < geoDirectIndex)
+    }
+
+    @Test
+    fun vpnConfigLetsChinaQuicGoDirectBeforeBlockingProxiedQuic() {
+        val config = JSONObject(
+            XrayConfigFactory.buildVpn(
+                node = testNode(),
+                geoRoutingRegion = AppGeoRoutingRegion.China,
+                globalProxyEnabled = false,
+            ),
+        )
+        val rules = config.getJSONObject("routing").getJSONArray("rules")
+
+        val globalUdp443BlockIndex = rules.indexOfFirstRule { rule ->
+            rule.optString("outboundTag") == "block" &&
+                rule.optString("network") == "udp" &&
+                rule.optString("port") == "443" &&
+                rule.optJSONArray("domain") == null
+        }
+        val lastDirectIndex = (0 until rules.length()).lastOrNull { index ->
+            rules.getJSONObject(index).optString("outboundTag") == "direct"
+        } ?: -1
+        val fallbackIndex = rules.indexOfFirstRule { rule ->
+            rule.optString("network") == "tcp,udp"
+        }
+
+        assertTrue("VPN should still block proxied UDP/443", globalUdp443BlockIndex >= 0)
+        assertTrue("China and private direct rules should exist", lastDirectIndex >= 0)
+        assertTrue("UDP/443 block should run after every direct rule", globalUdp443BlockIndex > lastDirectIndex)
+        assertTrue("UDP/443 block should run before the proxy fallback", globalUdp443BlockIndex < fallbackIndex)
     }
 
     @Test
