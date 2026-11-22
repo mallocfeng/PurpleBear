@@ -57,6 +57,7 @@ import com.mallocgfw.app.model.ServerGroup
 import com.mallocgfw.app.model.ServerNode
 import com.mallocgfw.app.model.ServerGroupType
 import com.mallocgfw.app.model.StreamingMediaService
+import com.mallocgfw.app.model.StreamingRegion
 import com.mallocgfw.app.model.StreamingRouteSelection
 import com.mallocgfw.app.update.AppUpdateInfo
 import com.mallocgfw.app.update.AppUpdateStatus
@@ -825,6 +826,9 @@ private fun UpdateAction(
     }
 }
 
+/** Country tab of the media routing list; kept while the node picker is open. null: all. */
+private val mediaRoutingRegion = mutableStateOf<StreamingRegion?>(null)
+
 @Composable
 internal fun MediaRoutingScreen(
     padding: PaddingValues,
@@ -893,7 +897,35 @@ internal fun MediaRoutingScreen(
         }
         item {
             SettingsGroup(title = "流媒体列表") {
-                services.forEachIndexed { index, service ->
+                var region by mediaRoutingRegion
+                // In a country tab, that country's own services come before global ones.
+                val shown = region?.let { tab ->
+                    services.filter { tab in it.regions }.sortedBy { if (it.regions.first() == tab) 0 else 1 }
+                } ?: services
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ChoiceChip(
+                        text = "${uiText("全部", "All", "Все")} ${services.size}",
+                        selected = region == null,
+                        onClick = { region = null },
+                    )
+                    StreamingRegion.entries.forEach { option ->
+                        val count = services.count { option in it.regions }
+                        if (count > 0) {
+                            ChoiceChip(
+                                text = "${option.flag} ${uiText(option.zh, option.en, option.ru)} $count",
+                                selected = region == option,
+                                onClick = { region = option },
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                shown.forEachIndexed { index, service ->
                     MediaRoutingServiceRow(
                         service = service,
                         enabled = enabled,
@@ -905,7 +937,7 @@ internal fun MediaRoutingScreen(
                         ),
                         onClick = { onOpenService(service.id) },
                     )
-                    if (index != services.lastIndex) {
+                    if (index != shown.lastIndex) {
                         Spacer(modifier = Modifier.height(12.dp))
                     }
                 }

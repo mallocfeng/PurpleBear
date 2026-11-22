@@ -2,6 +2,20 @@
 
 PurpleBear 各版本的完整更新记录。安装包见 [GitHub Releases](https://github.com/mallocfeng/PurpleBear/releases)。
 
+## 0.8.8
+
+1. 流媒体列表新增国家分类标签：全部、美国、日本、香港、台湾、新加坡、英国、全球，点击后只显示该国家的服务，本国服务排在前面；从节点选择返回时保留所选标签。
+
+2. 新增 19 个流媒体服务：TikTok、Twitch、Qobuz、ESPN、Fubo、Sling TV、TVer、DMM TV、myTV SUPER、Now E、JOOX、friDay 影音、iQIYI 国际版、WeTV、meWATCH、BBC iPlayer、ITVX、BritBox、Sky Go，共 57 个。
+
+3. “Max”更名为“HBO Max”（规则同时覆盖 max.com 与 hbomax.com，已保存的选择不受影响）。已核对全部规则地址仍然有效。
+
+4. 修复开启流媒体分流后，未指定节点的服务也被强制走代理、导致国内 Bilibili、腾讯视频等域名不再直连。现在只有指定了节点的服务才单独分流，其余按普通规则处理；每日同步也只下载已指定服务的规则。
+
+5. AI 远程控制的流媒体服务列表会返回每个服务的国家标签。
+
+6. 更新版本号到 `0.8.8`，`versionCode` 更新为 `289`。
+
 ## 0.8.7.4
 
 1. 新增“允许 QUIC 走代理”开关（设置 → 连接设置，默认关闭）：开启后发往国外的 QUIC（UDP 443）通过代理节点转发，适合 Hysteria2、TUIC 等 UDP 节点；关闭时与 0.8.7.3 相同，国外 QUIC 回退到 TCP。无论开关如何，发往国内的 QUIC 都直连，Google Play 的 QUIC 仍回退到 TCP。连接中切换会自动重连生效。

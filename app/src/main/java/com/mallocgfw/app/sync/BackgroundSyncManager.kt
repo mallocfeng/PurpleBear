@@ -103,7 +103,7 @@ object BackgroundSyncManager {
         }
 
         val refreshedStreamingRules = runCatching {
-            StreamingMediaManager.refreshAll(context)
+            StreamingMediaManager.refreshAll(context, state.settings)
         }.onSuccess {
             AppLogManager.append(context, "SYNC", "流媒体分流规则已同步")
         }.onFailure { error ->

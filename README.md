@@ -177,6 +177,10 @@ Release 包输出在 `app/build/outputs/apk/release/app-release.apk`。签名读
 
 ## 更新日志
 
+### 0.8.8
+
+- 流媒体列表新增国家分类标签，新增 TikTok、BBC iPlayer、TVer、myTV SUPER 等 19 个服务（共 57 个）；未指定节点的服务不再强制走代理。
+
 ### 0.8.7.4
 
 - 新增“允许 QUIC 走代理”开关（默认关闭），适合 Hysteria2、TUIC 等 UDP 节点。

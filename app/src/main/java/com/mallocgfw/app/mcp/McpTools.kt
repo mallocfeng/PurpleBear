@@ -666,6 +666,7 @@ object McpTools {
                     arr.put(
                         JSONObject().put("service_id", service.id).put("name", service.name)
                             .put("suggested_region", service.suggestedRegion)
+                            .put("regions", JSONArray(service.regions.map { it.name.lowercase() }))
                             .put("node_id", nodeId ?: JSONObject.NULL)
                             .put("node_name", nodeId?.let { id -> s.servers.firstOrNull { it.id == id }?.name?.let(Redactor::name) } ?: JSONObject.NULL),
                     )

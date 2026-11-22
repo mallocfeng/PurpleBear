@@ -8,12 +8,24 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
+/** Where a streaming service is mainly used; drives the country tabs of the media routing list. */
+enum class StreamingRegion(val flag: String, val zh: String, val en: String, val ru: String) {
+    US("🇺🇸", "美国", "US", "США"),
+    Japan("🇯🇵", "日本", "Japan", "Япония"),
+    HongKong("🇭🇰", "香港", "Hong Kong", "Гонконг"),
+    Taiwan("🇹🇼", "台湾", "Taiwan", "Тайвань"),
+    Singapore("🇸🇬", "新加坡", "Singapore", "Сингапур"),
+    UK("🇬🇧", "英国", "UK", "Великобритания"),
+    Global("🌐", "全球", "Global", "Весь мир"),
+}
+
 data class StreamingMediaService(
     val id: String,
     val name: String,
     val subtitle: String,
     val suggestedRegion: String,
     val ruleUrl: String,
+    val regions: List<StreamingRegion> = emptyList(),
 )
 
 data class StreamingRoutingSetup(
@@ -34,6 +46,7 @@ object StreamingMediaManager {
         subtitle: String,
         suggestedRegion: String,
         ruleFolder: String,
+        vararg regions: StreamingRegion,
     ): StreamingMediaService {
         return StreamingMediaService(
             id = id,
@@ -41,57 +54,104 @@ object StreamingMediaManager {
             subtitle = subtitle,
             suggestedRegion = suggestedRegion,
             ruleUrl = "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Surge/$ruleFolder/$ruleFolder.list",
+            regions = regions.toList(),
         )
     }
 
+    private val G = StreamingRegion.Global
+    private val US = StreamingRegion.US
+    private val JP = StreamingRegion.Japan
+    private val HK = StreamingRegion.HongKong
+    private val TW = StreamingRegion.Taiwan
+    private val SG = StreamingRegion.Singapore
+    private val UK = StreamingRegion.UK
+
+    // Ids are stored in users' selections: never rename one.
     val services = listOf(
-        service("netflix", "Netflix", "剧集和电影分流规则", "建议香港", "Netflix"),
-        service("disney", "Disney+", "Disney / Hulu on Disney 相关域名", "建议美国", "Disney"),
-        service("youtube", "YouTube", "视频与会员相关域名", "建议美国或日本", "YouTube"),
-        service("youtube_music", "YouTube Music", "音乐播放与账号相关域名", "建议美国或日本", "YouTubeMusic"),
-        service("primevideo", "Prime Video", "Prime Video 播放域名", "建议美国", "PrimeVideo"),
-        service("amazon_prime_video", "Amazon Prime Video", "Amazon Prime Video 更完整规则", "建议美国", "AmazonPrimeVideo"),
-        service("hulu", "Hulu", "Hulu 视频服务分流规则", "建议美国", "Hulu"),
-        service("hulu_jp", "Hulu JP", "日本区 Hulu 规则", "建议日本", "HuluJP"),
-        service("hulu_usa", "Hulu USA", "美国区 Hulu 规则", "建议美国", "HuluUSA"),
-        service("max", "Max", "Max / HBO Max 美国规则", "建议美国", "HBOUSA"),
-        service("hbo", "HBO", "HBO 通用规则", "建议美国", "HBO"),
-        service("hbo_asia", "HBO Asia", "HBO Asia 区域规则", "建议新加坡", "HBOAsia"),
-        service("hbo_hk", "HBO HK", "HBO 香港区规则", "建议香港", "HBOHK"),
-        service("spotify", "Spotify", "音乐流媒体与账号接口", "建议美国或新加坡", "Spotify"),
-        service("apple_tv", "Apple TV", "Apple TV / TV+ 播放规则", "建议美国", "AppleTV"),
-        service("apple_music", "Apple Music", "Apple Music 媒体规则", "建议美国", "AppleMusic"),
-        service("bahamut", "Bahamut", "巴哈姆特动画疯规则", "建议台湾", "Bahamut"),
-        service("abematv", "AbemaTV", "日本 AbemaTV 视频规则", "建议日本", "AbemaTV"),
-        service("bilibili", "BiliBili", "Bilibili 视频服务规则", "建议台湾或香港", "BiliBili"),
-        service("bilibili_intl", "BiliBili Intl", "BiliBili 国际版规则", "建议新加坡", "BiliBiliIntl"),
-        service("viutv", "ViuTV", "ViuTV 港区流媒体规则", "建议香港", "ViuTV"),
-        service("line_tv", "Line TV", "Line TV 视频规则", "建议台湾", "LineTV"),
-        service("litv", "LiTV", "LiTV 台湾影视规则", "建议台湾", "LiTV"),
-        service("kktv", "KKTV", "KKTV 台湾视频规则", "建议台湾", "KKTV"),
-        service("kkbox", "KKBOX", "KKBOX 音乐服务规则", "建议台湾", "KKBOX"),
-        service("discovery_plus", "Discovery+", "Discovery+ 流媒体规则", "建议美国", "DiscoveryPlus"),
-        service("fox_now", "FOX NOW", "FOX NOW 视频规则", "建议美国", "FOXNOW"),
-        service("encore_tvb", "EncoreTVB", "TVB 海外点播规则", "建议香港", "EncoreTVB"),
-        service("dazn", "DAZN", "DAZN 体育流媒体规则", "建议日本或德国", "DAZN"),
-        service("tidal", "TIDAL", "TIDAL 音乐服务规则", "建议美国", "TIDAL"),
-        service("soundcloud", "SoundCloud", "SoundCloud 音乐规则", "建议美国", "SoundCloud"),
-        service("pandora", "Pandora", "Pandora 音乐电台规则", "建议美国", "Pandora"),
-        service("deezer", "Deezer", "Deezer 音乐服务规则", "建议美国或法国", "Deezer"),
-        service("paramount_plus", "Paramount+", "Paramount+ 视频规则", "建议美国", "ParamountPlus"),
-        service("peacock", "Peacock", "Peacock 视频规则", "建议美国", "Peacock"),
-        service("niconico", "Niconico", "Niconico 视频规则", "建议日本", "Niconico"),
-        service("hami_video", "Hami Video", "Hami Video 台湾视频规则", "建议台湾", "HamiVideo"),
-        service("tvb", "TVB", "TVB 流媒体规则", "建议香港", "TVB"),
+        // Global
+        service("netflix", "Netflix", "剧集和电影分流规则", "建议香港", "Netflix", G),
+        service("disney", "Disney+", "Disney / Hulu on Disney 相关域名", "建议美国", "Disney", G, US),
+        service("youtube", "YouTube", "视频与会员相关域名", "建议美国或日本", "YouTube", G),
+        service("youtube_music", "YouTube Music", "音乐播放与账号相关域名", "建议美国或日本", "YouTubeMusic", G),
+        service("tiktok", "TikTok", "TikTok 国际版短视频规则", "建议美国或日本", "TikTok", G, US, JP, SG),
+        service("twitch", "Twitch", "Twitch 直播规则", "建议美国", "Twitch", G, US),
+        service("primevideo", "Prime Video", "Prime Video 播放域名", "建议美国", "PrimeVideo", G, US),
+        service("amazon_prime_video", "Amazon Prime Video", "Amazon Prime Video 更完整规则", "建议美国", "AmazonPrimeVideo", G, US),
+        service("apple_tv", "Apple TV", "Apple TV / TV+ 播放规则", "建议美国", "AppleTV", G, US),
+        service("apple_music", "Apple Music", "Apple Music 媒体规则", "建议美国", "AppleMusic", G),
+        service("spotify", "Spotify", "音乐流媒体与账号接口", "建议美国或新加坡", "Spotify", G),
+        service("dazn", "DAZN", "DAZN 体育流媒体规则", "建议日本或德国", "DAZN", G, JP),
+        service("tidal", "TIDAL", "TIDAL 音乐服务规则", "建议美国", "TIDAL", G),
+        service("deezer", "Deezer", "Deezer 音乐服务规则", "建议美国或法国", "Deezer", G),
+        service("qobuz", "Qobuz", "Qobuz 无损音乐规则", "建议美国或法国", "Qobuz", G),
+        service("soundcloud", "SoundCloud", "SoundCloud 音乐规则", "建议美国", "SoundCloud", G),
+        // United States
+        service("hulu", "Hulu", "Hulu 视频服务分流规则", "建议美国", "Hulu", US),
+        service("hulu_usa", "Hulu USA", "美国区 Hulu 规则", "建议美国", "HuluUSA", US),
+        service("max", "HBO Max", "HBO Max（曾用名 Max）美国规则", "建议美国", "HBOUSA", US),
+        service("hbo", "HBO", "HBO 通用规则", "建议美国", "HBO", US),
+        service("paramount_plus", "Paramount+", "Paramount+ 视频规则", "建议美国", "ParamountPlus", US),
+        service("peacock", "Peacock", "Peacock 视频规则", "建议美国", "Peacock", US),
+        service("discovery_plus", "Discovery+", "Discovery+ 流媒体规则", "建议美国", "DiscoveryPlus", US),
+        service("espn", "ESPN", "ESPN 体育直播规则", "建议美国", "Espn", US),
+        service("fubo", "Fubo", "Fubo 体育与电视直播规则", "建议美国", "FuboTV", US),
+        service("sling", "Sling TV", "Sling TV 电视直播规则", "建议美国", "Sling", US),
+        service("fox_now", "FOX NOW", "FOX NOW 视频规则", "建议美国", "FOXNOW", US),
+        service("pandora", "Pandora", "Pandora 音乐电台规则", "建议美国", "Pandora", US),
+        // Japan
+        service("abematv", "AbemaTV", "日本 AbemaTV 视频规则", "建议日本", "AbemaTV", JP),
+        service("tver", "TVer", "日本民放电视台点播规则", "建议日本", "TVer", JP),
+        service("niconico", "Niconico", "Niconico 视频规则", "建议日本", "Niconico", JP),
+        service("hulu_jp", "Hulu JP", "日本区 Hulu 规则", "建议日本", "HuluJP", JP),
+        service("dmm", "DMM TV", "DMM 视频与动画规则", "建议日本", "DMM", JP),
+        // Hong Kong
+        service("tvb", "TVB", "TVB 流媒体规则", "建议香港", "TVB", HK),
+        service("mytvsuper", "myTV SUPER", "TVB myTV SUPER 规则", "建议香港", "myTVSUPER", HK),
+        service("encore_tvb", "EncoreTVB", "TVB 海外点播规则", "建议香港", "EncoreTVB", HK),
+        service("viutv", "ViuTV", "ViuTV 港区流媒体规则", "建议香港", "ViuTV", HK),
+        service("now_e", "Now E", "Now E 港区视频规则", "建议香港", "NowE", HK),
+        service("hbo_hk", "HBO HK", "HBO 香港区规则", "建议香港", "HBOHK", HK),
+        service("joox", "JOOX", "JOOX 音乐服务规则", "建议香港", "JOOX", HK),
+        // Taiwan and Hong Kong
+        service("bilibili", "BiliBili", "Bilibili 港澳台番剧规则", "建议台湾或香港", "BiliBili", TW, HK),
+        service("kkbox", "KKBOX", "KKBOX 音乐服务规则", "建议台湾", "KKBOX", TW, HK),
+        // Taiwan
+        service("bahamut", "Bahamut", "巴哈姆特动画疯规则", "建议台湾", "Bahamut", TW),
+        service("kktv", "KKTV", "KKTV 台湾视频规则", "建议台湾", "KKTV", TW),
+        service("line_tv", "Line TV", "Line TV 视频规则", "建议台湾", "LineTV", TW),
+        service("litv", "LiTV", "LiTV 台湾影视规则", "建议台湾", "LiTV", TW),
+        service("friday", "friDay 影音", "friDay 影音台湾视频规则", "建议台湾", "friDay", TW),
+        service("hami_video", "Hami Video", "Hami Video 台湾视频规则", "建议台湾", "HamiVideo", TW),
+        // Singapore and Southeast Asia
+        service("bilibili_intl", "BiliBili Intl", "BiliBili 国际版规则", "建议新加坡", "BiliBiliIntl", SG),
+        service("iqiyi_intl", "iQIYI 国际版", "爱奇艺国际版（iQ.com）规则", "建议新加坡", "iQIYIIntl", SG, TW),
+        service("wetv", "WeTV", "腾讯视频海外版规则", "建议新加坡", "WeTV", SG),
+        service("mewatch", "meWATCH", "新加坡 Mediacorp 点播规则", "建议新加坡", "MeWatch", SG),
+        service("hbo_asia", "HBO Asia", "HBO Asia 区域规则", "建议新加坡", "HBOAsia", SG, HK, TW),
+        // United Kingdom
+        service("bbc", "BBC iPlayer", "BBC iPlayer 与 BBC 网站规则", "建议英国", "BBC", UK),
+        service("itv", "ITVX", "ITV 点播规则", "建议英国", "ITV", UK),
+        service("britbox", "BritBox", "BritBox 英剧规则", "建议英国", "BritboxUK", UK),
+        service("sky_go", "Sky Go", "Sky Go 直播与点播规则", "建议英国", "SkyGO", UK),
     )
+
+    fun services(region: StreamingRegion?): List<StreamingMediaService> =
+        if (region == null) services else services.filter { region in it.regions }.sortedBy { if (it.regions.first() == region) 0 else 1 }
 
     fun serviceById(serviceId: String): StreamingMediaService? {
         return services.firstOrNull { it.id == serviceId }
     }
 
-    suspend fun refreshAll(context: Context): Int {
+    /** Services the user sent through a chosen node. */
+    fun routedServices(settings: AppSettings): List<StreamingMediaService> {
+        val chosen = settings.streamingSelections.filter { it.serverId.isNotBlank() }.map { it.serviceId }.toSet()
+        return services.filter { it.id in chosen }
+    }
+
+    /** Refreshes the rule lists of the services that have a chosen node. */
+    suspend fun refreshAll(context: Context, settings: AppSettings): Int {
         return withContext(Dispatchers.IO) {
-            services.count { service ->
+            routedServices(settings).count { service ->
                 runCatching { refreshRules(context, service) }.isSuccess
             }
         }
@@ -110,17 +170,12 @@ object StreamingMediaManager {
             val outbounds = mutableListOf<XrayNamedOutbound>()
             val rules = mutableListOf<XrayRoutingRule>()
 
-            services.forEach { service ->
-                val preferredServerId = selections[service.id]?.serverId.orEmpty()
-                val preferredNode = serverById[preferredServerId]
-                val selectedNode = serverById[selectedServerId] ?: return@forEach
-                val resolvedNode = when {
-                    preferredServerId.isBlank() -> selectedNode
-                    preferredNode == null -> selectedNode
-                    else -> preferredNode
-                }
-                val resolvedServerId = resolvedNode.id
-                val node = resolvedNode
+            // Only services with a chosen node get a rule. The rest follow the
+            // normal rules, so their domains in the home region (Bilibili,
+            // Tencent video) still go direct.
+            routedServices(settings).forEach { service ->
+                val node = serverById[selections[service.id]?.serverId.orEmpty()] ?: return@forEach
+                val resolvedServerId = node.id
                 val outboundTag = if (resolvedServerId == selectedServerId) {
                     "proxy"
                 } else {
