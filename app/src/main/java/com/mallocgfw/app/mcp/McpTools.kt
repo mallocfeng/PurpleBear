@@ -882,11 +882,11 @@ object McpTools {
             .put("summary", Redactor.text(preview.summary))
             .put("node_names", JSONArray(preview.nodes.filterNot { it.hiddenUnsupported }.take(50).map { Redactor.name(it.name) }))
 
-        /** "name (id)" for approval prompts; [empty] when no node is given. */
+        /** The node's name for approval prompts (people read these, not ids); [empty] when no node is given. */
         private fun nodeLabel(id: String, empty: String = ""): String {
             if (id.isBlank()) return empty
             val node = state().servers.firstOrNull { it.id == id } ?: return id
-            return "${Redactor.name(node.name)} ($id)"
+            return Redactor.name(node.name)
         }
 
         private fun nodeRef(node: ServerNode) = JSONObject().put("id", node.id).put("name", Redactor.name(node.name))

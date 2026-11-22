@@ -177,6 +177,10 @@ Release 包输出在 `app/build/outputs/apk/release/app-release.apk`。签名读
 
 ## 更新日志
 
+### 0.8.7.1
+
+- 修复 AI 远程控制确认框等对话框跟随系统语言而非 App 语言；确认框只显示节点名称。
+
 ### 0.8.7
 
 - 新增 AI 远程控制（MCP）：电脑上的 Codex、Claude Code 可以查询状态、切换节点、修改配置；局域网或 Tailnet 监听，令牌鉴权，修改需在手机上确认，凭据永不外泄。

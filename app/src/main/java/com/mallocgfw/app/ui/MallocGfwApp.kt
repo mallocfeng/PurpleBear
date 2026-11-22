@@ -1790,78 +1790,78 @@ fun MallocGfwApp(
         onBack()
     }
 
-    if (startupHiddenUnsupportedNodeCount > 0 && screen != AppScreen.Launch) {
-        AlertDialog(
-            onDismissRequest = { startupHiddenUnsupportedNodeCount = 0 },
-            title = { Text(uiText("已隐藏不支持节点")) },
-            text = {
-                Text(
-                    uiText(
-                        "启动时已自动隐藏 $startupHiddenUnsupportedNodeCount 个 REALITY + gRPC 节点，这类线路当前版本暂不支持。",
-                        "$startupHiddenUnsupportedNodeCount unsupported REALITY + gRPC nodes were hidden at launch.", "При запуске скрыто неподдерживаемых узлов REALITY + gRPC: $startupHiddenUnsupportedNodeCount.",
-                    ),
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { startupHiddenUnsupportedNodeCount = 0 }) {
-                    Text(uiText("知道了"))
-                }
-            },
-        )
-    }
+    // App-level dialogs: give them the app language, not the system one.
+    CompositionLocalProvider(LocalAppLanguage provides appSettings.language.resolveAppLanguage()) {
+        if (startupHiddenUnsupportedNodeCount > 0 && screen != AppScreen.Launch) {
+            AlertDialog(
+                onDismissRequest = { startupHiddenUnsupportedNodeCount = 0 },
+                title = { Text(uiText("已隐藏不支持节点")) },
+                text = {
+                    Text(
+                        uiText(
+                            "启动时已自动隐藏 $startupHiddenUnsupportedNodeCount 个 REALITY + gRPC 节点，这类线路当前版本暂不支持。",
+                            "$startupHiddenUnsupportedNodeCount unsupported REALITY + gRPC nodes were hidden at launch.", "При запуске скрыто неподдерживаемых узлов REALITY + gRPC: $startupHiddenUnsupportedNodeCount.",
+                        ),
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { startupHiddenUnsupportedNodeCount = 0 }) {
+                        Text(uiText("知道了"))
+                    }
+                },
+            )
+        }
 
-    // Changes an AI client asked for over MCP, waiting for the phone owner's answer.
-    McpApprovalDialogHost()
+        if (showUpdatePrompt && updateState.info != null && screen != AppScreen.Launch) {
+            val info = updateState.info
+            AlertDialog(
+                onDismissRequest = { showUpdatePrompt = false },
+                title = { Text(uiText("发现新版本")) },
+                text = {
+                    Text(
+                        uiText(
+                            "PurpleBear ${info?.versionName.orEmpty()} 已发布，是否查看更新说明？",
+                            "PurpleBear ${info?.versionName.orEmpty()} is available. View release notes?", "Вышла версия PurpleBear ${info?.versionName.orEmpty()}. Посмотреть список изменений?",
+                        ),
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showUpdatePrompt = false
+                            navigateSecondary(AppScreen.Update)
+                        },
+                    ) {
+                        Text(uiText("查看"))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showUpdatePrompt = false }) {
+                        Text(uiText("稍后"))
+                    }
+                },
+            )
+        }
 
-    if (showUpdatePrompt && updateState.info != null && screen != AppScreen.Launch) {
-        val info = updateState.info
-        AlertDialog(
-            onDismissRequest = { showUpdatePrompt = false },
-            title = { Text(uiText("发现新版本")) },
-            text = {
-                Text(
-                    uiText(
-                        "PurpleBear ${info?.versionName.orEmpty()} 已发布，是否查看更新说明？",
-                        "PurpleBear ${info?.versionName.orEmpty()} is available. View release notes?", "Вышла версия PurpleBear ${info?.versionName.orEmpty()}. Посмотреть список изменений?",
-                    ),
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showUpdatePrompt = false
-                        navigateSecondary(AppScreen.Update)
-                    },
-                ) {
-                    Text(uiText("查看"))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showUpdatePrompt = false }) {
-                    Text(uiText("稍后"))
-                }
-            },
-        )
-    }
-
-    if (showLatestVersionDialog && screen != AppScreen.Launch) {
-        AlertDialog(
-            onDismissRequest = { showLatestVersionDialog = false },
-            title = { Text(uiText("已是最新版")) },
-            text = {
-                Text(
-                    uiText(
-                        "当前安装的 PurpleBear ${AppUpdateManager.currentVersionName(context)} 已是最新版。",
-                        "PurpleBear ${AppUpdateManager.currentVersionName(context)} is already up to date.", "Установленная версия PurpleBear ${AppUpdateManager.currentVersionName(context)} последняя.",
-                    ),
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { showLatestVersionDialog = false }) {
-                    Text(uiText("知道了"))
-                }
-            },
-        )
+        if (showLatestVersionDialog && screen != AppScreen.Launch) {
+            AlertDialog(
+                onDismissRequest = { showLatestVersionDialog = false },
+                title = { Text(uiText("已是最新版")) },
+                text = {
+                    Text(
+                        uiText(
+                            "当前安装的 PurpleBear ${AppUpdateManager.currentVersionName(context)} 已是最新版。",
+                            "PurpleBear ${AppUpdateManager.currentVersionName(context)} is already up to date.", "Установленная версия PurpleBear ${AppUpdateManager.currentVersionName(context)} последняя.",
+                        ),
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { showLatestVersionDialog = false }) {
+                        Text(uiText("知道了"))
+                    }
+                },
+            )
+        }
     }
 
     val selectedServer = servers.firstOrNull { it.id == selectedServerId } ?: servers.firstOrNull()
@@ -1949,6 +1949,9 @@ fun MallocGfwApp(
 
     CompositionLocalProvider(LocalAppLanguage provides resolvedLanguage) {
     MallocGfwTheme(lightTheme = appSettings.lightThemeEnabled) {
+        // Changes an AI client asked for over MCP, waiting for the phone owner's
+        // answer. Inside the language provider so the dialog follows the app language.
+        McpApprovalDialogHost()
         Surface(color = Background, modifier = Modifier.fillMaxSize()) {
             Box(modifier = Modifier.fillMaxSize()) {
                 screenStateHolder.SaveableStateProvider(screen.name) {
