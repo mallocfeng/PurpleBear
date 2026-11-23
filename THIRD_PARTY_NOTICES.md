@@ -38,17 +38,24 @@ above.
 - Binding source: https://github.com/XTLS/libXray/tree/v26.11.9
 - Source: https://github.com/XTLS/Xray-core/tree/v26.11.9
 - Packaged AAR path: `app/libs/libXray.aar`
-- Packaged AAR SHA-256: `897671ef1c763fcf780d23d240c68c1448c61fe7d51bfc5e76d5a2d4c565fb89`
+- Packaged AAR SHA-256: `be43fe74dadcde0a1e85df00f15a4e3490cc1bc8786e57e79583a4f3e7f2ecc6`
 - Local patches: `xray-patches/` (applied to Xray-core, see below)
 
 PurpleBear uses Xray as its main proxy core. See the upstream project for
 source code and license details. The packaged AAR is built from the upstream
-tags above plus one small Xray-core patch,
-`xray-patches/0001-process-lookup-original-target.patch`: when sniffing has
-replaced a connection's destination with a domain, the `process` routing rule
-falls back to the original destination IP so Android can look up which app
-owns the connection (used for per-app nodes). The modified file is
-`app/router/condition.go`; the patch is the complete source change.
+tags above plus two small Xray-core patches; together they are the complete
+source change:
+
+- `xray-patches/0001-process-lookup-original-target.patch`
+  (`app/router/condition.go`): when sniffing has replaced a connection's
+  destination with a domain, the `process` routing rule falls back to the
+  original destination IP so Android can look up which app owns the
+  connection (used for per-app nodes).
+- `xray-patches/0002-direct-keeps-app-address.patch`
+  (`proxy/freedom/freedom.go`): a sniffed connection that goes direct dials
+  the IP address the app chose instead of looking the domain up again, so
+  apps that pick a specific server (for example WeChat international's
+  overseas image servers) reach it.
 
 To reproduce the AAR, run `xray-patches/build-libxray.sh` (arm64-v8a only,
 Android API 26, NDK 29.0.14206865, Go 1.27.4 and `golang.org/x/mobile` at

@@ -160,7 +160,7 @@ Release 包输出在 `app/build/outputs/apk/release/app-release.apk`。签名读
 
 | 组件 | 位置 | 说明 |
 | --- | --- | --- |
-| Xray-core / libXray | `app/libs/libXray.aar` | 代理核心，用 gomobile 构建（含 `xray-patches/` 里的分应用补丁） |
+| Xray-core / libXray | `app/libs/libXray.aar` | 代理核心，用 gomobile 构建（含 `xray-patches/` 里的分应用与直连补丁） |
 | mihomo | `app/src/main/jniLibs/arm64-v8a/libmihomo.so` | 兼容内核 sidecar（SSR、TUIC、AnyTLS 等），GPL-3.0；缺失时 Xray 协议不受影响 |
 | Tailscale bridge | `app/src/main/jniLibs/arm64-v8a/libtailscalebridge*.so` | 由 `tailscale-bridge/build-android.sh` 构建 |
 
@@ -177,6 +177,10 @@ Release 包输出在 `app/build/outputs/apk/release/app-release.apk`。签名读
 | `index.html`、`privacy-policy.html` | GitHub Pages 项目页与隐私政策 |
 
 ## 更新日志
+
+### 0.9.0.3
+
+- 修复国际版微信开启代理后图片无法下载：直连时使用 App 自己连接的服务器地址，不再按域名重新解析。
 
 ### 0.9.0.2
 

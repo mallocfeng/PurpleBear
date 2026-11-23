@@ -2,6 +2,14 @@
 
 PurpleBear 各版本的完整更新记录。安装包见 [GitHub Releases](https://github.com/mallocfeng/PurpleBear/releases)。
 
+## 0.9.0.3
+
+1. 修复国际版微信（以及其他自选服务器的 App）开启代理后图片无法下载查看：命中直连规则的连接以前会按域名重新解析，被本地 DNS 指向国内服务器，而国际版账号的图片在海外服务器上。现在直连时使用 App 自己连接的地址，域名只用于判断走直连还是代理；走代理的连接不变，仍由代理解析域名以避开 DNS 污染。
+
+2. Xray 内核新增补丁 `xray-patches/0002-direct-keeps-app-address.patch`，`THIRD_PARTY_NOTICES.md` 已更新 AAR 的 SHA-256。
+
+3. 更新版本号到 `0.9.0.3`，`versionCode` 更新为 `303`。
+
 ## 0.9.0.2
 
 1. 默认规则：“Steam 下载直连”和“BT Tracker 直连”改为默认开启，老用户升级后自动开启一次，之后按自己的选择。
