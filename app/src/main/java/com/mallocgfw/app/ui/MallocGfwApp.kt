@@ -554,11 +554,6 @@ fun MallocGfwApp(
         val previousRegion = appSettings.geoRoutingRegion
         AppController.edit { StateOps.setLanguage(it, language) }
         val geoRoutingRegionChanged = appSettings.geoRoutingRegion != previousRegion
-        settingsMessage = when (language.resolveAppLanguage()) {
-            ResolvedLanguage.Chinese -> "界面语言已更新。"
-            ResolvedLanguage.English -> "Language updated."
-            ResolvedLanguage.Russian -> "Язык интерфейса обновлен."
-        }
         val shouldReconnect = geoRoutingRegionChanged && (
             VpnServiceController.isRunning() ||
                 connectionStatus == ConnectionStatus.Connected ||
