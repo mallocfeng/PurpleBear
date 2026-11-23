@@ -456,6 +456,10 @@ object XrayConfigFactory {
                 put("network", "tcp")
                 put("address", server)
                 put("port", 53)
+                // Forward every query. Without this rule the dns outbound
+                // answers A/AAAA itself with Xray's built-in resolver (which
+                // has no servers on Android, so lookups fail) and rejects the rest.
+                put("rules", JSONArray().put(JSONObject().put("action", "direct")))
             },
         )
         put("streamSettings", JSONObject().put("sockopt", JSONObject().put("dialerProxy", via)))

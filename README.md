@@ -178,6 +178,10 @@ Release 包输出在 `app/build/outputs/apk/release/app-release.apk`。签名读
 
 ## 更新日志
 
+### 0.9.0.5
+
+- 修复 DNS 选 Cloudflare 1.1.1.1（经代理）时开启代理后所有域名无法解析。
+
 ### 0.9.0.4
 
 - 安装包从约 76 MB 缩小到约 51 MB（开启代码压缩，Tailscale 组件去掉调试符号），功能不变。

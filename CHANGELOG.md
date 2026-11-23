@@ -2,6 +2,12 @@
 
 PurpleBear 各版本的完整更新记录。安装包见 [GitHub Releases](https://github.com/mallocfeng/PurpleBear/releases)。
 
+## 0.9.0.5
+
+1. 修复 DNS 选择“Cloudflare 1.1.1.1（经代理）”时开启代理后所有域名都无法解析（Claude、Google、百度等全部打不开）：Xray 的 DNS 出站默认把 A/AAAA 查询交给内置解析器（安卓上没有可用服务器），其他查询直接拒绝，查询从未真正发到 1.1.1.1。现在所有查询都经代理用 TCP 转发给 1.1.1.1。系统 DNS 和自定义 DNS 不受影响。
+
+2. 更新版本号到 `0.9.0.5`，`versionCode` 更新为 `305`。
+
 ## 0.9.0.4
 
 1. 安装包从约 76 MB 缩小到约 51 MB：正式版开启 R8 代码与资源压缩（代码部分从 19.3 MB 降到 2.6 MB），Tailscale 组件去掉调试符号（14.1 MB 降到 7.4 MB）。功能不变。

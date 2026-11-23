@@ -225,6 +225,21 @@ class XrayConfigFactoryTest {
         assertTrue(domains(AppGeoRoutingRegion.China, false).none { it == "geosite:cn" })
     }
 
+    @Test
+    fun remoteDnsForwardsEveryQueryThroughTheProxy() {
+        val outbounds = JSONObject(
+            XrayConfigFactory.buildVpn(node = testNode(), dnsServer = "1.1.1.1", dnsOverProxy = true),
+        ).getJSONArray("outbounds")
+        val dns = List(outbounds.length()) { outbounds.getJSONObject(it) }.single { it.optString("tag") == "remote-dns-out" }
+        val settings = dns.getJSONObject("settings")
+        assertEquals("1.1.1.1", settings.getString("address"))
+        assertEquals("tcp", settings.getString("network"))
+        val rules = settings.getJSONArray("rules")
+        assertEquals(1, rules.length())
+        assertEquals("direct", rules.getJSONObject(0).getString("action"))
+        assertEquals("proxy", dns.getJSONObject("streamSettings").getJSONObject("sockopt").getString("dialerProxy"))
+    }
+
     private fun JSONArray.indexOfFirstRule(predicate: (JSONObject) -> Boolean): Int {
         for (index in 0 until length()) {
             if (predicate(getJSONObject(index))) return index
