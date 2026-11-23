@@ -197,6 +197,7 @@ object AppStateStore {
                 val normalizedServerId = selection.serverId.trim()
                 when {
                     normalizedServerId.isBlank() -> selection.copy(serverId = "")
+                    normalizedServerId == StreamingMediaManager.DIRECT -> selection.copy(serverId = normalizedServerId)
                     normalizedVisibleServers.any { it.id == normalizedServerId } -> selection.copy(serverId = normalizedServerId)
                     else -> null
                 }
@@ -241,7 +242,7 @@ object AppStateStore {
                     "YouTube" -> byId["youtube"]
                     else -> null
                 }
-            if (existing == null) preset else preset.copy(enabled = existing.enabled)
+            if (existing == null) preset else preset.copy(enabled = existing.enabled, serverId = existing.serverId)
         }
     }
 
@@ -347,6 +348,7 @@ object AppStateStore {
                         put("name", app.name)
                         put("category", app.category)
                         put("enabled", app.enabled)
+                        put("serverId", app.serverId)
                     })
                 }
             })
@@ -497,6 +499,7 @@ object AppStateStore {
                 name = item.getString("name"),
                 category = item.optString("category", ""),
                 enabled = item.optBoolean("enabled", false),
+                serverId = item.optString("serverId", ""),
             )
         }
     }

@@ -1,6 +1,7 @@
 package com.mallocgfw.app.core
 
 import com.mallocgfw.app.model.AppDnsMode
+import com.mallocgfw.app.model.StreamingMediaManager
 import com.mallocgfw.app.model.AppGeoRoutingRegion
 import com.mallocgfw.app.model.AppLanguage
 import com.mallocgfw.app.model.ImportParser
@@ -221,7 +222,7 @@ object StateOps {
     fun normalizeStreamingSelections(state: PersistedAppState): PersistedAppState {
         val validServerIds = state.servers.map { it.id }.toSet()
         val selections = state.settings.streamingSelections
-            .filter { it.serverId.isNotBlank() && it.serverId in validServerIds }
+            .filter { it.serverId == StreamingMediaManager.DIRECT || (it.serverId.isNotBlank() && it.serverId in validServerIds) }
             .distinctBy { it.serviceId }
         return if (selections == state.settings.streamingSelections) {
             state
@@ -331,7 +332,10 @@ object StateOps {
         )
     }
 
-    /** Routes [serviceId] through [serverId]; a blank [serverId] uses the default node. */
+    /**
+     * Routes [serviceId] through [serverId]; a blank [serverId] uses the default
+     * node and [StreamingMediaManager.DIRECT] sends it direct.
+     */
     fun setStreamingRoute(state: PersistedAppState, serviceId: String, serverId: String): PersistedAppState {
         val selections = state.settings.streamingSelections.filterNot { it.serviceId == serviceId }.toMutableList()
         if (serverId.isNotBlank()) selections += StreamingRouteSelection(serviceId = serviceId, serverId = serverId)
@@ -464,6 +468,17 @@ object StateOps {
     }
 
     fun setProxyMode(state: PersistedAppState, mode: ProxyMode): PersistedAppState = state.copy(proxyMode = mode)
+
+    /**
+     * One app's route in per-app mode: [enabled] false means not proxied;
+     * otherwise [serverId] is its node, blank for the selected node.
+     */
+    fun setProtectedAppRoute(state: PersistedAppState, appId: String, enabled: Boolean, serverId: String): PersistedAppState =
+        state.copy(
+            protectedApps = state.protectedApps.map { app ->
+                if (app.id == appId) app.copy(enabled = enabled, serverId = if (enabled) serverId else app.serverId) else app
+            },
+        )
 
     fun setProtectedApps(state: PersistedAppState, changes: Map<String, Boolean>): PersistedAppState {
         val apps: List<ProtectedApp> = state.protectedApps.map { app ->

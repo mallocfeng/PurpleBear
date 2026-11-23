@@ -227,6 +227,7 @@ fun MallocGfwApp(
     var manualDisconnectRequested by rememberSaveable { mutableStateOf(false) }
     var perAppSearch by rememberSaveable { mutableStateOf("") }
     var selectedStreamingServiceId by rememberSaveable { mutableStateOf("") }
+    var selectedPerAppId by rememberSaveable { mutableStateOf("") }
     var localNodeDraft by remember { mutableStateOf(LocalNodeDraft()) }
     var editingLocalNodeId by rememberSaveable { mutableStateOf<String?>(null) }
     var localNodeCompatibilityWarning by rememberSaveable { mutableStateOf<String?>(null) }
@@ -306,7 +307,7 @@ fun MallocGfwApp(
             AppScreen.Rules, AppScreen.RuleSourceDetail, AppScreen.AddRuleSource -> MainTab.Rules
             AppScreen.Import, AppScreen.ConfirmImport, AppScreen.Subscriptions -> MainTab.Import
             AppScreen.Me, AppScreen.PerApp, AppScreen.Diagnostics, AppScreen.Settings, AppScreen.Permission,
-            AppScreen.OpenSourceLicenses, AppScreen.Mcp, AppScreen.MediaRouting, AppScreen.MediaRoutingNodePicker, AppScreen.LogViewer,
+            AppScreen.OpenSourceLicenses, AppScreen.Mcp, AppScreen.MediaRouting, AppScreen.MediaRoutingNodePicker, AppScreen.PerAppNodePicker, AppScreen.LogViewer,
             AppScreen.Tailscale -> MainTab.Me
             else -> mainTab
         }
@@ -336,7 +337,7 @@ fun MallocGfwApp(
             AppScreen.Rules, AppScreen.RuleSourceDetail, AppScreen.AddRuleSource -> MainTab.Rules
             AppScreen.Import, AppScreen.ConfirmImport, AppScreen.Subscriptions -> MainTab.Import
             AppScreen.Me, AppScreen.PerApp, AppScreen.Diagnostics, AppScreen.Settings, AppScreen.Permission,
-            AppScreen.OpenSourceLicenses, AppScreen.Mcp, AppScreen.MediaRouting, AppScreen.MediaRoutingNodePicker, AppScreen.LogViewer,
+            AppScreen.OpenSourceLicenses, AppScreen.Mcp, AppScreen.MediaRouting, AppScreen.MediaRoutingNodePicker, AppScreen.PerAppNodePicker, AppScreen.LogViewer,
             AppScreen.Tailscale -> MainTab.Me
             else -> MainTab.Home
         }
@@ -673,6 +674,20 @@ fun MallocGfwApp(
         }
     }
 
+    fun updateProtectedAppRoute(appId: String, enabled: Boolean, serverId: String) {
+        val current = protectedApps.firstOrNull { it.id == appId } ?: return
+        AppController.edit { StateOps.setProtectedAppRoute(it, appId, enabled, serverId) }
+        pendingProtectedAppsApply = true
+        settingsMessage = when {
+            !enabled -> tr("${current.name} 不再代理。", "${current.name} is no longer proxied.", "${current.name}: без прокси.")
+            serverId.isBlank() -> tr("${current.name} 使用默认节点。", "${current.name} uses the default node.", "${current.name}: узел по умолчанию.")
+            else -> {
+                val name = servers.firstOrNull { it.id == serverId }?.name.orEmpty()
+                tr("${current.name} 改走 $name。", "${current.name} now uses $name.", "${current.name}: через $name.")
+            }
+        }
+    }
+
     fun setProtectedAppsEnabled(appIds: List<String>, enabled: Boolean) {
         if (appIds.isEmpty()) return
         AppController.edit { StateOps.setProtectedApps(it, appIds.associateWith { enabled }) }
@@ -702,7 +717,12 @@ fun MallocGfwApp(
     fun updateStreamingServiceSelection(serviceId: String, serverId: String) {
         AppController.edit { StateOps.setStreamingRoute(it, serviceId, serverId) }
         pendingStreamingRoutingApply = true
-        settingsMessage = tr("${StreamingMediaManager.serviceById(serviceId)?.name ?: "流媒体"} 节点已保存。", "${StreamingMediaManager.serviceById(serviceId)?.name ?: "Media"} node saved.", "Узел для ${StreamingMediaManager.serviceById(serviceId)?.name ?: "медиа"} сохранён.")
+        val name = StreamingMediaManager.serviceById(serviceId)?.name
+        settingsMessage = if (serverId == StreamingMediaManager.DIRECT) {
+            tr("${name ?: "流媒体"} 已设为直连。", "${name ?: "Media"} now goes direct.", "${name ?: "Медиа"}: напрямую.")
+        } else {
+            tr("${name ?: "流媒体"} 节点已保存。", "${name ?: "Media"} node saved.", "Узел для ${name ?: "медиа"} сохранён.")
+        }
     }
 
     fun applyStreamingRoutingChanges() {
@@ -2311,6 +2331,24 @@ fun MallocGfwApp(
                         onToggleApp = ::updateProtectedAppEnabled,
                         onSetApps = ::setProtectedAppsEnabled,
                         onApplyChanges = ::applyProtectedAppsSelection,
+                        serverNames = servers.associate { it.id to it.name },
+                        onOpenApp = { appId ->
+                            selectedPerAppId = appId
+                            navigateSecondary(AppScreen.PerAppNodePicker)
+                        },
+                    )
+
+                    AppScreen.PerAppNodePicker -> PerAppNodePickerScreen(
+                        padding = padding,
+                        app = protectedApps.firstOrNull { it.id == selectedPerAppId },
+                        currentServer = mediaRoutingDefaultServer,
+                        groups = serverGroups.filter { it.type == ServerGroupType.Local || it.type == ServerGroupType.Subscription },
+                        servers = servers.toList(),
+                        onBack = ::onBack,
+                        onSelect = { enabled, serverId ->
+                            updateProtectedAppRoute(selectedPerAppId, enabled, serverId)
+                            onBack()
+                        },
                     )
 
                     AppScreen.Diagnostics -> DiagnosticsScreen(
@@ -2593,7 +2631,7 @@ fun MallocGfwApp(
                         selectedServerId = appSettings.streamingSelections
                             .firstOrNull { it.serviceId == selectedStreamingService?.id }
                             ?.serverId
-                            ?.takeIf { serverId -> servers.any { it.id == serverId } }
+                            ?.takeIf { serverId -> serverId == StreamingMediaManager.DIRECT || servers.any { it.id == serverId } }
                             .orEmpty(),
                         onBack = ::onBack,
                         onSelect = { serverId ->

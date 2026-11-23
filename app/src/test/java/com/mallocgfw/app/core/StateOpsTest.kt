@@ -65,6 +65,17 @@ class StateOpsTest {
     }
 
     @Test
+    fun directMediaRouteSurvivesNodeChanges() {
+        val s = state(node("a", "local"), node("b", "local"), selected = "a")
+        val direct = StateOps.setStreamingRoute(s, "netflix", com.mallocgfw.app.model.StreamingMediaManager.DIRECT)
+        val next = StateOps.removeNode(direct, "b")!!
+        assertEquals(
+            listOf(StreamingRouteSelection("netflix", com.mallocgfw.app.model.StreamingMediaManager.DIRECT)),
+            next.settings.streamingSelections,
+        )
+    }
+
+    @Test
     fun onlySubscriptionGroupsCanBeRemoved() {
         val s = state(node("a", "local"), node("s1", "sub1"), node("s2", "sub1"), selected = "s1")
         assertNull(StateOps.removeSubscriptionGroup(s, "local"))

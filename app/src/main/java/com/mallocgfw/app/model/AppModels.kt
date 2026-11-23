@@ -26,6 +26,7 @@ enum class AppScreen {
     Update,
     MediaRouting,
     MediaRoutingNodePicker,
+    PerAppNodePicker,
     PreProxyNodePicker,
     LogViewer,
     LocalNodeBuilder,
@@ -297,6 +298,8 @@ data class ProtectedApp(
     val name: String,
     val category: String,
     val enabled: Boolean,
+    /** Node this app uses in per-app mode; blank means the currently selected node. */
+    val serverId: String = "",
 )
 
 enum class DiagnosticStatus {

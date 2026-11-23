@@ -191,8 +191,8 @@ Tailnet 模式下，`:tailscale` 进程里的 tsnet 节点在 Tailnet 地址上�
 | `set_proxy_quic` | 修改 | 是否允许国外 QUIC（UDP 443）走代理；关闭（默认）时回退到 TCP，发往本地区的 QUIC 始终直连 |
 | `list_rule_sources` / `get_custom_rules` / `set_custom_rules` / `toggle_rule_source` / `refresh_rule_source` | 读 / 修改 | 内置规则源带 `about` 说明；可选内置源（广告拦截、屏蔽国内 App 私有 DNS、Steam 下载直连、BT Tracker 直连）默认关闭，用 `toggle_rule_source` 开启，从未下载过的会先下载 |
 | `add_rule_url` | 修改 | 添加远程规则源：`url` 或常用规则源 `preset`，`policy`（代理 / 直连 / 拦截，用于没写策略的行）。GitHub 网页链接自动转为原始链接；先下载检测，确认框里显示可识别的条数 |
-| `list_streaming_services` / `set_streaming_route` | 读 / 修改 | 例如“奈飞走日本节点”。列表带国家标签，可按 `region` 筛选；只有指定了节点的服务单独分流，`node_id` 为空表示取消单独线路、按普通规则走 |
-| `list_apps` / `set_per_app` | 读 / 修改 | 分应用代理。列表带分类和是否已安装，可按 `category`、`installed_only` 筛选 |
+| `list_streaming_services` / `set_streaming_route` | 读 / 修改 | 例如“奈飞走日本节点”。列表带国家标签，可按 `region` 筛选；只有指定了节点的服务单独分流，`node_id` 为空表示取消单独线路、按普通规则走，`"direct"` 表示直连不走代理 |
+| `list_apps` / `set_per_app` | 读 / 修改 | 分应用代理。列表带分类、是否已安装和各应用的节点，可按 `category`、`installed_only` 筛选；`set_per_app` 可用 `nodes` 给应用指定节点（空字符串为默认节点） |
 
 ### 第三期
 

@@ -209,7 +209,7 @@ object McpTools {
                     .put("proxy_quic", st.proxyQuicEnabled)
                     .put("direct_region", regionName(st.geoRoutingRegion))
                     .put("media_routing_enabled", st.streamingRoutingEnabled)
-                    .put("media_routes", JSONArray().also { arr -> st.streamingSelections.forEach { arr.put(JSONObject().put("service_id", it.serviceId).put("node_id", it.serverId)) } })
+                    .put("media_routes", JSONArray().also { arr -> st.streamingSelections.forEach { arr.put(JSONObject().put("service_id", it.serviceId).put("node_id", if (it.serverId == StreamingMediaManager.DIRECT) "direct" else it.serverId)) } })
                     .put("fallback_check_minutes", st.heartbeatIntervalMinutes)
                     .put("auto_reconnect", st.autoReconnect)
                     .put("daily_auto_update", st.dailyAutoUpdate)
@@ -767,7 +767,8 @@ object McpTools {
             "list_streaming_services", "List media services", ToolLevel.Read,
             "Streaming services that can use their own node (e.g. Netflix through a Japanese node), with the node chosen for each " +
                 "and the countries each is mainly used in (us, japan, hongkong, taiwan, singapore, uk, global). " +
-                "Only services with a chosen node get their own route; the rest follow the normal rules.",
+                "Only services with a chosen node get their own route; the rest follow the normal rules. " +
+                "direct: true means the service skips the proxy (node_id \"direct\").",
             schema("region" to str("Only services of this country.", StreamingRegion.entries.map { it.name.lowercase() })),
         ) { args ->
             val region = args.optStr("region")?.let { r -> StreamingRegion.entries.firstOrNull { it.name.equals(r, ignoreCase = true) } ?: throw ToolError("Unknown region $r.") }
@@ -781,7 +782,8 @@ object McpTools {
                             .put("suggested_region", service.suggestedRegion)
                             .put("regions", JSONArray(service.regions.map { it.name.lowercase() }))
                             .put("routed", !nodeId.isNullOrBlank())
-                            .put("node_id", nodeId ?: JSONObject.NULL)
+                            .put("direct", nodeId == StreamingMediaManager.DIRECT)
+                            .put("node_id", nodeId?.let { if (it == StreamingMediaManager.DIRECT) "direct" else it } ?: JSONObject.NULL)
                             .put("node_name", nodeId?.let { id -> s.servers.firstOrNull { it.id == id }?.name?.let(Redactor::name) } ?: JSONObject.NULL),
                     )
                 }
@@ -791,18 +793,20 @@ object McpTools {
 
         private fun setStreamingRoute() = tool(
             "set_streaming_route", "Set media route", ToolLevel.Modify,
-            "Sends one streaming service through a chosen node. An empty node_id removes its own route, so it follows the normal rules again. Turns media routing on unless enable_media_routing is false. Reconnects if the VPN is on.",
+            "Sends one streaming service through a chosen node, or direct (node_id \"direct\", skipping the proxy). An empty node_id removes its own route, so it follows the normal rules again. Turns media routing on unless enable_media_routing is false. Reconnects if the VPN is on.",
             schema(
                 "service_id" to str("From list_streaming_services."),
-                "node_id" to str("Node id, or empty to drop the service's own route."),
+                "node_id" to str("Node id, \"direct\" to skip the proxy, or empty to drop the service's own route."),
                 "enable_media_routing" to bool("Also switch media routing on (default true)."),
                 required = listOf("service_id", "node_id"),
             ),
         ) { args ->
             val serviceId = args.reqStr("service_id")
-            val nodeId = args.reqStr("node_id", allowEmpty = true)
+            val rawNodeId = args.reqStr("node_id", allowEmpty = true)
+            val direct = rawNodeId.equals("direct", ignoreCase = true)
+            val nodeId = if (direct) StreamingMediaManager.DIRECT else rawNodeId
             val service = StreamingMediaManager.serviceById(serviceId) ?: throw ToolError("Service $serviceId not found.")
-            if (nodeId.isNotBlank()) {
+            if (nodeId.isNotBlank() && !direct) {
                 val node = state().servers.firstOrNull { it.id == nodeId } ?: throw ToolError("Node $nodeId not found.")
                 if (!ManualNodeFactory.isRunnable(node)) throw ToolError("Node $nodeId can't run.")
             }
@@ -810,6 +814,8 @@ object McpTools {
             PreparedCall(
                 if (nodeId.isBlank()) {
                     tr("${service.name} 取消单独线路，按普通规则走", "Remove ${service.name}'s own route (normal rules apply)", "${service.name}: убрать отдельный маршрут (обычные правила)")
+                } else if (direct) {
+                    tr("${service.name} 改为直连（不走代理）", "Send ${service.name} direct (no proxy)", "${service.name} напрямую (без прокси)")
                 } else {
                     tr("${service.name} 改走 ${nodeLabel(nodeId, "")}", "Route ${service.name} through ${nodeLabel(nodeId, "")}", "${service.name} через ${nodeLabel(nodeId, "")}")
                 },
@@ -819,15 +825,16 @@ object McpTools {
                     if (enable) StateOps.setStreamingRoutingEnabled(next, true) else next
                 }
                 val reconnected = AppController.reconnectIfRunning("正在重连 VPN 以应用新的流媒体分流设置…")
-                ToolResult(JSONObject().put("service_id", serviceId).put("node_id", nodeId).put("reconnected", reconnected), "${service.name} → ${nodeId.ifBlank { "normal rules" }}.")
+                val shownNodeId = if (direct) "direct" else nodeId
+                ToolResult(JSONObject().put("service_id", serviceId).put("node_id", shownNodeId).put("reconnected", reconnected), "${service.name} → ${shownNodeId.ifBlank { "normal rules" }}.")
             }
         }
 
         private fun listApps() = tool(
             "list_apps", "List per-app proxy apps", ToolLevel.Read,
             "Apps in the per-app proxy list: package id, name, category (" + APP_CATEGORY_KEYS.values.joinToString(", ") + "), " +
-                "whether it is installed on this phone and whether it is proxied; per_app_mode says whether only these apps use the VPN. " +
-                "Only installed apps can actually use the VPN.",
+                "whether it is installed on this phone, whether it is proxied, and its own node (node_id null: the selected node); " +
+                "per_app_mode says whether only these apps use the VPN. Only installed apps can actually use the VPN.",
             schema(
                 "category" to str("Only apps of this category.", APP_CATEGORY_KEYS.values.toList()),
                 "installed_only" to bool("Only apps installed on this phone (default false)."),
@@ -848,7 +855,9 @@ object McpTools {
                         arr.put(
                             JSONObject().put("app_id", app.id).put("name", Redactor.name(app.name))
                                 .put("category", APP_CATEGORY_KEYS[app.category] ?: app.category)
-                                .put("installed", installed).put("proxied", app.enabled),
+                                .put("installed", installed).put("proxied", app.enabled)
+                                .put("node_id", app.serverId.ifBlank { null } ?: JSONObject.NULL)
+                                .put("node_name", s.servers.firstOrNull { it.id == app.serverId }?.name?.let(Redactor::name) ?: JSONObject.NULL),
                         )
                     }
                 ToolResult(JSONObject().put("per_app_mode", s.proxyMode == ProxyMode.PerApp).put("apps", arr), "${arr.length()} apps.")
@@ -857,11 +866,15 @@ object McpTools {
 
         private fun setPerApp() = tool(
             "set_per_app", "Set per-app proxy", ToolLevel.Modify,
-            "Turns per-app mode on or off and / or chooses which apps are proxied. Reconnects if the VPN is on.",
+            "Turns per-app mode on or off, chooses which apps are proxied, and / or gives apps their own node " +
+                "(in per-app mode all of that app's traffic, except the local network, uses the node). Reconnects if the VPN is on.",
             schema(
                 "enabled" to bool("Per-app mode on (only listed apps use the VPN) or off."),
                 "apps" to JSONObject().put("type", "object").put("description", "app_id → true (proxy) / false.")
                     .put("additionalProperties", JSONObject().put("type", "boolean")),
+                "nodes" to JSONObject().put("type", "object")
+                    .put("description", "app_id → node_id for its own node, or \"\" for the selected node. Also turns the app on.")
+                    .put("additionalProperties", JSONObject().put("type", "string")),
             ),
         ) { args ->
             val enabled = if (args.has("enabled")) args.optBoolean("enabled") else null
@@ -872,17 +885,39 @@ object McpTools {
                 if (key !in known) throw ToolError("App $key is not in the list (see list_apps).")
                 changes[key] = apps.optBoolean(key)
             }
-            if (enabled == null && changes.isEmpty()) throw ToolError("Nothing to change.")
+            val nodeChanges = mutableMapOf<String, String>()
+            args.optJSONObject("nodes")?.let { nodes ->
+                val servers = state().servers
+                nodes.keys().forEach { key ->
+                    if (key !in known) throw ToolError("App $key is not in the list (see list_apps).")
+                    val nodeId = nodes.optString(key).trim()
+                    if (nodeId.isNotBlank()) {
+                        val node = servers.firstOrNull { it.id == nodeId } ?: throw ToolError("Node $nodeId not found.")
+                        if (!ManualNodeFactory.isRunnable(node)) throw ToolError("Node $nodeId can't run.")
+                    }
+                    nodeChanges[key] = nodeId
+                }
+            }
+            if (enabled == null && changes.isEmpty() && nodeChanges.isEmpty()) throw ToolError("Nothing to change.")
             PreparedCall(buildString {
                 enabled?.let { append(if (it) "turn per-app mode on" else "turn per-app mode off") }
                 if (changes.isNotEmpty()) append((if (isEmpty()) "" else "; ") + "set ${changes.size} apps")
+                nodeChanges.forEach { (appId, nodeId) ->
+                    val appName = state().protectedApps.firstOrNull { it.id == appId }?.name ?: appId
+                    append((if (isEmpty()) "" else "; ") + "$appName → ${nodeLabel(nodeId, "default node")}")
+                }
             }) {
                 AppController.update { s ->
-                    val next = StateOps.setProtectedApps(s, changes)
+                    var next = StateOps.setProtectedApps(s, changes)
+                    nodeChanges.forEach { (appId, nodeId) -> next = StateOps.setProtectedAppRoute(next, appId, true, nodeId) }
                     if (enabled == null) next else StateOps.setProxyMode(next, if (enabled) ProxyMode.PerApp else ProxyMode.Smart)
                 }
                 val reconnected = AppController.reconnectIfRunning("正在重连 VPN 以应用新的分应用代理设置…")
-                ToolResult(JSONObject().put("per_app_mode", state().proxyMode == ProxyMode.PerApp).put("changed_apps", changes.size).put("reconnected", reconnected), "Per-app settings saved.")
+                ToolResult(
+                    JSONObject().put("per_app_mode", state().proxyMode == ProxyMode.PerApp)
+                        .put("changed_apps", changes.size).put("changed_nodes", nodeChanges.size).put("reconnected", reconnected),
+                    "Per-app settings saved.",
+                )
             }
         }
 

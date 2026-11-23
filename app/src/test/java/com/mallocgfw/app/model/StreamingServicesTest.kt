@@ -46,8 +46,9 @@ class StreamingServicesTest {
             streamingSelections = listOf(
                 StreamingRouteSelection("netflix", "node_jp"),
                 StreamingRouteSelection("bilibili", ""),
+                StreamingRouteSelection("disney", StreamingMediaManager.DIRECT),
             ),
         )
-        assertEquals(listOf("netflix"), StreamingMediaManager.routedServices(settings).map { it.id })
+        assertEquals(setOf("netflix", "disney"), StreamingMediaManager.routedServices(settings).map { it.id }.toSet())
     }
 }

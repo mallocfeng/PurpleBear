@@ -46,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.mallocgfw.app.model.AppDnsMode
@@ -60,6 +61,7 @@ import com.mallocgfw.app.model.ProxyMode
 import com.mallocgfw.app.model.ServerGroup
 import com.mallocgfw.app.model.ServerNode
 import com.mallocgfw.app.model.ServerGroupType
+import com.mallocgfw.app.model.StreamingMediaManager
 import com.mallocgfw.app.model.StreamingMediaService
 import com.mallocgfw.app.model.StreamingRegion
 import com.mallocgfw.app.model.StreamingRouteSelection
@@ -97,6 +99,8 @@ internal fun PerAppScreen(
     onToggleApp: (String) -> Unit,
     onSetApps: (List<String>, Boolean) -> Unit,
     onApplyChanges: () -> Unit,
+    serverNames: Map<String, String> = emptyMap(),
+    onOpenApp: (String) -> Unit = {},
 ) {
     val language = LocalAppLanguage.current
     val context = LocalContext.current
@@ -271,7 +275,13 @@ internal fun PerAppScreen(
             }
             items(sectionApps, key = { it.id }) { app ->
                 val installed = app.id in installedIds
-                SurfaceCard {
+                val route = when {
+                    !app.enabled -> uiText("不代理", "Not proxied", "Без прокси")
+                    app.serverId.isBlank() -> uiText("默认节点", "Default node", "Узел по умолчанию")
+                    else -> serverNames[app.serverId]?.let { uiText("节点：$it", "Node: $it", "Узел: $it") }
+                        ?: uiText("默认节点（原节点已删除）", "Default node (its node was deleted)", "Узел по умолчанию (свой удалён)")
+                }
+                SurfaceCard(modifier = Modifier.clickable { onOpenApp(app.id) }) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -296,10 +306,12 @@ internal fun PerAppScreen(
                                     color = if (installed) TextPrimary else TextSecondary,
                                 )
                                 Text(
-                                    text = if (installed) uiText("已安装") else uiText("未安装"),
+                                    text = (if (installed) uiText("已安装") else uiText("未安装")) + " · " + route,
                                     color = if (installed) Success else TextSecondary,
                                     fontSize = TypeScale.Meta,
                                     lineHeight = TypeScale.MetaLine,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
                         }
@@ -1110,24 +1122,37 @@ internal fun MediaRoutingNodePickerScreen(
                 ),
                 subtitle = service?.let {
                     uiText(
-                        "${uiText(it.suggestedRegion)} · 未指定则走默认线路。",
-                        "${uiText(it.suggestedRegion)} · Uses default node when unset.", "${uiText(it.suggestedRegion)} · Если не задано, используется узел по умолчанию.",
+                        "${uiText(it.suggestedRegion)} · 默认走当前节点；也可以单独指定节点，或者直连。",
+                        "${uiText(it.suggestedRegion)} · Uses the selected node by default; you can pick its own node or go direct.",
+                        "${uiText(it.suggestedRegion)} · По умолчанию — выбранный узел; можно задать свой узел или напрямую.",
                     )
                 } ?: uiText("选择一个出口节点。"),
             )
         }
         item {
-            SettingsGroup(title = "默认线路") {
-                MediaRoutingNodeRow(
-                    title = currentServer?.name ?: uiText("当前还没有选中线路"),
-                    subtitle = "默认出口",
-                    selected = selectedServerId.isBlank(),
-                    onClick = { onSelect("") },
-                )
+            SettingsGroup(title = uiText("基本", "Basics", "Основное")) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    MediaRoutingNodeRow(
+                        title = uiText("默认节点", "Default node", "Узел по умолчанию"),
+                        subtitle = currentServer?.name?.let { uiText("当前：$it", "Now: $it", "Сейчас: $it") } ?: uiText("当前还没有选中线路"),
+                        selected = selectedServerId.isBlank(),
+                        onClick = { onSelect("") },
+                    )
+                    MediaRoutingNodeRow(
+                        title = uiText("直连", "Direct", "Напрямую"),
+                        subtitle = uiText(
+                            "不走代理，直接用手机网络访问。",
+                            "Skips the proxy and uses the phone's own network.",
+                            "Без прокси, через сеть телефона.",
+                        ),
+                        selected = selectedServerId == StreamingMediaManager.DIRECT,
+                        onClick = { onSelect(StreamingMediaManager.DIRECT) },
+                    )
+                }
             }
         }
         item {
-            SettingsGroup(title = "可选节点") {
+            SettingsGroup(title = uiText("指定节点", "Its own node", "Свой узел")) {
                 if (sections.isEmpty()) {
                     Text(uiText("当前还没有 Local 或订阅节点可选。"), color = TextSecondary)
                 } else {
@@ -1146,6 +1171,107 @@ internal fun MediaRoutingNodePickerScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+/** Per-app route: not proxied, the selected node, or a node of its own. */
+@Composable
+internal fun PerAppNodePickerScreen(
+    padding: PaddingValues,
+    app: ProtectedApp?,
+    currentServer: ServerNode?,
+    groups: List<ServerGroup>,
+    servers: List<ServerNode>,
+    onBack: () -> Unit,
+    onSelect: (enabled: Boolean, serverId: String) -> Unit,
+) {
+    val selectedServerId = app?.serverId.orEmpty().takeIf { id -> servers.any { it.id == id } }.orEmpty()
+    val sections = remember(groups, servers) {
+        groupedServers(groups, servers, filter = "all", search = "")
+            .filter { it.servers.isNotEmpty() }
+    }
+    val selectedGroupId = remember(sections, selectedServerId) {
+        sections.firstOrNull { section -> section.servers.any { it.id == selectedServerId } }?.group?.id
+    }
+    val expandedGroups = remember(app?.id) { mutableStateMapOf<String, Boolean>() }
+    LaunchedEffect(app?.id, sections, selectedGroupId) {
+        sections.forEach { section ->
+            if (expandedGroups[section.group.id] == null) {
+                expandedGroups[section.group.id] =
+                    section.group.id == ImportParser.LOCAL_GROUP_ID || section.group.id == selectedGroupId
+            }
+        }
+    }
+    val proxied = app?.enabled == true
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(padding),
+        state = rememberRetainedLazyListState(),
+        contentPadding = screenPadding(),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item {
+            AppTopBar(title = app?.name ?: uiText("选择节点"), subtitle = uiText("分应用代理", "Per-app proxy", "Прокси по приложениям"), onBack = onBack)
+        }
+        item {
+            ScreenHeader(
+                title = uiText("${app?.name.orEmpty()} 走哪条线路", "Route for ${app?.name.orEmpty()}", "Маршрут для ${app?.name.orEmpty()}"),
+                subtitle = uiText(
+                    "默认跟随当前选中的节点；也可以单独指定，或者不代理。",
+                    "Follows the selected node by default; you can pick its own node or not proxy it.",
+                    "По умолчанию — выбранный узел; можно задать свой узел или не проксировать.",
+                ),
+            )
+        }
+        item {
+            SettingsGroup(title = uiText("基本", "Basics", "Основное")) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    MediaRoutingNodeRow(
+                        title = uiText("默认节点", "Default node", "Узел по умолчанию"),
+                        subtitle = currentServer?.name?.let { uiText("当前：$it", "Now: $it", "Сейчас: $it") } ?: uiText("当前还没有选中线路"),
+                        selected = proxied && selectedServerId.isBlank(),
+                        onClick = { onSelect(true, "") },
+                    )
+                    MediaRoutingNodeRow(
+                        title = uiText("不代理", "Don't proxy", "Не проксировать"),
+                        subtitle = uiText("这个应用不进 VPN，直接用手机网络。", "This app stays outside the VPN and uses the phone's network.", "Приложение не идёт через VPN и использует сеть телефона."),
+                        selected = !proxied,
+                        onClick = { onSelect(false, "") },
+                    )
+                }
+            }
+        }
+        item {
+            SettingsGroup(title = uiText("指定节点", "Its own node", "Свой узел")) {
+                if (sections.isEmpty()) {
+                    Text(uiText("当前还没有 Local 或订阅节点可选。"), color = TextSecondary)
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        sections.forEach { section ->
+                            MediaRoutingGroupCard(
+                                section = section,
+                                expanded = expandedGroups[section.group.id] ?: false,
+                                selectedServerId = if (proxied) selectedServerId else "",
+                                onToggleGroup = {
+                                    expandedGroups[section.group.id] = !(expandedGroups[section.group.id] ?: false)
+                                },
+                                onSelectServer = { id -> onSelect(true, id) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            NoteBox(
+                text = uiText(
+                    "单独指定的节点只在“仅代理选中应用”模式下生效，该应用的流量（局域网除外）都会走这个节点。",
+                    "An app's own node applies in per-app mode; all its traffic (except the local network) uses that node.",
+                    "Свой узел действует в режиме по приложениям; весь трафик приложения (кроме локальной сети) идёт через него.",
+                ),
+            )
         }
     }
 }

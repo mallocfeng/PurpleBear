@@ -828,9 +828,12 @@ data class XrayRoutingRule(
     val outboundTag: String? = null,
     val balancerTag: String? = null,
     val priority: Int = 0,
+    /** Android app UIDs (as strings) whose connections this rule catches; see Xray's `process`. */
+    val processes: List<String> = emptyList(),
 ) {
     fun hasEntries(): Boolean {
-        return domainSuffixes.isNotEmpty() ||
+        return processes.isNotEmpty() ||
+            domainSuffixes.isNotEmpty() ||
             fullDomains.isNotEmpty() ||
             domainKeywords.isNotEmpty() ||
             domainRegexes.isNotEmpty() ||

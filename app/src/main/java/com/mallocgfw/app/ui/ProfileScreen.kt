@@ -123,7 +123,12 @@ internal fun MeScreen(
             GroupedCard {
                 ListRow(title = "订阅管理", icon = Icons.Rounded.Inventory2, onClick = onOpenSubscriptions)
                 GroupDivider(startIndent = 58.dp)
-                ListRow(title = "分应用代理", icon = Icons.Rounded.Apps, onClick = onOpenPerApp)
+                ListRow(
+                    title = "分应用代理",
+                    value = if (proxyMode == ProxyMode.PerApp) "已启用" else null,
+                    icon = Icons.Rounded.Apps,
+                    onClick = onOpenPerApp,
+                )
                 GroupDivider(startIndent = 58.dp)
                 ListRow(
                     title = "流媒体分流",

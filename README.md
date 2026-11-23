@@ -90,12 +90,13 @@ Xray 能运行的节点交给 Xray；Xray 不支持的协议和配置（包括�
 ### 分应用代理
 
 - 只让选中的应用进入 VPN，其他应用保持直连。
+- 每个应用可跟随当前节点、单独指定节点，或设为不代理。
 - 支持按应用名称或分类搜索；修改名单后自动重连生效。
 
 ### 流媒体分流
 
 - 为 Netflix、Disney+、YouTube、Prime Video、Hulu、Max、Spotify、Apple TV、Bahamut、AbemaTV、BiliBili、DAZN 等服务单独指定出口节点。
-- 未指定的服务走默认线路；流媒体规则会转换成 Xray 路由规则生效。
+- 每个服务可走默认线路、单独指定节点，或设为直连；流媒体规则会转换成 Xray 路由规则生效。
 
 ### Tailscale
 
@@ -159,7 +160,7 @@ Release 包输出在 `app/build/outputs/apk/release/app-release.apk`。签名读
 
 | 组件 | 位置 | 说明 |
 | --- | --- | --- |
-| Xray-core / libXray | `app/libs/libXray.aar` | 代理核心，用 gomobile 构建 |
+| Xray-core / libXray | `app/libs/libXray.aar` | 代理核心，用 gomobile 构建（含 `xray-patches/` 里的分应用补丁） |
 | mihomo | `app/src/main/jniLibs/arm64-v8a/libmihomo.so` | 兼容内核 sidecar（SSR、TUIC、AnyTLS 等），GPL-3.0；缺失时 Xray 协议不受影响 |
 | Tailscale bridge | `app/src/main/jniLibs/arm64-v8a/libtailscalebridge*.so` | 由 `tailscale-bridge/build-android.sh` 构建 |
 
@@ -176,6 +177,10 @@ Release 包输出在 `app/build/outputs/apk/release/app-release.apk`。签名读
 | `index.html`、`privacy-policy.html` | GitHub Pages 项目页与隐私政策 |
 
 ## 更新日志
+
+### 0.9.0
+
+- 分应用代理可给每个应用单独指定节点或设为不代理；流媒体分流新增直连选项；Xray 内核加入分应用补丁（见 `xray-patches/`）。
 
 ### 0.8.9.1
 

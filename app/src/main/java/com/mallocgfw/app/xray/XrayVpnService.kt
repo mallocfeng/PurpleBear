@@ -19,6 +19,7 @@ import android.os.ParcelFileDescriptor
 import android.util.Log
 import com.mallocgfw.app.MainActivity
 import com.mallocgfw.app.model.AppDnsMode
+import com.mallocgfw.app.model.PerAppRouting
 import com.mallocgfw.app.model.DnsInput
 import com.mallocgfw.app.core.AppController
 import com.mallocgfw.app.model.AppTextLanguage
@@ -433,12 +434,14 @@ class XrayVpnService : VpnService() {
         val tunFd = vpnInterface?.fd ?: error(tr("无法获取 TUN fd。", "Couldn't get the TUN fd.", "Не удалось получить TUN fd."))
         dnsEndpoint?.let(::installProcessDns)
 
+        AppProcessFinder.register(applicationContext)
+        val perAppRouting = PerAppRouting.buildSetup(applicationContext, state, server.id)
         XrayCoreManager.startVpn(
             context = applicationContext,
             server = server,
             tunFd = tunFd,
-            routingRules = streamingRouting.routingRules + ruleRouting.routingRules,
-            additionalOutbounds = streamingRouting.outbounds + ruleRouting.outbounds,
+            routingRules = perAppRouting.routingRules + streamingRouting.routingRules + ruleRouting.routingRules,
+            additionalOutbounds = perAppRouting.outbounds + streamingRouting.outbounds + ruleRouting.outbounds,
             vpnMtu = vpnMtu,
             magicDnsUpstream = activeMagicDnsUpstream,
             dnsServer = dnsServer,
@@ -476,12 +479,14 @@ class XrayVpnService : VpnService() {
             )
         }
         dnsEndpoint?.let(::installProcessDns)
+        AppProcessFinder.register(applicationContext)
+        val perAppRouting = PerAppRouting.buildSetup(applicationContext, state, server.id)
         XrayCoreManager.startVpn(
             context = applicationContext,
             server = server,
             tunFd = tunFd,
-            routingRules = streamingRouting.routingRules + ruleRouting.routingRules,
-            additionalOutbounds = streamingRouting.outbounds + ruleRouting.outbounds,
+            routingRules = perAppRouting.routingRules + streamingRouting.routingRules + ruleRouting.routingRules,
+            additionalOutbounds = perAppRouting.outbounds + streamingRouting.outbounds + ruleRouting.outbounds,
             vpnMtu = vpnMtu,
             magicDnsUpstream = activeMagicDnsUpstream,
             dnsServer = dnsServer,

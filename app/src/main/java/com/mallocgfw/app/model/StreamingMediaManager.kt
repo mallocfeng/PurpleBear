@@ -142,7 +142,10 @@ object StreamingMediaManager {
         return services.firstOrNull { it.id == serviceId }
     }
 
-    /** Services the user sent through a chosen node. */
+    /** Selection value meaning "go direct, not through any node". */
+    const val DIRECT = "DIRECT"
+
+    /** Services the user sent through a chosen node or set to go direct. */
     fun routedServices(settings: AppSettings): List<StreamingMediaService> {
         val chosen = settings.streamingSelections.filter { it.serverId.isNotBlank() }.map { it.serviceId }.toSet()
         return services.filter { it.id in chosen }
@@ -170,26 +173,26 @@ object StreamingMediaManager {
             val outbounds = mutableListOf<XrayNamedOutbound>()
             val rules = mutableListOf<XrayRoutingRule>()
 
-            // Only services with a chosen node get a rule. The rest follow the
-            // normal rules, so their domains in the home region (Bilibili,
-            // Tencent video) still go direct.
+            // Only services with a chosen node (or set to direct) get a rule.
+            // The rest follow the normal rules, so their domains in the home
+            // region (Bilibili, Tencent video) still go direct.
             routedServices(settings).forEach { service ->
-                val node = serverById[selections[service.id]?.serverId.orEmpty()] ?: return@forEach
-                val resolvedServerId = node.id
-                val outboundTag = if (resolvedServerId == selectedServerId) {
-                    "proxy"
-                } else {
-                    "stream_${service.id}"
+                val choice = selections[service.id]?.serverId.orEmpty()
+                val node = if (choice == DIRECT) null else serverById[choice] ?: return@forEach
+                val outboundTag = when {
+                    node == null -> "direct"
+                    node.id == selectedServerId -> "proxy"
+                    else -> "stream_${service.id}"
                 }
                 val compiled = runCatching { ensureRules(context, service) }.getOrNull() ?: return@forEach
-                if (outboundTag != "proxy") {
+                if (node != null && outboundTag != "proxy") {
                     outbounds += XrayNamedOutbound(
                         tag = outboundTag,
                         node = node,
                     )
                 }
                 rules += XrayRoutingRule(
-                    target = RuleTargetPolicy.Proxy,
+                    target = if (node == null) RuleTargetPolicy.Direct else RuleTargetPolicy.Proxy,
                     domainSuffixes = compiled.domainSuffixes,
                     fullDomains = compiled.fullDomains,
                     domainKeywords = compiled.domainKeywords,

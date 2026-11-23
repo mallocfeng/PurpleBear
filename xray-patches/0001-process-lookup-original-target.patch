@@ -1,0 +1,52 @@
+diff --git a/app/router/condition.go b/app/router/condition.go
+index 4375a8f..0d62ac5 100644
+--- a/app/router/condition.go
++++ b/app/router/condition.go
+@@ -14,6 +14,7 @@ import (
+ 	"github.com/xtls/xray-core/common/net"
+ 	"github.com/xtls/xray-core/features/routing"
+ 	"github.com/xtls/xray-core/features/routing/dns"
++	routing_session "github.com/xtls/xray-core/features/routing/session"
+ )
+ 
+ type Condition interface {
+@@ -338,6 +339,23 @@ func NewProcessNameMatcher(names []string) *ProcessNameMatcher {
+ 	}
+ }
+ 
++// originalTargetIP returns the destination the connection was opened to,
++// before sniffing replaced it with a domain.
++func originalTargetIP(ctx routing.Context) (string, uint16, bool) {
++	if resolvable, ok := ctx.(*dns.ResolvableContext); ok {
++		ctx = resolvable.Context
++	}
++	sessionCtx, ok := ctx.(*routing_session.Context)
++	if !ok || sessionCtx.Outbound == nil {
++		return "", 0, false
++	}
++	target := sessionCtx.Outbound.OriginalTarget
++	if !target.IsValid() || !target.Address.Family().IsIP() {
++		return "", 0, false
++	}
++	return target.Address.IP().String(), uint16(target.Port), true
++}
++
+ func (m *ProcessNameMatcher) Apply(ctx routing.Context) bool {
+ 	if len(ctx.GetSourceIPs()) == 0 {
+ 		return false
+@@ -368,6 +386,15 @@ func (m *ProcessNameMatcher) Apply(ctx routing.Context) bool {
+ 		dstIP = ctx.GetTargetIPs()[0].String()
+ 		dstPort = uint16(ctx.GetTargetPort())
+ 	}
++	// PurpleBear: when sniffing has replaced the target with a domain, the
++	// connection's real destination is still in the original target, and
++	// Android's owner lookup needs it.
++	if dstIP == "" {
++		if ip, port, ok := originalTargetIP(ctx); ok {
++			dstIP = ip
++			dstPort = port
++		}
++	}
+ 
+ 	pid, name, absPath, err := net.FindProcess(network, srcIP, uint16(srcPort), dstIP, uint16(dstPort))
+ 	if err != nil {

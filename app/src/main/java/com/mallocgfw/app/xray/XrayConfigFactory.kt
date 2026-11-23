@@ -327,7 +327,8 @@ object XrayConfigFactory {
             )
         }
 
-        val effectiveRoutingRules = if (globalProxyEnabled) emptyList() else routingRules
+        // Global mode skips rule sources and media routing, but an app's own node still applies.
+        val effectiveRoutingRules = if (globalProxyEnabled) routingRules.filter { it.processes.isNotEmpty() } else routingRules
 
         effectiveRoutingRules
             .withIndex()
@@ -341,6 +342,16 @@ object XrayConfigFactory {
                     RuleTargetPolicy.Direct -> "direct"
                     RuleTargetPolicy.Proxy -> "proxy"
                     RuleTargetPolicy.Block -> "block"
+                }
+                if (rule.processes.isNotEmpty()) {
+                    // Per-app node: Xray asks Android which app owns each connection.
+                    rules.put(
+                        JSONObject().apply {
+                            put("type", "field")
+                            put("process", JSONArray(rule.processes))
+                            put("outboundTag", outboundTag)
+                        },
+                    )
                 }
                 val domains = JSONArray().apply {
                     rule.domainSuffixes.forEach { put("domain:$it") }

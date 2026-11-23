@@ -151,6 +151,30 @@ class XrayConfigFactoryTest {
     }
 
     @Test
+    fun perAppNodeBecomesProcessRuleEvenInGlobalMode() {
+        val appRule = com.mallocgfw.app.model.XrayRoutingRule(
+            target = com.mallocgfw.app.model.RuleTargetPolicy.Proxy,
+            domainSuffixes = emptyList(), fullDomains = emptyList(), domainKeywords = emptyList(),
+            ipCidrs = emptyList(), ipCidrs6 = emptyList(),
+            outboundTag = "app_0", priority = 2_000, processes = listOf("10154"),
+        )
+        listOf(false, true).forEach { global ->
+            val config = JSONObject(
+                XrayConfigFactory.buildVpn(
+                    node = testNode(),
+                    routingRules = listOf(appRule),
+                    globalProxyEnabled = global,
+                    geoRoutingRegion = AppGeoRoutingRegion.China,
+                ),
+            )
+            val rules = config.getJSONObject("routing").getJSONArray("rules")
+            val index = rules.indexOfFirstRule { it.optJSONArray("process")?.optString(0) == "10154" }
+            assertTrue("process rule missing (global=$global)", index >= 0)
+            assertEquals("app_0", rules.getJSONObject(index).optString("outboundTag"))
+        }
+    }
+
+    @Test
     fun standaloneProxyDoesNotGloballyBlockUdp443() {
         val config = JSONObject(XrayConfigFactory.build(node = testNode()))
         val rules = config.getJSONObject("routing").getJSONArray("rules")

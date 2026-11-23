@@ -49,6 +49,7 @@ import com.mallocgfw.app.model.AppSettings
 import com.mallocgfw.app.model.ProxyMode
 import com.mallocgfw.app.model.ServerGroup
 import com.mallocgfw.app.model.ServerNode
+import com.mallocgfw.app.model.StreamingMediaManager
 import com.mallocgfw.app.model.StreamingRouteSelection
 import com.mallocgfw.app.model.normalizedAppVpnMtu
 import com.mallocgfw.app.ui.theme.Primary
@@ -444,6 +445,9 @@ internal fun mediaRoutingSelectionLabel(
     val customServerId = selections.firstOrNull { it.serviceId == serviceId }?.serverId.orEmpty()
     if (customServerId.isBlank()) {
         return currentServer?.name ?: "默认节点"
+    }
+    if (customServerId == StreamingMediaManager.DIRECT) {
+        return "直连"
     }
     return servers.firstOrNull { it.id == customServerId }?.name
         ?: currentServer?.takeIf { it.id == customServerId }?.name
