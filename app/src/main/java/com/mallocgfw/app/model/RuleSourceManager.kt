@@ -354,7 +354,10 @@ object RuleSourceManager {
         val outbounds = mutableListOf<XrayNamedOutbound>()
         val missingPolicies = linkedSetOf<String>()
         val routingRules = sources
-            .filter { it.enabled && it.status == RuleSourceStatus.Ready && !usesGeoData(it, region) }
+            // Not only Ready: after a failed refresh (or one cut short) the last
+            // list that compiled is still on disk and keeps working. Sources
+            // never downloaded have no file and are skipped below.
+            .filter { it.enabled && !usesGeoData(it, region) }
             .flatMap { source ->
                 val compiled = loadCompiledRules(context, source.id) ?: return@flatMap emptyList()
                 compiled.toRoutingRules(

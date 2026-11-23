@@ -229,7 +229,7 @@ internal fun DnsSettingsDialog(
                     )
                     Text(
                         text = if (custom.isNotBlank() && !customValid) {
-                            uiText("需要填 IP 地址，例如 8.8.8.8、8.8.8.8:53 或 [2001:4860:4860::8888]:53（不支持域名和 DoH 链接）。", "Needs an IP address, e.g. 8.8.8.8, 8.8.8.8:53 or [2001:4860:4860::8888]:53 (no host names or DoH links).", "Нужен IP-адрес, например 8.8.8.8, 8.8.8.8:53 или [2001:4860:4860::8888]:53 (без имён и DoH).")
+                            uiText("需要填 IP 地址，例如 8.8.8.8 或 2001:4860:4860::8888（端口固定为 53，不支持域名和 DoH 链接）。", "Needs an IP address, e.g. 8.8.8.8 or 2001:4860:4860::8888 (port is always 53; no host names or DoH links).", "Нужен IP-адрес, например 8.8.8.8 или 2001:4860:4860::8888 (порт всегда 53; без имён и DoH).")
                         } else {
                             uiText("也可以直接点下面的常用服务器：", "Or pick a common server:", "Или выберите популярный сервер:")
                         },

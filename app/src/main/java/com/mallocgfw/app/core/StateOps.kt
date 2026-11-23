@@ -6,6 +6,7 @@ import com.mallocgfw.app.model.StreamingMediaManager
 import com.mallocgfw.app.model.AppGeoRoutingRegion
 import com.mallocgfw.app.model.AppLanguage
 import com.mallocgfw.app.model.ImportParser
+import com.mallocgfw.app.model.subscriptionMergeKey
 import com.mallocgfw.app.model.ImportPreview
 import com.mallocgfw.app.model.ManualNodeFactory
 import com.mallocgfw.app.model.PersistedAppState
@@ -50,6 +51,58 @@ object StateOps {
      * Merges [preview] into [state]. [connectedServerId] is the node the VPN is
      * running on (null when disconnected), used to decide whether to reconnect.
      */
+    /**
+     * Replaces a subscription group's nodes with a refreshed list while keeping
+     * each surviving node's id and the user's settings for it (favorite,
+     * latency, pre-proxy, fallback). Parsed ids carry the line number, so
+     * without this a reordered subscription would drop every app route, media
+     * route and chain pointing at its nodes. A node matches by share link, else
+     * by protocol, address, port and name. Ids of removed nodes are not reused.
+     */
+    fun refreshSubscriptionNodes(
+        servers: List<ServerNode>,
+        groupId: String,
+        refreshedNodes: List<ServerNode>,
+    ): List<ServerNode> {
+        val others = servers.filterNot { it.groupId == groupId }
+        val unmatched = servers.filter { it.groupId == groupId }.toMutableList()
+        val takenIds = servers.map { it.id }.toMutableSet()
+        val matched = mutableMapOf<String, ServerNode>()
+        val finalIds = mutableMapOf<String, String>()
+        refreshedNodes.forEach { node ->
+            val old = unmatched.firstOrNull { it.rawUri.isNotBlank() && it.rawUri == node.rawUri }
+                ?: unmatched.firstOrNull { it.subscriptionMergeKey() == node.subscriptionMergeKey() }
+                ?: return@forEach
+            unmatched.remove(old)
+            matched[node.id] = old
+            finalIds[node.id] = old.id
+        }
+        refreshedNodes.forEach { node ->
+            if (node.id in finalIds) return@forEach
+            val id = ImportParser.uniqueNodeId(node.id, takenIds)
+            takenIds += id
+            finalIds[node.id] = id
+        }
+        val updated = refreshedNodes.map { node ->
+            val old = matched[node.id]
+            val preProxy = finalIds[node.preProxyNodeId] ?: node.preProxyNodeId
+            val fallback = finalIds[node.fallbackNodeId] ?: node.fallbackNodeId
+            if (old == null) {
+                node.copy(id = finalIds.getValue(node.id), preProxyNodeId = preProxy, fallbackNodeId = fallback)
+            } else {
+                node.copy(
+                    id = old.id,
+                    favorite = old.favorite,
+                    latencyMs = old.latencyMs,
+                    stable = old.stable,
+                    preProxyNodeId = old.preProxyNodeId.ifBlank { preProxy },
+                    fallbackNodeId = old.fallbackNodeId.ifBlank { fallback },
+                )
+            }
+        }
+        return others + updated
+    }
+
     fun applyImport(
         state: PersistedAppState,
         preview: ImportPreview,
@@ -79,10 +132,9 @@ object StateOps {
             if (node.groupId == targetGroupId) node else node.copy(groupId = targetGroupId)
         }
         if (preview.group.type == ServerGroupType.Subscription) {
-            val otherServers = servers.filterNot { it.groupId == targetGroupId }
+            val refreshed = refreshSubscriptionNodes(servers, targetGroupId, normalizedPreviewNodes)
             servers.clear()
-            servers.addAll(otherServers)
-            servers.addAll(normalizedPreviewNodes)
+            servers.addAll(refreshed)
         } else {
             // Local ids restart at 1 on every import, so a new node can carry the
             // id of an unrelated existing one. Settle each node's final id first

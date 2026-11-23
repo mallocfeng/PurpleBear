@@ -152,10 +152,9 @@ object BackgroundSyncManager {
             if (node.groupId == targetGroupId) node else node.copy(groupId = targetGroupId)
         }
         if (preview.group.type == ServerGroupType.Subscription) {
-            val otherServers = servers.filterNot { it.groupId == targetGroupId }
+            val refreshed = com.mallocgfw.app.core.StateOps.refreshSubscriptionNodes(servers, targetGroupId, normalizedPreviewNodes)
             servers.clear()
-            servers.addAll(otherServers)
-            servers.addAll(normalizedPreviewNodes)
+            servers.addAll(refreshed)
         } else {
             normalizedPreviewNodes.forEach { normalizedNode ->
                 val existingNodeIndex = servers.indexOfFirst {

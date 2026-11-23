@@ -137,6 +137,7 @@ fun MallocGfwApp(
     val xraySnapshot by XrayCoreManager.snapshot.collectAsState()
     val tailscaleSnapshot by TailscaleRuntimeManager.snapshot.collectAsState()
     val vpnSnapshot by VpnRuntimeStore.snapshot.collectAsState()
+    val unappliedStreamingServices by StreamingMediaManager.unappliedServices.collectAsState()
     var screen by rememberSaveable { mutableStateOf(AppScreen.Launch) }
     var screenHistory by rememberSaveable { mutableStateOf(listOf<AppScreen>()) }
     var previousMainTab by rememberSaveable { mutableStateOf(MainTab.Home) }
@@ -721,7 +722,8 @@ fun MallocGfwApp(
     }
 
     fun applyStreamingRoutingChanges() {
-        if (!pendingStreamingRoutingApply) {
+        // Also a retry for services whose rules couldn't be downloaded.
+        if (!pendingStreamingRoutingApply && unappliedStreamingServices.isEmpty()) {
             settingsMessage = "当前流媒体分流设置已经是最新状态。"
             return
         }
@@ -2619,6 +2621,7 @@ fun MallocGfwApp(
                             selectedStreamingServiceId = serviceId
                             navigateSecondary(AppScreen.MediaRoutingNodePicker)
                         },
+                        unappliedServiceIds = unappliedStreamingServices,
                     )
 
                     AppScreen.MediaRoutingNodePicker -> MediaRoutingNodePickerScreen(

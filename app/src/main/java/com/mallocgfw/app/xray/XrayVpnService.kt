@@ -178,6 +178,7 @@ class XrayVpnService : VpnService() {
                 publishDisconnectedOnDestroy = false
                 destroyMessage = null
                 val serverId = intent.getStringExtra(EXTRA_SERVER_ID).orEmpty()
+                val keepFailover = intent.getBooleanExtra(EXTRA_KEEP_FAILOVER, false)
                 AppLogManager.append(applicationContext, TAG, "收到连接请求，serverId=$serverId")
                 VpnRuntimeStore.reset(
                     applicationContext,
@@ -190,7 +191,7 @@ class XrayVpnService : VpnService() {
                 scope.launch {
                     operationMutex.withLock {
                         cleanupCompleted = false
-                        runCatching { connect(serverId) }
+                        runCatching { connect(serverId, keepFailover) }
                             .onSuccess {
                                 val connectedAtMs = System.currentTimeMillis()
                                 AppLogManager.append(applicationContext, TAG, "VPN 已连接，serverId=$serverId")
@@ -207,6 +208,7 @@ class XrayVpnService : VpnService() {
                                 startLogMaintenance()
                                 startHeartbeatMonitor()
                                 watchSystemDns()
+                                retryUnappliedStreamingRules(serverId)
                                 val notification = buildNotification(tr("VPN 已连接", "VPN connected", "VPN подключён"))
                                 val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                                 manager.notify(NOTIFICATION_ID, notification)
@@ -335,7 +337,12 @@ class XrayVpnService : VpnService() {
         super.onRevoke()
     }
 
-    private suspend fun connect(serverId: String) {
+    /**
+     * [keepFailover]: an internal reconnect (the network's DNS changed) while on
+     * a fallback node keeps the link to the primary, so the heartbeat still
+     * switches back once the primary recovers.
+     */
+    private suspend fun connect(serverId: String, keepFailover: Boolean = false) {
         ensureSocketProtectorRegistered()
         statsJob?.cancel()
         statsJob = null
@@ -344,7 +351,7 @@ class XrayVpnService : VpnService() {
         heartbeatJob?.cancel()
         heartbeatJob = null
         cleanupCompleted = false
-        resetFailoverState()
+        if (!keepFailover || serverId != lastFallbackTargetServerId) resetFailoverState()
         AppLogManager.trimAllLogs(applicationContext)
         val state = AppController.load(applicationContext)
         // The service may run with no UI open (Quick Settings, auto reconnect).
@@ -538,6 +545,7 @@ class XrayVpnService : VpnService() {
             return
         }
         unwatchSystemDns()
+        StreamingMediaManager.clearUnapplied()
         statsJob?.cancel()
         statsJob = null
         logMaintenanceJob?.cancel()
@@ -571,6 +579,28 @@ class XrayVpnService : VpnService() {
                 message = message,
             )
             VpnQuickSettingsTileHelper.requestRefresh(applicationContext)
+        }
+    }
+
+    /**
+     * Media routes whose rules couldn't be downloaded before the tunnel was up
+     * (from mainland China GitHub often fails direct) are retried through the
+     * proxy once connected; if any now has rules, reconnect once to apply it.
+     */
+    private fun retryUnappliedStreamingRules(serverId: String) {
+        val pending = StreamingMediaManager.unappliedServices.value
+        if (pending.isEmpty()) return
+        val names = pending.mapNotNull { StreamingMediaManager.serviceById(it)?.name }.joinToString("、")
+        AppLogManager.append(applicationContext, TAG, "流媒体分流未生效（规则下载失败）：$names，连接后重试下载")
+        scope.launch {
+            delay(STREAMING_RETRY_DELAY_MS)
+            if (VpnRuntimeStore.snapshot.value.status != ConnectionStatus.Connected) return@launch
+            if (StreamingMediaManager.retryUnapplied(applicationContext)) {
+                AppLogManager.append(applicationContext, TAG, "流媒体规则已下载，重连以应用")
+                startService(connectIntent(applicationContext, serverId).putExtra(EXTRA_KEEP_FAILOVER, true))
+            } else {
+                AppLogManager.append(applicationContext, TAG, "流媒体规则重试仍失败：$names")
+            }
         }
     }
 
@@ -617,7 +647,7 @@ class XrayVpnService : VpnService() {
                 "网络已切换，系统 DNS 由 $previous 变为 $current，正在重连以更新 DNS",
             )
             tunnelSystemDns = current
-            startService(connectIntent(applicationContext, serverId))
+            startService(connectIntent(applicationContext, serverId).putExtra(EXTRA_KEEP_FAILOVER, true))
         }
     }
 
@@ -1069,7 +1099,8 @@ class XrayVpnService : VpnService() {
             AppDnsMode.System -> dnsEndpointOf(resolveSystemDns(context) ?: DEFAULT_REMOTE_DNS)
             AppDnsMode.Remote -> dnsEndpointOf(DEFAULT_REMOTE_DNS)
             AppDnsMode.Custom -> dnsEndpointOf(
-                settings.customDnsValue.trim().takeIf { DnsInput.isValid(it) } ?: resolveSystemDns(context) ?: DEFAULT_REMOTE_DNS,
+                // Port 53, like Android's own queries to this server.
+                DnsInput.hostOf(settings.customDnsValue) ?: resolveSystemDns(context) ?: DEFAULT_REMOTE_DNS,
             )
         }
     }
@@ -1188,12 +1219,14 @@ class XrayVpnService : VpnService() {
         private const val ACTION_DISCONNECT = "com.mallocgfw.app.action.DISCONNECT_VPN"
         private const val ACTION_REFRESH_SPEED = "com.mallocgfw.app.action.REFRESH_SPEED"
         private const val EXTRA_SERVER_ID = "extra_server_id"
+        private const val EXTRA_KEEP_FAILOVER = "extra_keep_failover"
         private const val NOTIFICATION_CHANNEL_ID = "mallocgfw_vpn"
         private const val NOTIFICATION_ID = 2001
         private const val SPEED_TEST_SETTLE_MS = 1_500L
         private const val SPEED_TEST_TIMEOUT_MS = 22_000L
         private const val SYSTEM_DNS_NETWORK_WAIT_MS = 1_000L
         private const val SYSTEM_DNS_SETTLE_MS = 3_000L
+        private const val STREAMING_RETRY_DELAY_MS = 3_000L
         private const val DEFAULT_HEARTBEAT_INTERVAL_MINUTES = 5
         private const val FAILBACK_SUCCESS_THRESHOLD = 3
         private const val SPEED_TEST_CONNECT_TIMEOUT_MS = 6_000

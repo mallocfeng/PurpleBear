@@ -1006,6 +1006,7 @@ internal fun MediaRoutingScreen(
     onEnabledChange: (Boolean) -> Unit,
     onApplyChanges: () -> Unit,
     onOpenService: (String) -> Unit,
+    unappliedServiceIds: Set<String> = emptySet(),
 ) {
     LazyColumn(
         modifier = Modifier
@@ -1022,6 +1023,18 @@ internal fun MediaRoutingScreen(
             item {
                 NoteBox(
                     text = "应用设置后会重连 VPN。",
+                )
+            }
+        }
+        val unappliedNames = services.filter { it.id in unappliedServiceIds }.map { it.name }
+        if (enabled && connectionStatus == ConnectionStatus.Connected && unappliedNames.isNotEmpty()) {
+            item {
+                NoteBox(
+                    text = uiText(
+                        "以下服务的规则下载失败，暂未生效，流量按普通规则走：${unappliedNames.joinToString("、")}。连接后会自动重试一次，也可以点下方“重试下载规则”。",
+                        "These services' rules couldn't be downloaded, so they aren't in effect yet and follow the normal rules: ${unappliedNames.joinToString(", ")}. PurpleBear retries once after connecting; you can also tap Retry below.",
+                        "Правила этих сервисов не загрузились, поэтому пока не действуют и идут по обычным правилам: ${unappliedNames.joinToString(", ")}. После подключения будет одна повторная попытка; можно также нажать «Повторить» ниже.",
+                    ),
                 )
             }
         }
@@ -1046,13 +1059,15 @@ internal fun MediaRoutingScreen(
                         text = uiText("应用设置后会重连 VPN。"),
                         color = TextSecondary,
                     )
+                    val retryable = enabled && unappliedServiceIds.isNotEmpty()
                     OutlinedActionButton(
                         text = when {
                             hasPendingChanges && connectionStatus == ConnectionStatus.Connected -> "应用设置"
                             hasPendingChanges -> "等待连接后应用"
+                            retryable && connectionStatus == ConnectionStatus.Connected -> uiText("重试下载规则", "Retry rules download", "Повторить загрузку правил")
                             else -> "当前设置已生效"
                         },
-                        enabled = hasPendingChanges && connectionStatus == ConnectionStatus.Connected,
+                        enabled = (hasPendingChanges || retryable) && connectionStatus == ConnectionStatus.Connected,
                         onClick = onApplyChanges,
                     )
                 }

@@ -4,6 +4,9 @@ import android.content.Context
 import com.mallocgfw.app.xray.ResourceFetchClient
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -142,6 +145,30 @@ object StreamingMediaManager {
         return services.firstOrNull { it.id == serviceId }
     }
 
+    private val _unappliedServices = MutableStateFlow<Set<String>>(emptySet())
+
+    /**
+     * Services with a route chosen whose rules couldn't be downloaded (and had
+     * no cache) when the running tunnel was built: their traffic follows the
+     * normal rules until a retry succeeds. Shown in the UI and over MCP.
+     */
+    val unappliedServices: StateFlow<Set<String>> = _unappliedServices.asStateFlow()
+
+    fun clearUnapplied() {
+        _unappliedServices.value = emptySet()
+    }
+
+    /**
+     * Downloads the rules of the services in [unappliedServices] again (through
+     * the running proxy). True when at least one now has rules, so a reconnect
+     * will apply it.
+     */
+    suspend fun retryUnapplied(context: Context): Boolean = withContext(Dispatchers.IO) {
+        _unappliedServices.value
+            .mapNotNull(::serviceById)
+            .count { service -> runCatching { refreshRules(context, service) }.isSuccess } > 0
+    }
+
     /** Selection value meaning "go direct, not through any node". */
     const val DIRECT = "DIRECT"
 
@@ -166,8 +193,12 @@ object StreamingMediaManager {
         selectedServerId: String,
         servers: List<ServerNode>,
     ): StreamingRoutingSetup {
-        if (!settings.streamingRoutingEnabled) return StreamingRoutingSetup()
+        if (!settings.streamingRoutingEnabled) {
+            _unappliedServices.value = emptySet()
+            return StreamingRoutingSetup()
+        }
         return withContext(Dispatchers.IO) {
+            val unapplied = mutableSetOf<String>()
             val serverById = servers.associateBy { it.id }
             val selections = settings.streamingSelections.associateBy { it.serviceId }
             val outbounds = mutableListOf<XrayNamedOutbound>()
@@ -184,7 +215,10 @@ object StreamingMediaManager {
                     node.id == selectedServerId -> "proxy"
                     else -> "stream_${service.id}"
                 }
-                val compiled = runCatching { ensureRules(context, service) }.getOrNull() ?: return@forEach
+                val compiled = runCatching { ensureRules(context, service) }.getOrNull() ?: run {
+                    unapplied += service.id
+                    return@forEach
+                }
                 if (node != null && outboundTag != "proxy") {
                     outbounds += XrayNamedOutbound(
                         tag = outboundTag,
@@ -203,6 +237,7 @@ object StreamingMediaManager {
                 )
             }
 
+            _unappliedServices.value = unapplied
             StreamingRoutingSetup(
                 outbounds = outbounds.distinctBy { it.tag },
                 routingRules = rules.filter { it.hasEntries() },

@@ -19,8 +19,11 @@ object PerAppRouting {
         if (state.proxyMode != ProxyMode.PerApp) return StreamingRoutingSetup()
         val serverById = state.servers.associateBy { it.id }
         val uidsByNode = linkedMapOf<String, MutableList<String>>()
+        // An app pinned to the node that is also the main one still gets its
+        // own rule: otherwise media or direct rules could take its traffic
+        // elsewhere. It reuses the main "proxy" outbound.
         state.protectedApps
-            .filter { it.enabled && it.serverId.isNotBlank() && it.serverId != selectedServerId }
+            .filter { it.enabled && it.serverId.isNotBlank() }
             .forEach { app ->
                 val node = serverById[app.serverId] ?: return@forEach
                 if (node.hiddenUnsupported || !ManualNodeFactory.isRunnable(node)) return@forEach
@@ -30,8 +33,8 @@ object PerAppRouting {
         val outbounds = mutableListOf<XrayNamedOutbound>()
         val rules = mutableListOf<XrayRoutingRule>()
         uidsByNode.entries.forEachIndexed { index, (nodeId, uids) ->
-            val tag = "app_$index"
-            outbounds += XrayNamedOutbound(tag = tag, node = serverById.getValue(nodeId))
+            val tag = if (nodeId == selectedServerId) "proxy" else "app_$index"
+            if (tag != "proxy") outbounds += XrayNamedOutbound(tag = tag, node = serverById.getValue(nodeId))
             rules += XrayRoutingRule(
                 target = RuleTargetPolicy.Proxy,
                 domainSuffixes = emptyList(),

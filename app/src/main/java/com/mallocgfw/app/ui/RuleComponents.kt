@@ -142,7 +142,9 @@ internal fun RuleSourceCard(
                             },
                         )
                     }
-                    if (source.status == RuleSourceStatus.Ready || source.convertedRules > 0) {
+                    if (problem && source.convertedRules > 0) {
+                        add(uiText("仍用上次的 ${source.convertedRules} 条规则", "Still using the last ${source.convertedRules} rules", "Используются прежние правила: ${source.convertedRules}"))
+                    } else if (source.status == RuleSourceStatus.Ready || source.convertedRules > 0) {
                         add(uiText("${source.convertedRules} 条规则", "${source.convertedRules} rules", "Правил: ${source.convertedRules}"))
                     } else if (!source.enabled) {
                         add(uiText("开启后下载", "Downloads when turned on", "Загрузится после включения"))

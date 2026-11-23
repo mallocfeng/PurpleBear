@@ -99,7 +99,8 @@ object DiagnosticsManager {
         geoData: GeoDataSnapshot,
         globalProxyEnabled: Boolean,
     ): DiagnosticStep {
-        val readySources = ruleSources.filter { it.enabled && it.status == RuleSourceStatus.Ready }
+        // A failed refresh keeps the last good list in use, so count what has rules.
+        val readySources = ruleSources.filter { it.enabled && (it.status == RuleSourceStatus.Ready || it.convertedRules > 0) }
         val failedSources = ruleSources.filter { it.enabled && (it.status == RuleSourceStatus.FetchFailed || it.status == RuleSourceStatus.ParseFailed) }
         val geoLabel = if (geoData.status == GeoDataStatus.Ready) {
             tr("Geo 数据已更新", "Geo data updated", "Данные Geo обновлены")

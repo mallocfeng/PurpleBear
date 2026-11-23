@@ -510,7 +510,7 @@ object McpTools {
             val custom = args.optStr("custom_value")?.trim().orEmpty()
             if (mode == AppDnsMode.Custom && custom.isBlank()) throw ToolError("custom_value is required for custom mode.")
             if (mode == AppDnsMode.Custom && !DnsInput.isValid(custom)) {
-                throw ToolError("custom_value must be an IP address such as 223.5.5.5 or 2001:4860:4860::8888; host names and DoH / DoT links are not supported.")
+                throw ToolError("custom_value must be an IP address such as 223.5.5.5 or 2001:4860:4860::8888 (port 53 only); host names and DoH / DoT links are not supported.")
             }
             val target = when (mode) {
                 AppDnsMode.System -> tr("系统 DNS", "the system DNS", "системный DNS")
@@ -768,7 +768,9 @@ object McpTools {
             "Streaming services that can use their own node (e.g. Netflix through a Japanese node), with the node chosen for each " +
                 "and the countries each is mainly used in (us, japan, hongkong, taiwan, singapore, uk, global). " +
                 "Only services with a chosen node get their own route; the rest follow the normal rules. " +
-                "direct: true means the service skips the proxy (node_id \"direct\").",
+                "direct: true means the service skips the proxy (node_id \"direct\"). " +
+                "applied: false means its rules couldn't be downloaded when the VPN connected, so it isn't in effect yet " +
+                "(retried once after connecting; reconnecting also retries).",
             schema("region" to str("Only services of this country.", StreamingRegion.entries.map { it.name.lowercase() })),
         ) { args ->
             val region = args.optStr("region")?.let { r -> StreamingRegion.entries.firstOrNull { it.name.equals(r, ignoreCase = true) } ?: throw ToolError("Unknown region $r.") }
@@ -783,6 +785,7 @@ object McpTools {
                             .put("regions", JSONArray(service.regions.map { it.name.lowercase() }))
                             .put("routed", !nodeId.isNullOrBlank())
                             .put("direct", nodeId == StreamingMediaManager.DIRECT)
+                            .put("applied", !nodeId.isNullOrBlank() && service.id !in StreamingMediaManager.unappliedServices.value)
                             .put("node_id", nodeId?.let { if (it == StreamingMediaManager.DIRECT) "direct" else it } ?: JSONObject.NULL)
                             .put("node_name", nodeId?.let { id -> s.servers.firstOrNull { it.id == id }?.name?.let(Redactor::name) } ?: JSONObject.NULL),
                     )
