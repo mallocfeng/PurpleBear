@@ -6,6 +6,7 @@ import org.json.JSONObject
 
 object AppStateStore {
     private const val PREFS_NAME = "mallocgfw_state"
+    private const val UNREADABLE_STATE_BACKUP_KEY = "persisted_app_state_unreadable_backup"
 
     /**
      * Before 0.9.0.2 an English interface switched the direct region to the
@@ -73,7 +74,11 @@ object AppStateStore {
             }
             val parsed = runCatching {
                 parseState(JSONObject(raw))
-            }.getOrElse {
+            }.getOrElse { error ->
+                // Starting over must not silently destroy the user's nodes:
+                // keep the unreadable copy so it can be recovered.
+                android.util.Log.e("AppStateStore", "Saved state is unreadable; starting from defaults", error)
+                prefs.edit().putString(UNREADABLE_STATE_BACKUP_KEY, raw).apply()
                 defaults()
             }
             var normalized = parsed.normalized()

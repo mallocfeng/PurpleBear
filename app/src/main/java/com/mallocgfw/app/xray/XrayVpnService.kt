@@ -238,6 +238,7 @@ class XrayVpnService : VpnService() {
                 AppLogManager.append(applicationContext, TAG, "收到热切换请求，serverId=$serverId")
                 scope.launch {
                     operationMutex.withLock {
+                        val previousServerId = VpnRuntimeStore.snapshot.value.activeServerId
                         runCatching { switchActiveServer(serverId) }
                             .onSuccess {
                                 val server = AppController.load(applicationContext).servers.firstOrNull { it.id == serverId }
@@ -256,6 +257,7 @@ class XrayVpnService : VpnService() {
                             }
                             .onFailure { error ->
                                 if (error is CancellationException) return@onFailure
+                                if (!recoverFromFailedSwitch(previousServerId, error)) return@onFailure
                                 val activeServerId = VpnRuntimeStore.snapshot.value.activeServerId
                                 val failureMessage = error.message ?: tr("切换线路失败。", "Couldn't switch nodes.", "Не удалось переключить узел.")
                                 AppLogManager.append(applicationContext, TAG, failureMessage, error)
@@ -813,6 +815,7 @@ class XrayVpnService : VpnService() {
                 .onFailure { error ->
                     if (error is CancellationException) return@onFailure
                     resetFailoverState()
+                    if (!recoverFromFailedSwitch(latestSource.id, error)) return@onFailure
                     val failureMessage = error.message ?: tr("备用节点切换失败。", "Couldn't switch to the fallback node.", "Не удалось переключиться на резервный узел.")
                     AppLogManager.append(applicationContext, TAG, failureMessage, error)
                     VpnRuntimeStore.updateConnection(
@@ -872,6 +875,7 @@ class XrayVpnService : VpnService() {
                 .onFailure { error ->
                     if (error is CancellationException) return@onFailure
                     failbackPrimarySuccessCount = 0
+                    if (!recoverFromFailedSwitch(fallback.id, error)) return@onFailure
                     val failureMessage = error.message ?: tr("主节点切回失败。", "Couldn't switch back to the primary node.", "Не удалось вернуться на основной узел.")
                     AppLogManager.append(applicationContext, TAG, failureMessage, error)
                     VpnRuntimeStore.updateConnection(
@@ -884,6 +888,32 @@ class XrayVpnService : VpnService() {
                     startHeartbeatMonitor()
                 }
         }
+    }
+
+    /**
+     * A failed switch can leave nothing behind the tunnel: runXray stops the
+     * old core before starting the new one, and fresh local proxy ports are
+     * handed out before that. Put the previous node back; if that fails too,
+     * disconnect rather than report a tunnel that carries nothing.
+     * Returns true when the previous node is running again.
+     */
+    private suspend fun recoverFromFailedSwitch(previousServerId: String?, error: Throwable): Boolean {
+        val previousId = previousServerId?.takeIf { it.isNotBlank() }
+        if (previousId != null && runCatching { switchActiveServer(previousId) }.isSuccess) {
+            AppLogManager.append(applicationContext, TAG, "切换失败，已恢复原节点")
+            return true
+        }
+        val message = tr(
+            "切换线路失败，VPN 已断开：${error.message.orEmpty()}",
+            "Couldn't switch nodes, so the VPN was disconnected: ${error.message.orEmpty()}",
+            "Не удалось переключить узел, VPN отключён: ${error.message.orEmpty()}",
+        )
+        AppLogManager.append(applicationContext, TAG, message, error)
+        publishDisconnectedOnDestroy = true
+        destroyMessage = message
+        disconnect(updateRuntime = true, message = message)
+        stopSelf()
+        return false
     }
 
     private fun resetFailoverState() {
