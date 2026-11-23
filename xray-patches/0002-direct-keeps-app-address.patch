@@ -1,8 +1,8 @@
 diff --git a/proxy/freedom/freedom.go b/proxy/freedom/freedom.go
-index 6215647..70e48b9 100644
+index 6215647..a956f99 100644
 --- a/proxy/freedom/freedom.go
 +++ b/proxy/freedom/freedom.go
-@@ -296,6 +296,15 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
+@@ -296,6 +296,19 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
  	if origTargetAddr == nil {
  		origTargetAddr = ob.Target.Address
  	}
@@ -10,11 +10,28 @@ index 6215647..70e48b9 100644
 +	// it carries. That domain decides the route, but going direct it must not
 +	// be looked up again: the app may have picked a specific server (WeChat
 +	// international keeps its images on overseas servers, while local DNS
-+	// answers with mainland ones). Dial the app's own address instead.
++	// answers with mainland ones). Dial the app's own address instead; if that
++	// fails (an IPv6 address on a network without IPv6, say), fall back to the
++	// domain as before.
++	var sniffedDomain net.Address
 +	if destination.Address.Family().IsDomain() && ob.OriginalTarget.IsValid() &&
 +		ob.OriginalTarget.Address.Family().IsIP() && ob.OriginalTarget.Port == destination.Port {
++		sniffedDomain = destination.Address
 +		destination.Address = ob.OriginalTarget.Address
 +	}
  	dialer.SetOutboundGateway(ctx, ob)
  	outGateway := ob.Gateway
  	UDPOverride := net.UDPDestination(nil, 0)
+@@ -364,6 +377,12 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
+ 		}
+ 
+ 		rawConn, err := dialer.Dial(ctx, destination)
++		if err != nil && sniffedDomain != nil && destination.Network == net.Network_TCP {
++			errors.LogInfoInner(ctx, err, "app's own address ", destination, " failed, dialing ", sniffedDomain)
++			destination.Address = sniffedDomain
++			sniffedDomain = nil
++			rawConn, err = dialer.Dial(ctx, destination)
++		}
+ 		if err != nil {
+ 			return err
+ 		}

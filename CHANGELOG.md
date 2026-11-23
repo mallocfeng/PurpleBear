@@ -2,6 +2,14 @@
 
 PurpleBear 各版本的完整更新记录。安装包见 [GitHub Releases](https://github.com/mallocfeng/PurpleBear/releases)。
 
+## 0.9.1
+
+1. 换网络后自动恢复上网：使用系统 DNS 时，连接时记下的是当时网络的 DNS（例如家里路由器 192.168.0.1）。以前从 Wi-Fi 切到流量或换了 Wi-Fi 后，手机仍向旧地址查询，所有网站都打不开，直到手动重连。现在 VPN 会监听网络变化，系统 DNS 改变后自动用新的 DNS 重连，并在日志中记录“网络已切换，系统 DNS 由 X 变为 Y”。
+
+2. 修复在没有 IPv6 的网络上部分国内网站打不开：0.9.0.3 起直连会使用 App 自己选的地址，而 App 常常选 IPv6 地址。现在先连 App 的地址，连不上再按域名连接；国际版微信图片的修复保持不变。内核补丁 `xray-patches/0002-direct-keeps-app-address.patch` 已更新，`THIRD_PARTY_NOTICES.md` 同步了 AAR 的 SHA-256。
+
+3. 更新版本号到 `0.9.1`，`versionCode` 更新为 `310`。
+
 ## 0.9.0.5
 
 1. 修复 DNS 选择“Cloudflare 1.1.1.1（经代理）”时开启代理后所有域名都无法解析（Claude、Google、百度等全部打不开）：Xray 的 DNS 出站默认把 A/AAAA 查询交给内置解析器（安卓上没有可用服务器），其他查询直接拒绝，查询从未真正发到 1.1.1.1。现在所有查询都经代理用 TCP 转发给 1.1.1.1。系统 DNS 和自定义 DNS 不受影响。

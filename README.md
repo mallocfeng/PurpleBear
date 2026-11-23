@@ -178,6 +178,10 @@ Release 包输出在 `app/build/outputs/apk/release/app-release.apk`。签名读
 
 ## 更新日志
 
+### 0.9.1
+
+- 换网络（Wi-Fi 与流量切换、换 Wi-Fi）后自动更新 DNS 并恢复上网；修复在没有 IPv6 的网络上部分国内网站打不开。
+
 ### 0.9.0.5
 
 - 修复 DNS 选 Cloudflare 1.1.1.1（经代理）时开启代理后所有域名无法解析。

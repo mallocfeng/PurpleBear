@@ -38,7 +38,7 @@ above.
 - Binding source: https://github.com/XTLS/libXray/tree/v26.11.9
 - Source: https://github.com/XTLS/Xray-core/tree/v26.11.9
 - Packaged AAR path: `app/libs/libXray.aar`
-- Packaged AAR SHA-256: `be43fe74dadcde0a1e85df00f15a4e3490cc1bc8786e57e79583a4f3e7f2ecc6`
+- Packaged AAR SHA-256: `a8ed80836125f508d9abede135e187c1a5c41217ab7a9b40e5b32b791a3ea8ed`
 - Local patches: `xray-patches/` (applied to Xray-core, see below)
 
 PurpleBear uses Xray as its main proxy core. See the upstream project for
@@ -55,7 +55,8 @@ source change:
   (`proxy/freedom/freedom.go`): a sniffed connection that goes direct dials
   the IP address the app chose instead of looking the domain up again, so
   apps that pick a specific server (for example WeChat international's
-  overseas image servers) reach it.
+  overseas image servers) reach it. If that address can't be reached (an
+  IPv6 address on a network without IPv6, say), it falls back to the domain.
 
 To reproduce the AAR, run `xray-patches/build-libxray.sh` (arm64-v8a only,
 Android API 26, NDK 29.0.14206865, Go 1.27.4 and `golang.org/x/mobile` at

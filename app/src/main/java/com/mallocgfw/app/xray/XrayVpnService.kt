@@ -13,6 +13,7 @@ import android.net.IpPrefix
 import android.net.LinkProperties
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -70,6 +71,15 @@ class XrayVpnService : VpnService() {
     private var failbackPrimaryServerId: String? = null
     private var failbackPrimarySuccessCount = 0
     private var publishDisconnectedOnDestroy = false
+
+    // System DNS follows the network (home router -> carrier DNS). The tunnel
+    // hands Android one DNS address at connect time, so when the network's
+    // DNS changes the tunnel is rebuilt; otherwise every lookup goes to an
+    // address the new network can't reach.
+    private var systemDnsCallback: ConnectivityManager.NetworkCallback? = null
+    private var systemDnsChangeJob: Job? = null
+    @Volatile
+    private var tunnelSystemDns: String? = null
     private var cleanupCompleted = false
     /** Set when the reason for stopping is known; otherwise the plain "disconnected" text. */
     private var destroyMessage: String? = null
@@ -196,6 +206,7 @@ class XrayVpnService : VpnService() {
                                 startSpeedMeasurement()
                                 startLogMaintenance()
                                 startHeartbeatMonitor()
+                                watchSystemDns()
                                 val notification = buildNotification(tr("VPN 已连接", "VPN connected", "VPN подключён"))
                                 val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                                 manager.notify(NOTIFICATION_ID, notification)
@@ -344,6 +355,7 @@ class XrayVpnService : VpnService() {
         tunnelHasTailscale = tailscaleRouting != null
         val dnsServer = resolveDnsAddress(applicationContext, state.settings)
         val dnsEndpoint = resolveDnsEndpoint(applicationContext, state.settings)
+        tunnelSystemDns = dnsServer.takeIf { usesSystemDns(state.settings) }
         val server = state.servers.firstOrNull { it.id == serverId }
             ?: error("未找到要连接的节点。")
         val vpnMtu = normalizedAppVpnMtu(state.settings.vpnMtu)
@@ -523,6 +535,7 @@ class XrayVpnService : VpnService() {
             }
             return
         }
+        unwatchSystemDns()
         statsJob?.cancel()
         statsJob = null
         logMaintenanceJob?.cancel()
@@ -557,6 +570,61 @@ class XrayVpnService : VpnService() {
             )
             VpnQuickSettingsTileHelper.requestRefresh(applicationContext)
         }
+    }
+
+    /** System mode, or a custom value that isn't usable (which falls back to the system DNS). */
+    private fun usesSystemDns(settings: com.mallocgfw.app.model.AppSettings): Boolean =
+        settings.dnsMode == AppDnsMode.System ||
+            (settings.dnsMode == AppDnsMode.Custom && DnsInput.hostOf(settings.customDnsValue) == null)
+
+    private fun watchSystemDns() {
+        unwatchSystemDns()
+        if (tunnelSystemDns == null) return
+        val connectivity = getSystemService(ConnectivityManager::class.java) ?: return
+        // The VPN owner's default network is the VPN itself, so watch the
+        // physical networks directly and re-read the system DNS the same way
+        // connect() does.
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+            .build()
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) = scheduleSystemDnsCheck()
+            override fun onLost(network: Network) = scheduleSystemDnsCheck()
+            override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) = scheduleSystemDnsCheck()
+        }
+        runCatching { connectivity.registerNetworkCallback(request, callback) }
+            .onSuccess { systemDnsCallback = callback }
+            .onFailure { Log.w(TAG, "Unable to watch the system DNS", it) }
+    }
+
+    private fun scheduleSystemDnsCheck() {
+        systemDnsChangeJob?.cancel()
+        systemDnsChangeJob = scope.launch {
+            // Let the switch settle (a Wi-Fi handover reports several changes).
+            delay(SYSTEM_DNS_SETTLE_MS)
+            val previous = tunnelSystemDns ?: return@launch
+            val current = resolveSystemDns(applicationContext, log = false) ?: return@launch
+            if (current == previous) return@launch
+            val runtime = VpnRuntimeStore.snapshot.value
+            val serverId = runtime.activeServerId?.takeIf { it.isNotBlank() } ?: return@launch
+            if (runtime.status != ConnectionStatus.Connected) return@launch
+            AppLogManager.append(
+                applicationContext,
+                TAG,
+                "网络已切换，系统 DNS 由 $previous 变为 $current，正在重连以更新 DNS",
+            )
+            tunnelSystemDns = current
+            startService(connectIntent(applicationContext, serverId))
+        }
+    }
+
+    private fun unwatchSystemDns() {
+        systemDnsChangeJob?.cancel()
+        systemDnsChangeJob = null
+        val callback = systemDnsCallback ?: return
+        systemDnsCallback = null
+        runCatching { getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(callback) }
     }
 
     private fun startLogMaintenance() {
@@ -999,7 +1067,7 @@ class XrayVpnService : VpnService() {
             }
     }
 
-    private suspend fun resolveSystemDns(context: Context): String? {
+    private suspend fun resolveSystemDns(context: Context, log: Boolean = true): String? {
         val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
             ?: return null
         val preferred = snapshotDirectNetworks(
@@ -1011,6 +1079,7 @@ class XrayVpnService : VpnService() {
             ?: connectivityManager.activeNetwork
                 ?.let(connectivityManager::getLinkProperties)
                 ?.firstUsableDns()
+        if (!log) return preferred
         if (preferred != null) {
             AppLogManager.append(applicationContext, TAG, "使用系统 DNS：$preferred")
         } else {
@@ -1094,6 +1163,7 @@ class XrayVpnService : VpnService() {
         private const val SPEED_TEST_SETTLE_MS = 1_500L
         private const val SPEED_TEST_TIMEOUT_MS = 22_000L
         private const val SYSTEM_DNS_NETWORK_WAIT_MS = 1_000L
+        private const val SYSTEM_DNS_SETTLE_MS = 3_000L
         private const val DEFAULT_HEARTBEAT_INTERVAL_MINUTES = 5
         private const val FAILBACK_SUCCESS_THRESHOLD = 3
         private const val SPEED_TEST_CONNECT_TIMEOUT_MS = 6_000
