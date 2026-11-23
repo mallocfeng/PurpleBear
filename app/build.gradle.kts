@@ -27,8 +27,8 @@ android {
         applicationId = "com.mallocgfw.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 303
-        versionName = "0.9.0.3"
+        versionCode = 304
+        versionName = "0.9.0.4"
 
         ndk {
             abiFilters += "arm64-v8a"
@@ -75,7 +75,9 @@ android {
         }
 
         release {
-            isMinifyEnabled = false
+            // R8 drops unused library code (most of the dex) and resources.
+            isMinifyEnabled = true
+            isShrinkResources = true
             if (signingConfigs.findByName("release") != null) {
                 signingConfig = signingConfigs.getByName("release")
             }

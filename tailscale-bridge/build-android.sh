@@ -25,7 +25,9 @@ mkdir -p "$OUT"
 pushd "$(dirname "$0")" >/dev/null
 GOOS=android GOARCH=arm64 CGO_ENABLED=1 \
   CC="$TOOLCHAIN/bin/aarch64-linux-android26-clang" \
-  go build -buildmode=c-shared -o "$OUT/libtailscalebridge.so" .
+  go build -buildmode=c-shared -trimpath -ldflags="-s -w" -o "$OUT/libtailscalebridge.so" .
+# Go keeps DWARF in c-shared builds even with -w; strip what is left.
+"$TOOLCHAIN/bin/llvm-strip" --strip-all "$OUT/libtailscalebridge.so"
 # The generated C header is only needed while building a statically linked
 # consumer. JNI resolves this bridge dynamically, so do not package it.
 rm -f "$OUT/libtailscalebridge.h"

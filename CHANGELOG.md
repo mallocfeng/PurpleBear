@@ -2,6 +2,16 @@
 
 PurpleBear 各版本的完整更新记录。安装包见 [GitHub Releases](https://github.com/mallocfeng/PurpleBear/releases)。
 
+## 0.9.0.4
+
+1. 安装包从约 76 MB 缩小到约 51 MB：正式版开启 R8 代码与资源压缩（代码部分从 19.3 MB 降到 2.6 MB），Tailscale 组件去掉调试符号（14.1 MB 降到 7.4 MB）。功能不变。
+
+2. 补充压缩规则：保留 ML Kit 扫码组件的注册类和 Tailscale 原生接口，崩溃日志保留行号。
+
+3. `tailscale-bridge/build-android.sh` 构建时自动去掉调试符号。
+
+4. 更新版本号到 `0.9.0.4`，`versionCode` 更新为 `304`。
+
 ## 0.9.0.3
 
 1. 修复国际版微信（以及其他自选服务器的 App）开启代理后图片无法下载查看：命中直连规则的连接以前会按域名重新解析，被本地 DNS 指向国内服务器，而国际版账号的图片在海外服务器上。现在直连时使用 App 自己连接的地址，域名只用于判断走直连还是代理；走代理的连接不变，仍由代理解析域名以避开 DNS 污染。
