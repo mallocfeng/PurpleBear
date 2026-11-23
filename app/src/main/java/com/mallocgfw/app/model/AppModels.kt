@@ -85,16 +85,16 @@ enum class AppGeoRoutingRegion(
     Russia("ru", "category-ru");
 
     companion object {
+        /**
+         * Russian users get Russian sites direct; everyone else China, since an
+         * English interface doesn't mean the phone is outside China. The US
+         * region stays available as a manual choice.
+         */
         fun defaultForLanguage(language: AppLanguage): AppGeoRoutingRegion {
             return when (language) {
-                AppLanguage.Chinese -> China
-                AppLanguage.English -> English
                 AppLanguage.Russian -> Russia
-                AppLanguage.System -> when (Locale.getDefault().language.lowercase(Locale.ROOT)) {
-                    "zh" -> China
-                    "ru" -> Russia
-                    else -> English
-                }
+                AppLanguage.System -> if (Locale.getDefault().language.lowercase(Locale.ROOT) == "ru") Russia else China
+                AppLanguage.Chinese, AppLanguage.English -> China
             }
         }
     }

@@ -89,8 +89,11 @@ internal fun RuleSourceCard(
     onClick: () -> Unit,
     onToggleEnabled: () -> Unit,
     onRefresh: () -> Unit,
+    region: AppGeoRoutingRegion = AppGeoRoutingRegion.China,
 ) {
-    val remote = source.sourceKind != RuleSourceKind.LocalText
+    // Outside China the home-sites list is the bundled Geo data: nothing to download.
+    val geoData = RuleSourceManager.usesGeoData(source, region)
+    val remote = source.sourceKind != RuleSourceKind.LocalText && !geoData
     val problem = source.status == RuleSourceStatus.FetchFailed || source.status == RuleSourceStatus.ParseFailed
     Row(
         modifier = Modifier
@@ -111,7 +114,7 @@ internal fun RuleSourceCard(
                 overflow = TextOverflow.Ellipsis,
             )
             if (source.systemDefault) {
-                RuleSourceManager.builtInHint(source.id)?.let { hint ->
+                RuleSourceManager.builtInHint(source.id, region)?.let { hint ->
                     Text(
                         text = uiText(hint.first, hint.second, hint.third),
                         color = TextSecondary,
@@ -125,6 +128,11 @@ internal fun RuleSourceCard(
             }
             Text(
                 text = buildList {
+                    if (geoData) {
+                        add(uiText("直连", "Direct", "Напрямую"))
+                        add(uiText("内置 Geo 数据", "Built-in Geo data", "Встроенные Geo-данные"))
+                        return@buildList
+                    }
                     if (remote) {
                         add(
                             when (source.policy) {
@@ -153,7 +161,7 @@ internal fun RuleSourceCard(
                 modifier = Modifier.padding(top = 1.dp),
             )
         }
-        if (updating || problem) {
+        if ((updating || problem) && !geoData) {
             StatusPill(
                 text = if (updating) "更新中" else source.status.displayName(),
                 color = if (updating) Primary else source.status.accent(),

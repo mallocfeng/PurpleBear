@@ -97,7 +97,10 @@ object McpSettings {
         if (this == null) emptyList() else (0 until length()).mapNotNull { optString(it).trim().takeIf(String::isNotBlank) }
 }
 
-/** The last 200 tool calls: time, caller, tool, summary (already redacted), result, approval. */
+/**
+ * The last 200 tool calls from the past six months: time, caller, tool,
+ * summary (already redacted), result, approval.
+ */
 object McpAuditLog {
     private const val FILE = "mcp-audit.jsonl"
     private const val MAX_ENTRIES = 200
@@ -115,7 +118,10 @@ object McpAuditLog {
             .put("approvedBy", entry.approvedBy ?: JSONObject.NULL)
             .toString()
         val f = file(context)
-        val kept = (if (f.exists()) f.readLines() else emptyList()).takeLast(MAX_ENTRIES - 1)
+        val cutoff = com.mallocgfw.app.xray.LogRetention.cutoffMillis()
+        val kept = (if (f.exists()) f.readLines() else emptyList())
+            .filter { line -> runCatching { JSONObject(line).getLong("t") >= cutoff }.getOrDefault(false) }
+            .takeLast(MAX_ENTRIES - 1)
         f.writeText((kept + line).joinToString("\n", postfix = "\n"))
     }
 
@@ -123,6 +129,7 @@ object McpAuditLog {
     fun read(context: Context): List<AuditEntry> {
         val f = file(context)
         if (!f.exists()) return emptyList()
+        val cutoff = com.mallocgfw.app.xray.LogRetention.cutoffMillis()
         return f.readLines().mapNotNull { line ->
             runCatching {
                 val json = JSONObject(line)
@@ -134,7 +141,7 @@ object McpAuditLog {
                     result = json.optString("result"),
                     approvedBy = json.optString("approvedBy").takeIf { !json.isNull("approvedBy") && it.isNotBlank() },
                 )
-            }.getOrNull()
+            }.getOrNull()?.takeIf { it.timeMs >= cutoff }
         }.reversed()
     }
 

@@ -1,6 +1,7 @@
 package com.mallocgfw.app.core
 
 import com.mallocgfw.app.model.AppDnsMode
+import com.mallocgfw.app.model.RuleSourceManager
 import com.mallocgfw.app.model.StreamingMediaManager
 import com.mallocgfw.app.model.AppGeoRoutingRegion
 import com.mallocgfw.app.model.AppLanguage
@@ -454,7 +455,11 @@ object StateOps {
         state.copy(settings = state.settings.copy(globalProxyEnabled = enabled))
 
     fun setGeoRoutingRegion(state: PersistedAppState, region: AppGeoRoutingRegion): PersistedAppState =
-        state.copy(settings = state.settings.copy(geoRoutingRegion = region))
+        state.copy(
+            settings = state.settings.copy(geoRoutingRegion = region),
+            // The built-in home-sites list is named after the region.
+            ruleSources = RuleSourceManager.ensureDefaults(state.ruleSources, region),
+        )
 
     /** Changes the language; a direct-connect region still on the old language's default follows it. */
     fun setLanguage(state: PersistedAppState, language: AppLanguage): PersistedAppState {
@@ -464,7 +469,7 @@ object StateOps {
         } else {
             settings.geoRoutingRegion
         }
-        return state.copy(settings = settings.copy(language = language, geoRoutingRegion = region))
+        return setGeoRoutingRegion(state.copy(settings = settings.copy(language = language)), region)
     }
 
     fun setProxyMode(state: PersistedAppState, mode: ProxyMode): PersistedAppState = state.copy(proxyMode = mode)

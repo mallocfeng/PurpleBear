@@ -36,6 +36,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.material.icons.rounded.ToggleOn
 import com.mallocgfw.app.model.AppLogLevel
+import com.mallocgfw.app.model.AppLanguage
+import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.WarningAmber
@@ -262,6 +264,50 @@ internal fun DnsSettingsDialog(
 }
 
 /** Log level: four explained cards. */
+@Composable
+internal fun LanguageDialog(
+    selected: AppLanguage,
+    onDismiss: () -> Unit,
+    onConfirm: (AppLanguage) -> Unit,
+) {
+    var pending by remember(selected) { mutableStateOf(selected) }
+    ChoiceDialogFrame(
+        icon = Icons.Rounded.Translate,
+        title = uiText("界面语言", "Display language", "Язык интерфейса"),
+        subtitle = uiText("选择 App 显示的语言。", "Choose the language the app is shown in.", "Выберите язык приложения."),
+        note = null,
+        canSave = true,
+        onDismiss = onDismiss,
+        onSave = { onConfirm(pending) },
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            AppLanguage.entries.forEach { language ->
+                ChoiceOptionCard(
+                    icon = if (language == AppLanguage.System) Icons.Rounded.Smartphone else Icons.Rounded.Translate,
+                    title = languageNativeName(language),
+                    subtitle = when (language) {
+                        AppLanguage.System -> uiText("跟随手机的系统语言。", "Follows the phone's language.", "Как в системе телефона.")
+                        AppLanguage.Chinese -> uiText("简体中文", "Chinese", "Китайский")
+                        AppLanguage.English -> uiText("英语", "English", "Английский")
+                        AppLanguage.Russian -> uiText("俄语", "Russian", "Русский")
+                    },
+                    selected = pending == language,
+                    onClick = { pending = language },
+                )
+            }
+        }
+    }
+}
+
+/** A language's name in that language, so anyone can find their own. */
+@Composable
+internal fun languageNativeName(language: AppLanguage): String = when (language) {
+    AppLanguage.System -> uiText("跟随系统", "System", "Системный")
+    AppLanguage.Chinese -> "中文"
+    AppLanguage.English -> "English"
+    AppLanguage.Russian -> "Русский"
+}
+
 @Composable
 internal fun LogLevelDialog(
     selected: AppLogLevel,

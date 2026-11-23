@@ -355,6 +355,7 @@ class XrayVpnService : VpnService() {
                 context = applicationContext,
                 sources = state.ruleSources,
                 servers = state.servers,
+                region = state.settings.geoRoutingRegion,
             )
         }
         val streamingRouting = if (globalProxyEnabled) {
@@ -466,6 +467,7 @@ class XrayVpnService : VpnService() {
                 context = applicationContext,
                 sources = state.ruleSources,
                 servers = state.servers,
+                region = state.settings.geoRoutingRegion,
             )
         }
         val streamingRouting = if (globalProxyEnabled) {

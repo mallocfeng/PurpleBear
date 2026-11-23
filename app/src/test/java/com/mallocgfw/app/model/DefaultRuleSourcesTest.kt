@@ -10,8 +10,11 @@ class DefaultRuleSourcesTest {
     private val defaults = RuleSourceManager.defaultSources
 
     @Test
-    fun oneChinaListOnAndOptionalOnesOff() {
-        assertEquals(listOf("rule_default_shadowrocket"), defaults.filter { it.enabled }.map { it.id })
+    fun directListsOnAndBlockListsOff() {
+        assertEquals(
+            listOf("rule_default_shadowrocket", "rule_default_steam", "rule_default_tracker"),
+            defaults.filter { it.enabled }.map { it.id },
+        )
         assertEquals(defaults.size, defaults.map { it.id }.toSet().size)
         assertEquals(1, defaults.count { it.url.contains("China_Domain") })
         defaults.forEach {
@@ -38,9 +41,48 @@ class DefaultRuleSourcesTest {
         assertTrue("only the Surge copy was on, so China stays direct", china.enabled)
         assertEquals("国内网站直连", china.name)
         assertEquals(3689, china.convertedRules)
-        listOf("rule_default_ads", "rule_default_httpdns", "rule_default_steam", "rule_default_tracker").forEach { id ->
+        listOf("rule_default_ads", "rule_default_httpdns").forEach { id ->
             assertFalse("$id should start off", merged.single { it.id == id }.enabled)
         }
+        listOf("rule_default_steam", "rule_default_tracker").forEach { id ->
+            assertTrue("$id should start on", merged.single { it.id == id }.enabled)
+        }
+    }
+
+    @Test
+    fun homeListFollowsTheDirectRegion() {
+        val home = RuleSourceManager.ensureDefaults(emptyList(), AppGeoRoutingRegion.Russia)
+            .single { it.id == RuleSourceManager.HOME_SITES_ID }
+        assertEquals("俄罗斯网站直连", home.name)
+        assertTrue(RuleSourceManager.usesGeoData(home, AppGeoRoutingRegion.Russia))
+        assertFalse(RuleSourceManager.usesGeoData(home, AppGeoRoutingRegion.China))
+        assertEquals("国内网站直连", RuleSourceManager.ensureDefaults(listOf(home)).single { it.id == home.id }.name)
+    }
+
+    @Test
+    fun englishKeepsChinaDirect() {
+        assertEquals(AppGeoRoutingRegion.China, AppGeoRoutingRegion.defaultForLanguage(AppLanguage.English))
+        assertEquals(AppGeoRoutingRegion.China, AppGeoRoutingRegion.defaultForLanguage(AppLanguage.Chinese))
+        assertEquals(AppGeoRoutingRegion.Russia, AppGeoRoutingRegion.defaultForLanguage(AppLanguage.Russian))
+    }
+
+    @Test
+    fun migrationTurnsOnSteamAndTrackerOnly() {
+        val old = defaults.map { it.copy(enabled = false) }
+        val migrated = RuleSourceManager.enableDirectDefaults(old).associate { it.id to it.enabled }
+        assertEquals(
+            mapOf(
+                "rule_default_shadowrocket" to false,
+                "rule_default_ads" to false,
+                "rule_default_httpdns" to false,
+                "rule_default_steam" to true,
+                "rule_default_tracker" to true,
+            ),
+            migrated,
+        )
+        val downloadedButOff = defaults.single { it.id == "rule_default_steam" }
+            .copy(enabled = false, status = RuleSourceStatus.Disabled, convertedRules = 17)
+        assertEquals(RuleSourceStatus.Ready, RuleSourceManager.enableDirectDefaults(listOf(downloadedButOff)).single().status)
     }
 
     @Test

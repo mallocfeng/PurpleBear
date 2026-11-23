@@ -19,6 +19,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         ApprovalBroker.init(this)
+        com.mallocgfw.app.xray.AppLogManager.trimAllLogs(this)
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
         setContent {

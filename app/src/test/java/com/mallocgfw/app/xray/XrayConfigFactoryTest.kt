@@ -212,6 +212,19 @@ class XrayConfigFactoryTest {
         )
     }
 
+    @Test
+    fun homeSitesSwitchControlsTheRegionSiteList() {
+        fun domains(region: AppGeoRoutingRegion, on: Boolean): List<String> {
+            val rules = JSONObject(
+                XrayConfigFactory.buildVpn(node = testNode(), geoRoutingRegion = region, homeSitesDirect = on),
+            ).getJSONObject("routing").getJSONArray("rules")
+            return List(rules.length()) { rules.getJSONObject(it) }.flatMap { it.domainValues() }
+        }
+        assertTrue(domains(AppGeoRoutingRegion.Russia, true).contains("geosite:category-ru"))
+        assertTrue(domains(AppGeoRoutingRegion.Russia, false).none { it == "geosite:category-ru" })
+        assertTrue(domains(AppGeoRoutingRegion.China, false).none { it == "geosite:cn" })
+    }
+
     private fun JSONArray.indexOfFirstRule(predicate: (JSONObject) -> Boolean): Int {
         for (index in 0 until length()) {
             if (predicate(getJSONObject(index))) return index

@@ -56,6 +56,7 @@ object XrayConfigFactory {
         accessLogPath: String? = null,
         globalProxyEnabled: Boolean = false,
         geoRoutingRegion: AppGeoRoutingRegion = AppGeoRoutingRegion.defaultForLanguage(AppLanguage.System),
+        homeSitesDirect: Boolean = true,
         tailscale: TailscaleRouting? = null,
         localProxy: LocalProxyAllocation = LocalProxyRuntime.current() ?: LocalProxyAllocation.ephemeral(),
     ): String {
@@ -108,6 +109,7 @@ object XrayConfigFactory {
                             routingRules,
                             globalProxyEnabled = globalProxyEnabled,
                             geoRoutingRegion = geoRoutingRegion,
+                            homeSitesDirect = homeSitesDirect,
                             tailscale = tailscale,
                         ),
                     )
@@ -129,6 +131,7 @@ object XrayConfigFactory {
         magicDnsUpstream: String? = null,
         globalProxyEnabled: Boolean = false,
         geoRoutingRegion: AppGeoRoutingRegion = AppGeoRoutingRegion.defaultForLanguage(AppLanguage.System),
+        homeSitesDirect: Boolean = true,
         tailscale: TailscaleRouting? = null,
         /** Let foreign QUIC go through the proxy (good for UDP nodes such as Hysteria2 and TUIC). */
         proxyQuicEnabled: Boolean = false,
@@ -206,6 +209,7 @@ object XrayConfigFactory {
                             blockForeignUdp443 = !proxyQuicEnabled,
                             globalProxyEnabled = globalProxyEnabled,
                             geoRoutingRegion = geoRoutingRegion,
+                            homeSitesDirect = homeSitesDirect,
                             tailscale = tailscale,
                             magicDns = magicDnsUpstream != null,
                             dnsServer = dnsServer,
@@ -227,6 +231,7 @@ object XrayConfigFactory {
         blockForeignUdp443: Boolean = forceUdp443Fallback,
         globalProxyEnabled: Boolean = false,
         geoRoutingRegion: AppGeoRoutingRegion = AppGeoRoutingRegion.defaultForLanguage(AppLanguage.System),
+        homeSitesDirect: Boolean = true,
         tailscale: TailscaleRouting? = null,
         magicDns: Boolean = false,
         dnsServer: String? = null,
@@ -396,7 +401,8 @@ object XrayConfigFactory {
         )
 
         if (!globalProxyEnabled) {
-            geoRoutingRegion.geositeCode?.let { geositeCode ->
+            // The region's site list follows the built-in home-sites switch.
+            geoRoutingRegion.geositeCode?.takeIf { homeSitesDirect }?.let { geositeCode ->
                 rules.put(
                     JSONObject().apply {
                         put("type", "field")

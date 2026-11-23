@@ -46,12 +46,12 @@ object DiagnosticsManager {
         val routingRules = if (settings.globalProxyEnabled) {
             emptyList()
         } else {
-            RuleSourceManager.loadEnabledRoutingRules(context, ruleSources)
+            RuleSourceManager.loadEnabledRoutingRules(context, ruleSources, settings.geoRoutingRegion)
         }
         val geoData = GeoDataManager.load(context)
 
         listOf(
-            buildConfigStep(server, settings),
+            buildConfigStep(server, settings, ruleSources),
             buildRulesStep(ruleSources, routingRules.size, geoData, settings.globalProxyEnabled),
             buildCoreStep(xraySnapshot),
             buildVpnStep(connectionStatus, vpnSnapshot, server),
@@ -61,7 +61,7 @@ object DiagnosticsManager {
         )
     }
 
-    private fun buildConfigStep(server: ServerNode?, settings: AppSettings): DiagnosticStep {
+    private fun buildConfigStep(server: ServerNode?, settings: AppSettings, ruleSources: List<RuleSourceItem>): DiagnosticStep {
         if (server == null) {
             return fail("config", "配置解析", tr("当前没有可诊断的节点，请先导入并选择一个节点。", "No node to diagnose. Import and select a node first.", "Нет узла для диагностики. Сначала импортируйте и выберите узел."))
         }
@@ -70,6 +70,7 @@ object DiagnosticsManager {
                 server,
                 globalProxyEnabled = settings.globalProxyEnabled,
                 geoRoutingRegion = settings.geoRoutingRegion,
+                homeSitesDirect = RuleSourceManager.homeSitesDirect(ruleSources),
                 proxyQuicEnabled = settings.proxyQuicEnabled,
             )
             JSONObject(config)

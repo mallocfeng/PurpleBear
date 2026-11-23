@@ -1,5 +1,7 @@
 package com.mallocgfw.app.xray
 
+import com.mallocgfw.app.model.RuleSourceManager
+
 import android.content.Context
 import android.os.Build
 import android.util.Log
@@ -94,6 +96,7 @@ object XrayCoreManager {
                 accessLogPath = AppLogManager.xrayAccessLogFile(context).absolutePath,
                 globalProxyEnabled = settings.globalProxyEnabled,
                 geoRoutingRegion = settings.geoRoutingRegion,
+                homeSitesDirect = RuleSourceManager.homeSitesDirect(state.ruleSources),
                 tailscale = TailscaleRuntimeManager.snapshot.value.routing(settings),
                 localProxy = localProxy,
             )
@@ -132,6 +135,7 @@ object XrayCoreManager {
                 magicDnsUpstream = magicDnsUpstream,
                 globalProxyEnabled = settings.globalProxyEnabled,
                 geoRoutingRegion = settings.geoRoutingRegion,
+                homeSitesDirect = RuleSourceManager.homeSitesDirect(state.ruleSources),
                 tailscale = TailscaleRuntimeManager.snapshot.value.routing(settings),
                 proxyQuicEnabled = settings.proxyQuicEnabled,
                 dnsServer = dnsServer,

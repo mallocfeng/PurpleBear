@@ -18,6 +18,9 @@ object RuleSourceManager {
     private const val USER_RULE_PRIORITY = 2_000
     private const val SYSTEM_RULE_PRIORITY = 0
     private const val DEFAULT_SHADOWROCKET_ID = "rule_default_shadowrocket"
+
+    /** The built-in "home sites direct" list; what it uses depends on the direct region. */
+    const val HOME_SITES_ID = DEFAULT_SHADOWROCKET_ID
     /** Was a second built-in with the same China list in Surge format; merged into the Shadowrocket one. */
     private const val LEGACY_SURGE_ID = "rule_default_surge"
     private const val CONNECT_TIMEOUT_MS = 10_000
@@ -49,8 +52,9 @@ object RuleSourceManager {
         "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Surge/$folder/$folder.list"
 
     /**
-     * Built-in sources: the China-direct list (on) and optional ones that
-     * start off. Existing users keep their own on / off choices.
+     * Built-in sources: China sites, Steam downloads and BT trackers direct
+     * (on), plus optional block lists that start off. Existing users keep
+     * their own on / off choices (see [DIRECT_DEFAULTS_MIGRATION]).
      */
     val defaultSources = listOf(
         builtIn(
@@ -60,19 +64,49 @@ object RuleSourceManager {
         ),
         builtIn("rule_default_ads", "广告拦截（精简）", blackmatrix("AdvertisingLite"), RuleSourceType.Surge, RuleTargetPolicy.Block, enabled = false),
         builtIn("rule_default_httpdns", "屏蔽国内 App 私有 DNS", blackmatrix("BlockHttpDNS"), RuleSourceType.Surge, RuleTargetPolicy.Block, enabled = false),
-        builtIn("rule_default_steam", "Steam 下载直连", blackmatrix("SteamCN"), RuleSourceType.Surge, RuleTargetPolicy.Direct, enabled = false),
-        builtIn("rule_default_tracker", "BT Tracker 直连", blackmatrix("PrivateTracker"), RuleSourceType.Surge, RuleTargetPolicy.Direct, enabled = false),
+        builtIn("rule_default_steam", "Steam 下载直连", blackmatrix("SteamCN"), RuleSourceType.Surge, RuleTargetPolicy.Direct, enabled = true),
+        builtIn("rule_default_tracker", "BT Tracker 直连", blackmatrix("PrivateTracker"), RuleSourceType.Surge, RuleTargetPolicy.Direct, enabled = true),
     )
 
     private val defaultIds = defaultSources.map { it.id }.toSet()
 
+    /** Name of the home-sites list for [region]; stored so every screen shows it. */
+    fun homeSitesName(region: AppGeoRoutingRegion): String = when (region) {
+        AppGeoRoutingRegion.China -> "国内网站直连"
+        AppGeoRoutingRegion.Russia -> "俄罗斯网站直连"
+        AppGeoRoutingRegion.English -> "本地网站直连"
+    }
+
+    /**
+     * True when the home-sites list comes from the bundled Geo data instead of
+     * a download: outside China the downloaded China list is not used.
+     */
+    fun usesGeoData(source: RuleSourceItem, region: AppGeoRoutingRegion): Boolean =
+        source.id == HOME_SITES_ID && region != AppGeoRoutingRegion.China
+
+    /** Whether the direct region's site list (geosite) applies: the home-sites switch. */
+    fun homeSitesDirect(sources: List<RuleSourceItem>): Boolean =
+        sources.firstOrNull { it.id == HOME_SITES_ID }?.enabled != false
+
     /** One line on what a built-in source does: Chinese, English, Russian. */
-    fun builtInHint(id: String): Triple<String, String, String>? = when (id) {
-        DEFAULT_SHADOWROCKET_ID -> Triple(
-            "国内常用网站（3600+ 个域名）直连，不走代理。",
-            "Common Chinese sites (3,600+ domains) go direct, not through the proxy.",
-            "Популярные китайские сайты (3600+ доменов) напрямую, без прокси.",
-        )
+    fun builtInHint(id: String, region: AppGeoRoutingRegion = AppGeoRoutingRegion.China): Triple<String, String, String>? = when (id) {
+        DEFAULT_SHADOWROCKET_ID -> when (region) {
+            AppGeoRoutingRegion.China -> Triple(
+                "国内常用网站（3600+ 个域名）和中国 IP 直连，不走代理。",
+                "Common Chinese sites (3,600+ domains) and Chinese IPs go direct, not through the proxy.",
+                "Популярные китайские сайты (3600+ доменов) и китайские IP напрямую, без прокси.",
+            )
+            AppGeoRoutingRegion.Russia -> Triple(
+                "俄罗斯常用网站（内置 Geo 数据 category-ru）直连，不走代理。",
+                "Common Russian sites (built-in Geo data, category-ru) go direct, not through the proxy.",
+                "Популярные российские сайты (встроенные Geo-данные category-ru) напрямую, без прокси.",
+            )
+            AppGeoRoutingRegion.English -> Triple(
+                "当前直连地区（美国）没有网站列表，只按美国 IP 直连。",
+                "The direct region (US) has no site list; only US IPs go direct.",
+                "Для региона (США) нет списка сайтов; напрямую идут только IP США.",
+            )
+        }
         "rule_default_ads" -> Triple(
             "拦截常见广告和统计域名；个别网站或 App 可能显示异常。",
             "Blocks common ad and tracking domains; a few sites or apps may misbehave.",
@@ -96,20 +130,38 @@ object RuleSourceManager {
         else -> null
     }
 
-    fun ensureDefaults(sources: List<RuleSourceItem>): List<RuleSourceItem> {
+    /** The Steam and BT direct lists started off before 0.9.0.2: turned on once for everyone. */
+    const val DIRECT_DEFAULTS_MIGRATION = "migration_direct_defaults_v1"
+    private val directDefaultIds = setOf("rule_default_steam", "rule_default_tracker")
+
+    fun enableDirectDefaults(sources: List<RuleSourceItem>): List<RuleSourceItem> =
+        sources.map {
+            if (it.id in directDefaultIds && !it.enabled) {
+                // Same status as turning it on by hand: lists never downloaded are fetched at launch.
+                it.copy(enabled = true, status = if (it.convertedRules > 0) RuleSourceStatus.Ready else RuleSourceStatus.Idle)
+            } else {
+                it
+            }
+        }
+
+    fun ensureDefaults(
+        sources: List<RuleSourceItem>,
+        region: AppGeoRoutingRegion = AppGeoRoutingRegion.China,
+    ): List<RuleSourceItem> {
         val currentById = sources.associateBy { it.id }
         // Someone who had only the old Surge copy on keeps China sites direct.
         val legacyOn = currentById[LEGACY_SURGE_ID]?.enabled == true
         return buildList {
             defaultSources.forEach { default ->
                 val existing = currentById[default.id]
+                val name = if (default.id == HOME_SITES_ID) homeSitesName(region) else default.name
                 val merged = existing?.copy(
-                    name = default.name,
+                    name = name,
                     url = default.url,
                     type = default.type,
                     policy = default.policy,
                     systemDefault = true,
-                ) ?: default
+                ) ?: default.copy(name = name)
                 add(if (default.id == DEFAULT_SHADOWROCKET_ID && legacyOn) merged.copy(enabled = true) else merged)
             }
             sources
@@ -288,19 +340,21 @@ object RuleSourceManager {
     fun loadEnabledRoutingRules(
         context: Context,
         sources: List<RuleSourceItem>,
+        region: AppGeoRoutingRegion = AppGeoRoutingRegion.China,
     ): List<XrayRoutingRule> {
-        return buildRoutingSetup(context, sources, emptyList()).routingRules
+        return buildRoutingSetup(context, sources, emptyList(), region).routingRules
     }
 
     fun buildRoutingSetup(
         context: Context,
         sources: List<RuleSourceItem>,
         servers: List<ServerNode>,
+        region: AppGeoRoutingRegion = AppGeoRoutingRegion.China,
     ): RuleRoutingSetup {
         val outbounds = mutableListOf<XrayNamedOutbound>()
         val missingPolicies = linkedSetOf<String>()
         val routingRules = sources
-            .filter { it.enabled && it.status == RuleSourceStatus.Ready }
+            .filter { it.enabled && it.status == RuleSourceStatus.Ready && !usesGeoData(it, region) }
             .flatMap { source ->
                 val compiled = loadCompiledRules(context, source.id) ?: return@flatMap emptyList()
                 compiled.toRoutingRules(

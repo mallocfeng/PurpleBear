@@ -58,13 +58,32 @@ object AppLogManager {
 
     fun xrayAccessLogFile(context: Context): File = ensureLogFile(context, XRAY_ACCESS_LOG).also(::trimAsync)
 
+    /** Caps each log's size and drops entries older than [LogRetention.MAX_AGE_DAYS]. */
     fun trimAllLogs(context: Context) {
         val appContext = context.applicationContext ?: context
         writerScope.launch {
             synchronized(logLock) {
-                logFiles(appContext).forEach { (_, file) -> trimIfNeeded(file) }
+                val cutoff = LogRetention.cutoffMillis()
+                logFiles(appContext).forEach { (_, file) ->
+                    runCatching {
+                        trimIfNeeded(file)
+                        dropOldEntries(file, cutoff)
+                    }.onFailure { Log.w(LOGCAT_TAG, "Unable to clean log file ${file.name}", it) }
+                }
+                // Files nothing writes to any more (old builds) go once they are that old.
+                val known = logFiles(appContext).map { it.second.name }.toSet()
+                File(appContext.filesDir, LOG_DIR).listFiles()
+                    ?.filter { it.isFile && it.name !in known && it.lastModified() < cutoff }
+                    ?.forEach { it.delete() }
             }
         }
+    }
+
+    private fun dropOldEntries(file: File, cutoff: Long) {
+        if (!file.exists() || file.length() == 0L) return
+        val text = file.readText()
+        val kept = LogRetention.dropOldLines(text, cutoff)
+        if (kept.length != text.length) file.writeText(kept)
     }
 
     fun readRecentLogs(

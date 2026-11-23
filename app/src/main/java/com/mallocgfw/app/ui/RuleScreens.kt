@@ -146,6 +146,7 @@ internal fun RulesScreen(
                             onClick = { onSelectSource(source.id) },
                             onToggleEnabled = { onToggleEnabled(source.id) },
                             onRefresh = { onRefreshSource(source.id) },
+                            region = geoRoutingRegion,
                         )
                     }
                 }

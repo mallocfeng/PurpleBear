@@ -6,6 +6,21 @@ import org.json.JSONObject
 
 object AppStateStore {
     private const val PREFS_NAME = "mallocgfw_state"
+
+    /**
+     * Before 0.9.0.2 an English interface switched the direct region to the
+     * US. English now keeps China direct; anyone left on the US region by
+     * that rule (English or System language) is moved back to China once.
+     */
+    private const val REGION_DEFAULT_MIGRATION = "migration_region_china_default_v1"
+
+    internal fun migrateEnglishRegion(state: PersistedAppState): PersistedAppState {
+        val settings = state.settings
+        // Only English / System users got the US region automatically; Chinese users chose it.
+        val automatic = settings.language == AppLanguage.English || settings.language == AppLanguage.System
+        if (settings.geoRoutingRegion != AppGeoRoutingRegion.English || !automatic) return state
+        return state.copy(settings = settings.copy(geoRoutingRegion = AppGeoRoutingRegion.China))
+    }
     private const val STATE_KEY = "persisted_app_state_v1"
     private val stateLock = Any()
 
@@ -46,13 +61,30 @@ object AppStateStore {
     fun loadWithStartupCleanup(context: Context): LoadedAppState {
         return synchronized(stateLock) {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val raw = prefs.getString(STATE_KEY, null) ?: return@synchronized LoadedAppState(defaults())
+            val raw = prefs.getString(STATE_KEY, null)
+            if (raw == null) {
+                // A fresh install already has the current defaults: the one-time
+                // migration must not undo what this user changes later.
+                prefs.edit()
+                    .putBoolean(RuleSourceManager.DIRECT_DEFAULTS_MIGRATION, true)
+                    .putBoolean(REGION_DEFAULT_MIGRATION, true)
+                    .apply()
+                return@synchronized LoadedAppState(defaults())
+            }
             val parsed = runCatching {
                 parseState(JSONObject(raw))
             }.getOrElse {
                 defaults()
             }
-            val normalized = parsed.normalized()
+            var normalized = parsed.normalized()
+            if (!prefs.getBoolean(RuleSourceManager.DIRECT_DEFAULTS_MIGRATION, false)) {
+                normalized = normalized.copy(ruleSources = RuleSourceManager.enableDirectDefaults(normalized.ruleSources))
+                prefs.edit().putBoolean(RuleSourceManager.DIRECT_DEFAULTS_MIGRATION, true).apply()
+            }
+            if (!prefs.getBoolean(REGION_DEFAULT_MIGRATION, false)) {
+                normalized = migrateEnglishRegion(normalized).normalized()
+                prefs.edit().putBoolean(REGION_DEFAULT_MIGRATION, true).apply()
+            }
             val newlyHiddenUnsupportedNodeCount = normalized.servers.count { normalizedNode ->
                 normalizedNode.hiddenUnsupported &&
                     parsed.servers.none { existing ->
@@ -179,7 +211,7 @@ object AppStateStore {
             .map { subscription ->
                 subscription.copy(nodes = normalizedVisibleServers.count { it.groupId == subscription.id })
             }
-        val normalizedRuleSources = RuleSourceManager.ensureDefaults(ruleSources).map { source ->
+        val normalizedRuleSources = RuleSourceManager.ensureDefaults(ruleSources, settings.geoRoutingRegion).map { source ->
             if (source.status == RuleSourceStatus.Updating && source.convertedRules == 0) {
                 source.copy(status = RuleSourceStatus.Idle, lastError = null)
             } else {

@@ -24,10 +24,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Sync
@@ -249,6 +252,29 @@ internal fun PerAppScreen(
                 }
             }
         }
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Primary.copy(alpha = 0.10f))
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Icon(Icons.Rounded.TouchApp, contentDescription = null, tint = Primary, modifier = Modifier.size(20.dp))
+                Text(
+                    text = uiText(
+                        "点应用可单独选择节点；右侧开关决定是否代理。",
+                        "Tap an app to pick its own node; the switch turns its proxy on or off.",
+                        "Нажмите на приложение, чтобы выбрать узел; переключатель включает прокси.",
+                    ),
+                    color = TextPrimary,
+                    fontSize = TypeScale.Meta,
+                    lineHeight = TypeScale.MetaLine,
+                )
+            }
+        }
         val sections = if (grouped) {
             filteredApps.groupBy { it.category }.toList()
         } else {
@@ -297,7 +323,7 @@ internal fun PerAppScreen(
                                 modifier = Modifier.size(44.dp),
                                 innerPadding = 10.dp,
                             )
-                            Column {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(
                                     text = app.name,
                                     fontSize = TypeScale.ListTitle,
@@ -305,14 +331,44 @@ internal fun PerAppScreen(
                                     fontWeight = FontWeight.Bold,
                                     color = if (installed) TextPrimary else TextSecondary,
                                 )
-                                Text(
-                                    text = (if (installed) uiText("已安装") else uiText("未安装")) + " · " + route,
-                                    color = if (installed) Success else TextSecondary,
-                                    fontSize = TypeScale.Meta,
-                                    lineHeight = TypeScale.MetaLine,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text(
+                                        text = if (installed) uiText("已安装") else uiText("未安装"),
+                                        color = if (installed) Success else TextSecondary,
+                                        fontSize = TypeScale.Meta,
+                                        lineHeight = TypeScale.MetaLine,
+                                        maxLines = 1,
+                                    )
+                                    // Looks like a button so people know the row opens the node choice.
+                                    Row(
+                                        modifier = Modifier
+                                            .weight(1f, fill = false)
+                                            .clip(CircleShape)
+                                            .background(if (app.enabled) Primary.copy(alpha = 0.14f) else ControlSurfaceStrongColor)
+                                            .padding(start = 10.dp, end = 4.dp, top = 3.dp, bottom = 3.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            text = route,
+                                            color = if (app.enabled) Primary else TextSecondary,
+                                            fontSize = TypeScale.Meta,
+                                            lineHeight = TypeScale.MetaLine,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false),
+                                        )
+                                        Icon(
+                                            Icons.Rounded.ChevronRight,
+                                            contentDescription = null,
+                                            tint = if (app.enabled) Primary else TextSecondary,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    }
+                                }
                             }
                         }
                         TogglePill(checked = app.enabled, onClick = { onToggleApp(app.id) })
@@ -320,14 +376,10 @@ internal fun PerAppScreen(
                 }
             }
         }
-        item {
-            NoteBox(
-                text = if (filteredApps.isEmpty()) {
-                    "没有匹配到应用。"
-                } else {
-                    "搜索会实时过滤应用。"
-                },
-            )
+        if (filteredApps.isEmpty()) {
+            item {
+                NoteBox(text = "没有匹配到应用。")
+            }
         }
     }
 }
@@ -406,6 +458,7 @@ internal fun SettingsScreen(
 ) {
     var showDnsDialog by remember { mutableStateOf(false) }
     var showLogLevelDialog by remember { mutableStateOf(false) }
+    var showLanguageDialog by remember { mutableStateOf(false) }
     var showHeartbeatDialog by remember { mutableStateOf(false) }
     var showMtuDialog by remember { mutableStateOf(false) }
     var showQuickTileDialog by remember { mutableStateOf(false) }
@@ -428,39 +481,16 @@ internal fun SettingsScreen(
         }
         item {
             SettingsGroup(title = uiText("语言")) {
-                SettingInfoRow(
+                SettingActionRow(
                     title = uiText("界面语言"),
-                    subtitle = when (settings.language) {
-                        AppLanguage.System -> uiText("使用 Android 系统语言。")
-                        AppLanguage.Chinese -> uiText("中文")
-                        AppLanguage.English -> uiText("英文")
-                        AppLanguage.Russian -> uiText("俄语")
+                    subtitle = if (settings.language == AppLanguage.System) {
+                        uiText("使用 Android 系统语言。")
+                    } else {
+                        languageNativeName(settings.language)
                     },
+                    actionText = uiText("更改", "Change", "Изменить"),
+                    onAction = { showLanguageDialog = true },
                 )
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    ModeChip(
-                        text = uiText("跟随系统"),
-                        selected = settings.language == AppLanguage.System,
-                    ) { onLanguageChange(AppLanguage.System) }
-                    ModeChip(
-                        text = uiText("中文"),
-                        selected = settings.language == AppLanguage.Chinese,
-                    ) { onLanguageChange(AppLanguage.Chinese) }
-                    ModeChip(
-                        text = uiText("English", "English"),
-                        selected = settings.language == AppLanguage.English,
-                    ) { onLanguageChange(AppLanguage.English) }
-                    ModeChip(
-                        text = uiText("Русский", "Russian"),
-                        selected = settings.language == AppLanguage.Russian,
-                    ) { onLanguageChange(AppLanguage.Russian) }
-                }
             }
         }
         item {
@@ -538,8 +568,8 @@ internal fun SettingsScreen(
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 SettingToggleRow(
-                    title = "显示更新通知",
-                    subtitle = "同步完成后通知。",
+                    title = "同步完成通知",
+                    subtitle = "订阅和规则同步完成后，在通知栏提示结果。",
                     checked = settings.showUpdateNotifications,
                     onToggle = { onUpdateNotificationsChange(!settings.showUpdateNotifications) },
                 )
@@ -621,6 +651,17 @@ internal fun SettingsScreen(
             onContinue = {
                 showQuickTileDialog = false
                 onAddQuickSettingsTile()
+            },
+        )
+    }
+
+    if (showLanguageDialog) {
+        LanguageDialog(
+            selected = settings.language,
+            onDismiss = { showLanguageDialog = false },
+            onConfirm = { language ->
+                onLanguageChange(language)
+                showLanguageDialog = false
             },
         )
     }

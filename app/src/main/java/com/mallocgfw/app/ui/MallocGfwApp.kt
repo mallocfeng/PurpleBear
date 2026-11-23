@@ -1398,7 +1398,10 @@ fun MallocGfwApp(
         val enabled = !current.enabled
         AppController.edit { StateOps.setRuleSourceEnabled(it, sourceId, enabled) }
         // A built-in or added source that was never downloaded has no rules yet.
-        if (enabled && current.status != RuleSourceStatus.Ready && current.sourceKind == RuleSourceKind.RemoteUrl) {
+        if (
+            enabled && current.status != RuleSourceStatus.Ready && current.sourceKind == RuleSourceKind.RemoteUrl &&
+            !RuleSourceManager.usesGeoData(current, appSettings.geoRoutingRegion)
+        ) {
             refreshRuleSource(sourceId)
         }
         ruleMessage = if (enabled) {
@@ -1608,6 +1611,7 @@ fun MallocGfwApp(
             // Optional built-ins start off; they download when turned on.
             .filter { it.systemDefault && it.enabled }
             .filter { it.convertedRules == 0 && it.status != RuleSourceStatus.Ready }
+            .filterNot { RuleSourceManager.usesGeoData(it, appSettings.geoRoutingRegion) }
         if (bootstrapCandidates.isNotEmpty()) {
             defaultRulesBootstrapped = true
             bootstrapCandidates.forEach { refreshRuleSource(it.id) }

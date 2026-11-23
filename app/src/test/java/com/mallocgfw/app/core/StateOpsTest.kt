@@ -144,6 +144,21 @@ class StateOpsTest {
         assertEquals(com.mallocgfw.app.model.AppGeoRoutingRegion.Russia, ru.settings.geoRoutingRegion)
         val custom = zh.copy(settings = zh.settings.copy(geoRoutingRegion = com.mallocgfw.app.model.AppGeoRoutingRegion.English))
         assertEquals(com.mallocgfw.app.model.AppGeoRoutingRegion.English, StateOps.setLanguage(custom, com.mallocgfw.app.model.AppLanguage.Russian).settings.geoRoutingRegion)
+        assertEquals(
+            "俄罗斯网站直连",
+            StateOps.setLanguage(zh.copy(ruleSources = com.mallocgfw.app.model.RuleSourceManager.defaultSources), com.mallocgfw.app.model.AppLanguage.Russian)
+                .ruleSources.first { it.id == com.mallocgfw.app.model.RuleSourceManager.HOME_SITES_ID }.name,
+        )
+        // English keeps China direct; Russian moves to Russia and back.
+        val en = StateOps.setLanguage(zh, com.mallocgfw.app.model.AppLanguage.English)
+        assertEquals(com.mallocgfw.app.model.AppGeoRoutingRegion.China, en.settings.geoRoutingRegion)
+        assertEquals(
+            com.mallocgfw.app.model.AppGeoRoutingRegion.China,
+            StateOps.setLanguage(ru, com.mallocgfw.app.model.AppLanguage.English).settings.geoRoutingRegion,
+        )
+        val oldEnglish = zh.copy(settings = zh.settings.copy(language = com.mallocgfw.app.model.AppLanguage.English, geoRoutingRegion = com.mallocgfw.app.model.AppGeoRoutingRegion.English))
+        assertEquals(com.mallocgfw.app.model.AppGeoRoutingRegion.China, com.mallocgfw.app.model.AppStateStore.migrateEnglishRegion(oldEnglish).settings.geoRoutingRegion)
+        assertEquals(custom, com.mallocgfw.app.model.AppStateStore.migrateEnglishRegion(custom))
         assertEquals(5, StateOps.setHeartbeat(s, 7).settings.heartbeatIntervalMinutes)
     }
 

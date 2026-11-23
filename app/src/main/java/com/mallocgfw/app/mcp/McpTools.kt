@@ -595,9 +595,9 @@ object McpTools {
         private fun listRuleSources() = tool(
             "list_rule_sources", "List rule sources", ToolLevel.Read,
             "Rule sources: id, name, format, policy, enabled, status, rule counts, and whether it is a remote URL (host only) or local text. " +
-                "Built-in sources (system_default) include optional ones that start off: rule_default_ads (block ads), rule_default_httpdns " +
-                "(block Chinese apps' own DNS), rule_default_steam (Steam China downloads direct), rule_default_tracker (BT trackers direct); " +
-                "their \"about\" says what each does. Turn them on with toggle_rule_source." + DATA_NOTE,
+                "Built-in sources (system_default): rule_default_shadowrocket (China sites direct), rule_default_steam (Steam China downloads direct) " +
+                "and rule_default_tracker (BT trackers direct) start on; rule_default_ads (block ads) and rule_default_httpdns " +
+                "(block Chinese apps' own DNS) start off. Their \"about\" says what each does. Turn them on or off with toggle_rule_source." + DATA_NOTE,
             schema(),
         ) {
             ready(tr("查看规则源", "List rule sources", "Источники правил")) {
@@ -1110,7 +1110,7 @@ object McpTools {
             .put("total_rules", source.totalRules)
             .put("converted_rules", source.convertedRules)
             .put("skipped_rules", source.skippedRules)
-            .put("about", RuleSourceManager.builtInHint(source.id)?.second ?: JSONObject.NULL)
+            .put("about", RuleSourceManager.builtInHint(source.id, state().settings.geoRoutingRegion)?.second ?: JSONObject.NULL)
             .put("error", source.lastError?.let(Redactor::text) ?: JSONObject.NULL)
 
         private fun regionName(region: AppGeoRoutingRegion) = when (region) {
