@@ -48,6 +48,49 @@ class SidecarFitTest {
         assertFalse(NodeCompatibility.mihomoProxy(old)!!.config.optBoolean("udp"))
     }
 
+    private fun chain(front: String) = """
+        proxies:
+          - {name: Main, type: trojan, server: main.example.com, port: 443, password: pw, sni: main.example.com, dialer-proxy: Front}
+          - $front
+    """.trimIndent()
+
+    @Test
+    fun aFrontTheSidecarRefusesListsTheNodeAsUnsupported() {
+        val preview = ImportParser.buildFilePreview("c.yaml", chain("{name: Front, type: snell, server: f.example.com, port: 443, psk: abc, version: 99}"))
+        val main = preview.nodes.single { it.name == "Main" }
+        // Not silently run without its front: hidden, with the front's reason.
+        assertTrue(main.hiddenUnsupported)
+        assertTrue(NodeCompatibility.coreIncompatibility(main)!!.contains("前置节点"))
+        assertFalse(ManualNodeFactory.isRunnable(main))
+    }
+
+    @Test
+    fun aSnellOneOrTwoFrontRunsWithoutUdp() {
+        val preview = ImportParser.buildFilePreview("c.yaml", chain("{name: Front, type: snell, server: f.example.com, port: 443, psk: abc, udp: true}"))
+        val main = preview.nodes.single { it.name == "Main" }
+        assertFalse(main.hiddenUnsupported)
+        val front = NodeCompatibility.mihomoProxy(main)!!.config.getJSONObject(MihomoProxy.DIALER_KEY)
+        assertEquals("snell", front.getString("type"))
+        assertFalse(front.optBoolean("udp"))
+    }
+
+    @Test
+    fun savedChainsAreCheckedFrontToo() {
+        val main = ImportParser.buildFilePreview("c.yaml", chain("{name: Front, type: snell, server: f.example.com, port: 443, psk: abc, version: 3}"))
+            .nodes.single { it.name == "Main" }
+        val json = JSONObject(main.mihomoProxyJson)
+        // Saved by an older version: a v2 front with udp on …
+        json.getJSONObject(MihomoProxy.DIALER_KEY).put("version", 2).put("udp", true)
+        val fixed = NodeCompatibility.mihomoProxy(main.copy(mihomoProxyJson = json.toString()))!!
+        assertFalse(fixed.config.getJSONObject(MihomoProxy.DIALER_KEY).optBoolean("udp"))
+        assertTrue(fixed.yamlLines.size == 2)
+        // … or a version the sidecar refuses.
+        json.getJSONObject(MihomoProxy.DIALER_KEY).put("version", 99)
+        val refused = main.copy(mihomoProxyJson = json.toString())
+        assertNull(NodeCompatibility.mihomoProxy(refused))
+        assertTrue(NodeCompatibility.coreIncompatibility(refused)!!.contains("前置节点"))
+    }
+
     @Test
     fun onlyRoutedNodesThatAddToTheSidecarAreDroppedOnRetry() {
         val uuid = "0b4f8e8c-4c8a-4c34-9d36-0d2a5c1d7a11"

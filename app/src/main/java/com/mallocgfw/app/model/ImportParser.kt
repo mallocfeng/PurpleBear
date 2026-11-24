@@ -857,7 +857,8 @@ object ImportParser {
     ): ServerNode? {
         val name = item.string("name").orEmpty().ifBlank { "$sourceLabel #$index" }
         val config = MihomoNodes.sanitize(item, name) ?: return null
-        item.string("dialer-proxy")?.let { attachDialer(config, it, depth = 0) }
+        // Its front can't run in the sidecar: the node can't either.
+        item.string("dialer-proxy")?.let { if (!attachDialer(config, it, depth = 0)) return null }
         val address = config.optString("server")
         val type = config.optString("type")
         return ServerNode(
@@ -913,17 +914,32 @@ object ImportParser {
      * Embeds the dialer-proxy front node (a proxy, or a group's first member)
      * as "pb-dialer"; MihomoProxy expands it into a mihomo chain at run time.
      */
-    private fun attachDialer(config: JSONObject, frontName: String, depth: Int) {
-        if (depth > 3) return
-        var target = clashContext.get()?.get(frontName) ?: return
+    /**
+     * Attaches the dialer-proxy front [frontName] (and its own front) to
+     * [config]. The node needs that front, so it is never silently left out:
+     * - a front the sidecar refuses (MihomoNodes.sidecarRejection) is kept as
+     *   it is, which lists the node as unsupported with the reason, now and
+     *   on every later load;
+     * - a front that isn't a proxy at all returns false and the caller drops
+     *   the node.
+     * A name that isn't in the file is left out, as before.
+     */
+    private fun attachDialer(config: JSONObject, frontName: String, depth: Int): Boolean {
+        if (depth > 3) return true
+        var target = clashContext.get()?.get(frontName) ?: return true
         var hops = 0
         while (target["proxies"] is List<*> && target["server"] == null && hops++ < 4) {
-            val first = (target["proxies"] as List<*>).firstOrNull()?.toString() ?: return
-            target = clashContext.get()?.get(first) ?: return
+            val first = (target["proxies"] as List<*>).firstOrNull()?.toString() ?: return true
+            target = clashContext.get()?.get(first) ?: return true
         }
-        val front = MihomoNodes.sanitize(target, "front") ?: return
-        target.string("dialer-proxy")?.let { attachDialer(front, it, depth + 1) }
+        val raw = MihomoNodes.sanitizeUnchecked(target, "front") ?: return false
+        val front = MihomoNodes.fitForSidecar(JSONObject(raw.toString())) ?: run {
+            config.put(MihomoProxy.DIALER_KEY, raw)
+            return true
+        }
+        target.string("dialer-proxy")?.let { if (!attachDialer(front, it, depth + 1)) return false }
         config.put(MihomoProxy.DIALER_KEY, front)
+        return true
     }
 
     /** One outbound of an Xray / v2rayN JSON config. */

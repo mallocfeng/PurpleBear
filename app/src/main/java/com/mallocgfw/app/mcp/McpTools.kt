@@ -337,7 +337,7 @@ object McpTools {
             "disconnect", "Disconnect", ToolLevel.Control, "Stops the VPN.", schema(),
         ) {
             PreparedCall(tr("断开 VPN", "Disconnect", "Отключить VPN")) {
-                AppController.disconnect()
+                if (!AppController.disconnect()) throw ToolError(Redactor.text(VpnServiceController.lockdownDisconnectMessage()))
                 val status = awaitVpn(ConnectionStatus.Disconnected, 10_000)
                 ToolResult(JSONObject().put("connection", status.name.lowercase()), "VPN ${status.name.lowercase()}.")
             }

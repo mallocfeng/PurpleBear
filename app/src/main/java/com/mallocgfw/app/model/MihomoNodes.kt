@@ -41,7 +41,13 @@ object MihomoNodes {
     }
 
     /** A sidecar-ready copy of [map] with [name]; null when mihomo can't run it. */
-    fun sanitize(map: Map<*, *>, name: String): JSONObject? {
+    fun sanitize(map: Map<*, *>, name: String): JSONObject? = sanitizeUnchecked(map, name)?.let(::fitForSidecar)
+
+    /**
+     * [map] converted for the sidecar without the [sidecarRejection] checks:
+     * null only when it isn't a proxy mihomo knows at all.
+     */
+    fun sanitizeUnchecked(map: Map<*, *>, name: String): JSONObject? {
         val type = normalizedType(map["type"]?.toString()) ?: return null
         val server = map["server"]?.toString()?.trim().orEmpty()
         if (server.isBlank() && type != "wireguard") return null
@@ -58,7 +64,7 @@ object MihomoNodes {
         if (type in setOf("socks5", "http") && map["type"].toString().lowercase(Locale.ROOT).let { it == "https" || it == "socks5-tls" }) {
             json.put("tls", true)
         }
-        return fitForSidecar(json)
+        return json
     }
 
     /**
@@ -67,12 +73,17 @@ object MihomoNodes {
      * One refused node fails the whole sidecar, so such a node is shown as
      * unsupported instead of being offered.
      */
-    fun sidecarRejection(config: JSONObject): String? = when (config.optString("type")) {
-        "snell" -> {
-            val version = snellVersion(config)
-            if (version == null || version !in 1..5) "兼容内核不支持 Snell 版本 ${config.opt("version")}" else null
+    fun sidecarRejection(config: JSONObject): String? {
+        val own = when (config.optString("type")) {
+            "snell" -> {
+                val version = snellVersion(config)
+                if (version == null || version !in 1..5) "兼容内核不支持 Snell 版本 ${config.opt("version")}" else null
+            }
+            else -> null
         }
-        else -> null
+        if (own != null) return own
+        // A dialer-proxy front runs in the same sidecar: refused there, it fails the chain.
+        return config.optJSONObject(MihomoProxy.DIALER_KEY)?.let(::sidecarRejection)?.let { "前置节点：$it" }
     }
 
     /**
@@ -85,6 +96,8 @@ object MihomoNodes {
         if (config.optString("type") == "snell" && (snellVersion(config) ?: 1) < 3 && config.optBoolean("udp")) {
             config.put("udp", false)
         }
+        // The same for each dialer-proxy front of the chain (saved data included).
+        config.optJSONObject(MihomoProxy.DIALER_KEY)?.let { fitForSidecar(it) ?: return null }
         return config
     }
 

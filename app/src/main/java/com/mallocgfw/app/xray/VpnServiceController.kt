@@ -41,9 +41,19 @@ object VpnServiceController {
         return XrayVpnService.connectIntent(context, server.id)
     }
 
+    /** The user turning the VPN off; refused in lockdown mode (see [manualDisconnectBlocked]). */
     fun disconnect(context: Context) {
         context.startService(XrayVpnService.disconnectIntent(context))
     }
+
+    /** The first half of the app's own reconnect (disconnect, then connect). */
+    fun disconnectForReconnect(context: Context) {
+        context.startService(XrayVpnService.disconnectIntent(context, internal = true))
+    }
+
+    fun manualDisconnectBlocked(): Boolean = XrayVpnService.manualDisconnectBlocked()
+
+    fun lockdownDisconnectMessage(): String = XrayVpnService.lockdownDisconnectMessage()
 
     fun refreshSpeedMeasurement(context: Context) {
         context.startService(XrayVpnService.refreshSpeedIntent(context))

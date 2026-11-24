@@ -316,7 +316,12 @@ object AppController {
         return Result.success(server)
     }
 
-    suspend fun disconnect() {
+    /** Turns the VPN off as the user would; false in lockdown mode, where it stays up. */
+    suspend fun disconnect(): Boolean {
+        if (VpnServiceController.manualDisconnectBlocked()) {
+            showMessage(VpnServiceController.lockdownDisconnectMessage())
+            return false
+        }
         val host = uiHost
         if (host != null) {
             withContext(Dispatchers.Main) { (uiHost ?: host).disconnect() }
@@ -324,6 +329,7 @@ object AppController {
             update { it.copy(settings = it.settings.copy(resumeConnectionOnLaunch = false)) }
             VpnServiceController.disconnect(appContext)
         }
+        return true
     }
 
     /** Reconnects so changed settings take effect; does nothing when the VPN is off. */

@@ -259,6 +259,18 @@ class XrayVpnService : VpnService() {
             }
 
             ACTION_DISCONNECT -> {
+                if (!intent.getBooleanExtra(EXTRA_INTERNAL_DISCONNECT, false) && manualDisconnectBlocked()) {
+                    // Last line of defence; the UI, the tile and MCP check first.
+                    AppLogManager.append(applicationContext, TAG, "锁定模式下拒绝手动断开")
+                    val runtime = VpnRuntimeStore.snapshot.value
+                    VpnRuntimeStore.updateConnection(
+                        applicationContext,
+                        status = runtime.status,
+                        activeServerId = runtime.activeServerId,
+                        message = lockdownDisconnectMessage(),
+                    )
+                    return START_REDELIVER_INTENT
+                }
                 publishDisconnectedOnDestroy = true
                 destroyMessage = null
                 val generation = newRouteGeneration()
@@ -276,11 +288,7 @@ class XrayVpnService : VpnService() {
                         disconnect(updateRuntime = false, message = destroyMessage ?: tr("VPN 已断开", "VPN disconnected", "VPN отключён"))
                         // A connect that arrived after this disconnect is queued
                         // behind it: stopping would cancel it (onDestroy cancels scope).
-                        if (generation == routeGeneration) {
-                            stopSelf()
-                        } else {
-                            AppLogManager.append(applicationContext, TAG, "断开后已有新的连接请求，保留服务")
-                        }
+                        stopSelfUnlessSuperseded(generation)
                     }
                 }
             }
@@ -683,7 +691,7 @@ class XrayVpnService : VpnService() {
             }
             is com.mallocgfw.app.core.StateOps.RemovalEffect.Disconnect -> {
                 AppLogManager.append(applicationContext, TAG, "连接期间节点已删除：${effect.message}")
-                startService(disconnectIntent(applicationContext))
+                startService(disconnectIntent(applicationContext, internal = true))
                 true
             }
         }
@@ -708,6 +716,9 @@ class XrayVpnService : VpnService() {
         startServiceForeground(buildNotification(tr("正在建立 VPN 隧道…", "Setting up the VPN tunnel…", "Создание VPN-туннеля…")))
         scope.launch {
             operationMutex.withLock {
+                // An older request's cleanup, run while this one waited for the
+                // lock, may have called stopForeground: take the foreground again.
+                startServiceForeground(buildNotification(tr("正在建立 VPN 隧道…", "Setting up the VPN tunnel…", "Создание VPN-туннеля…")))
                 cleanupCompleted = false
                 runCatching { connect(serverId, keepFailover) }
                     .onSuccess {
@@ -757,7 +768,9 @@ class XrayVpnService : VpnService() {
                         )
                         VpnQuickSettingsTileHelper.requestRefresh(applicationContext)
                         disconnect(updateRuntime = false)
-                        stopSelf()
+                        // A request can arrive during the cleanup too; it is queued
+                        // behind this one, and stopping would cancel it.
+                        stopSelfUnlessSuperseded(generation)
                     }
             }
         }
@@ -766,6 +779,24 @@ class XrayVpnService : VpnService() {
     /** The node an Always-on start connects to (StateOps.alwaysOnServerId). */
     private fun alwaysOnServerId(): String? =
         com.mallocgfw.app.core.StateOps.alwaysOnServerId(AppController.load(applicationContext))
+
+    /**
+     * Stops the service after a cleanup, unless a connect / switch / disconnect
+     * arrived meanwhile (it bumps routeGeneration on the main thread). Checked
+     * on the main thread, where onStartCommand runs, so a request is either
+     * seen here or arrives after the stop request. A request that arrives
+     * later still restarts the service (startService after stopSelf creates
+     * it again).
+     */
+    private suspend fun stopSelfUnlessSuperseded(generation: Long) {
+        withContext(Dispatchers.Main) {
+            if (generation == routeGeneration) {
+                stopSelf()
+            } else {
+                AppLogManager.append(applicationContext, TAG, "清理期间收到新的请求，保留服务交由新请求处理")
+            }
+        }
+    }
 
     private fun newRouteGeneration(): Long {
         streamingRetryJob?.cancel()
@@ -1134,11 +1165,16 @@ class XrayVpnService : VpnService() {
             "Couldn't switch nodes, so the VPN was disconnected: ${error.message.orEmpty()}",
             "Не удалось переключить узел, VPN отключён: ${error.message.orEmpty()}",
         )
+        // Restoring the old node took a while: a request may have arrived since.
+        if (generation != routeGeneration) {
+            AppLogManager.append(applicationContext, TAG, "切换失败，已有新的请求，交由新请求处理：${error.message.orEmpty()}")
+            return false
+        }
         AppLogManager.append(applicationContext, TAG, message, error)
         publishDisconnectedOnDestroy = true
         destroyMessage = message
         disconnect(updateRuntime = true, message = message)
-        stopSelf()
+        stopSelfUnlessSuperseded(generation)
         return false
     }
 
@@ -1420,6 +1456,7 @@ class XrayVpnService : VpnService() {
         private const val ACTION_REFRESH_SPEED = "com.mallocgfw.app.action.REFRESH_SPEED"
         private const val EXTRA_SERVER_ID = "extra_server_id"
         private const val EXTRA_KEEP_FAILOVER = "extra_keep_failover"
+        private const val EXTRA_INTERNAL_DISCONNECT = "extra_internal_disconnect"
         private const val NOTIFICATION_CHANNEL_ID = "mallocgfw_vpn"
         private const val NOTIFICATION_ID = 2001
         private const val SPEED_TEST_SETTLE_MS = 1_500L
@@ -1493,11 +1530,34 @@ class XrayVpnService : VpnService() {
             }
         }
 
-        fun disconnectIntent(context: Context): Intent {
+        /**
+         * [internal]: part of the app's own reconnect (disconnect, then connect),
+         * not the user turning the VPN off; allowed even in lockdown mode.
+         */
+        fun disconnectIntent(context: Context, internal: Boolean = false): Intent {
             return Intent(context, XrayVpnService::class.java).apply {
                 action = ACTION_DISCONNECT
+                putExtra(EXTRA_INTERNAL_DISCONNECT, internal)
             }
         }
+
+        /**
+         * Always-on with "Block connections without VPN" (lockdown) is on for
+         * this app: the system blocks every connection outside the VPN, so
+         * taking the tunnel down by hand would leave the phone offline. The
+         * user turns those off in system settings to disconnect.
+         */
+        fun manualDisconnectBlocked(): Boolean {
+            val service = runningInstance ?: return false
+            return Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && service.isAlwaysOn && service.isLockdownEnabled
+        }
+
+        /** Short: toasts on some phones (Xiaomi) show only two lines. */
+        fun lockdownDisconnectMessage(): String = tr(
+            "已开启屏蔽非 VPN 连接，断开会断网。请先在系统 VPN 设置中关闭。",
+            "Connections without VPN are blocked; disconnecting would cut you off. Turn that off in system VPN settings first.",
+            "Подключения без VPN заблокированы: отключение оставит без сети. Сначала выключите это в настройках VPN.",
+        )
 
         fun switchIntent(context: Context, serverId: String): Intent {
             return Intent(context, XrayVpnService::class.java).apply {

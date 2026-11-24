@@ -55,7 +55,10 @@ class VpnQuickSettingsTileService : TileService() {
                 ConnectionStatus.Connected,
                 ConnectionStatus.Connecting,
                 ConnectionStatus.Disconnecting -> {
-                    VpnServiceController.disconnect(applicationContext)
+                    // Lockdown mode: the tunnel stays up; the service logs why.
+                    if (!VpnServiceController.manualDisconnectBlocked()) {
+                        VpnServiceController.disconnect(applicationContext)
+                    }
                 }
 
                 ConnectionStatus.Disconnected -> {

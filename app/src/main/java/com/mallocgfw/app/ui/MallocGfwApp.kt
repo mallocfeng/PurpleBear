@@ -368,7 +368,8 @@ fun MallocGfwApp(
         if (disconnectFirst) {
             disconnectInFlight = true
             connectionStatus = ConnectionStatus.Disconnecting
-            VpnServiceController.disconnect(context)
+            // Our own reconnect: allowed in lockdown mode, unlike the user's disconnect.
+            VpnServiceController.disconnectForReconnect(context)
         } else {
             disconnectInFlight = false
             connectionStatus = ConnectionStatus.Disconnected
@@ -1460,6 +1461,13 @@ fun MallocGfwApp(
             }
 
             ConnectionStatus.Connected -> {
+                if (VpnServiceController.manualDisconnectBlocked()) {
+                    // The home screen shows no runtime message: say it where it's seen.
+                    val message = VpnServiceController.lockdownDisconnectMessage()
+                    runtimeMessage = message
+                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                    return
+                }
                 scope.launch {
                     manualDisconnectRequested = true
                     lastRequestedConnectionServerId = null
@@ -1663,6 +1671,12 @@ fun MallocGfwApp(
             }
 
             override fun disconnect() {
+                if (VpnServiceController.manualDisconnectBlocked()) {
+                    val message = VpnServiceController.lockdownDisconnectMessage()
+                    runtimeMessage = message
+                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                    return
+                }
                 // Drop reconnects queued by earlier setting changes, or the
                 // UI would start the VPN again right after it stops.
                 pendingReconnectServerId = null
