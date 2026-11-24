@@ -293,6 +293,43 @@ class StateOpsTest {
     }
 
     @Test
+    fun refreshLeavingOnlyHiddenNodesMovesTheVpnToAUsableNode() {
+        // Connected to s1; another group still has a usable node.
+        val base = state(node("b", "local", name = "B"), node("s1", "sub1", name = "HK 01"), selected = "s1")
+        val onlyUnsupported = ImportPreview(
+            input = "https://sub.example.com/x", group = sub,
+            nodes = listOf(node("u1", "sub1", name = "Odd", host = "odd.example.com").copy(hiddenUnsupported = true)),
+            subscription = base.subscriptions.single(), summary = "",
+        )
+        val outcome = StateOps.applyImport(base, onlyUnsupported, connectedServerId = "s1")
+        assertEquals("b", outcome.state.selectedServerId)
+        assertEquals("b", outcome.reconnectServer?.id)
+        assertNull(outcome.disconnectMessage)
+        // Nothing usable anywhere: disconnect instead of "reconnecting" to a hidden node.
+        val alone = state(node("s1", "sub1", name = "HK 01"), selected = "s1")
+        val none = StateOps.applyImport(alone, onlyUnsupported.copy(subscription = alone.subscriptions.single()), connectedServerId = "s1")
+        assertNull(none.reconnectServer)
+        assertNotNull(none.disconnectMessage)
+    }
+
+    @Test
+    fun theRunningTunnelDecidesNotTheSavedSettings() {
+        // Netflix went through "m" when the tunnel started; the route was then
+        // set back to default without applying it.
+        val base = state(node("a", "local"), node("m", "local"), selected = "a")
+            .let { it.copy(settings = it.settings.copy(streamingRoutingEnabled = true)) }
+        val after = StateOps.removeNode(base, "m")!!
+        // From the settings alone nothing uses "m" …
+        assertEquals(StateOps.RemovalEffect.None, StateOps.removalEffect(base, after, "a"))
+        // … but the tunnel was built with it.
+        val effect = StateOps.removalEffect(base, after, "a", runningNodeIds = setOf("a", "m"))
+        assertEquals("a", (effect as StateOps.RemovalEffect.Reconnect).server.id)
+        // And a node only the saved settings name, not the tunnel, needs no reconnect.
+        val named = StateOps.setStreamingRoute(base, "netflix", "m")
+        assertEquals(StateOps.RemovalEffect.None, StateOps.removalEffect(named, StateOps.removeNode(named, "m")!!, "a", runningNodeIds = setOf("a")))
+    }
+
+    @Test
     fun localImportGivesClashingIdsAFreshOne() {
         val s = state(node("local_1", "local", host = "old.example.com"))
         val preview = ImportPreview(

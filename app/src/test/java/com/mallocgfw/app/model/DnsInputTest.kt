@@ -67,6 +67,17 @@ class DnsInputTest {
     }
 
     @Test
+    fun validDohUrlsWithEscapesAndQueriesStillParse() {
+        listOf("https://dns.example.com/dns%2Dquery", "https://dns.example.com/dns-query?ct=application%2Fdns-message", "https://[2001:db8::1]/dns-query")
+            .forEach { assertTrue(it, DnsInput.isValid(it)) }
+        // An invalid DoH URL saved by an older version: no encrypted server and
+        // no IP, so the VPN uses the system DNS (XrayVpnService.usesSystemDns).
+        val old = "https://example.com/dns-query%"
+        assertNull(DnsInput.encryptedOf(old))
+        assertNull(DnsInput.hostOf(old))
+    }
+
+    @Test
     fun onlyRealIpsCountAsRefused() {
         listOf("8.8.8.8", "dns.google", "tls://127.0.0.1", "8.8.8", "").forEach { assertFalse(it, DnsInput.isRefusedByAndroid(it)) }
     }
@@ -96,6 +107,10 @@ class DnsInputTest {
             "http://dns.google/dns-query", "tls://", "tls://dns.google/path", "quic://dns..google",
             "https://user@dns.google/dns-query", "tls://dns.google:99999", "tls://-bad.example.com",
             "https://dns google/dns-query", "tls://1.2.3", "doh://dns.google",
+            // Bad escapes, which Xray's URL parser refuses (the core wouldn't start),
+            // and characters that aren't valid in a URI.
+            "https://example.com/dns-query%", "https://example.com/dns%2", "https://example.com/dns%zzquery",
+            "https://example.com/a|b", "https://example.com/a\"b",
         ).forEach {
             assertNull(it, DnsInput.encryptedOf(it))
             assertFalse(it, DnsInput.isValid(it))

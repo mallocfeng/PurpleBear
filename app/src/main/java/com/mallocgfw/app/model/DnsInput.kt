@@ -100,12 +100,25 @@ object DnsInput {
         if (path.any { it.isWhitespace() || it == '#' }) return null
         val (host, port) = splitHostPort(authority) ?: return null
         val defaultPort = if (kind == EncryptedDns.Kind.DoH) 443 else 853
-        return EncryptedDns(
+        val server = EncryptedDns(
             kind = kind,
             host = host,
             port = port ?: defaultPort,
             path = if (kind == EncryptedDns.Kind.DoH) path.ifEmpty { "/dns-query" } else "",
         )
+        // The DoH URL goes to Xray as it is, and Go's url.Parse refuses the
+        // whole config over a bad escape ("…/dns-query%"), so the core wouldn't
+        // start. An old saved value that fails here falls back to the system DNS.
+        if (kind == EncryptedDns.Kind.DoH && !isValidDohUrl(server.xrayServer)) return null
+        return server
+    }
+
+    private val percentEscape = Regex("%(?![0-9A-Fa-f]{2})")
+
+    private fun isValidDohUrl(url: String): Boolean {
+        if (percentEscape.containsMatchIn(url)) return false
+        val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return false
+        return uri.scheme == "https" && !uri.rawAuthority.isNullOrEmpty() && uri.rawFragment == null
     }
 
     /** Host (domain or IP literal) and optional port of an encrypted server. */

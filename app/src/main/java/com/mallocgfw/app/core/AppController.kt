@@ -156,6 +156,9 @@ object AppController {
 
     data class NodeRemoval(val state: PersistedAppState, val notice: String?)
 
+    /** What the running tunnel was built with (null: not recorded; see TunnelNodes). */
+    fun runningNodeIds(): Set<String>? = connectedServerId()?.let { com.mallocgfw.app.xray.TunnelNodes.current() }
+
     private fun keepConnectedSelected(before: PersistedAppState, after: PersistedAppState, connected: String?): PersistedAppState {
         val selectedGone = before.selectedServerId.isNotBlank() && after.servers.none { it.id == before.selectedServerId }
         return if (selectedGone && connected != null && after.servers.any { it.id == connected }) {
@@ -179,7 +182,7 @@ object AppController {
             _removalNotice.value = it
         }
         if (!reconnect) return notice
-        val effect = StateOps.removalEffect(base, next, connected)
+        val effect = StateOps.removalEffect(base, next, connected, runningNodeIds())
         if (effect == StateOps.RemovalEffect.None) return notice
         saveScope.launch {
             val host = uiHost
@@ -211,24 +214,6 @@ object AppController {
         val next = edit(transform) ?: return null
         message?.let { showMessage(it) }
         return next
-    }
-
-    /**
-     * Saves a background-sync result computed from [base], unless the state
-     * changed meanwhile (the caller retries later).
-     */
-    fun commitIfUnchanged(base: PersistedAppState, next: PersistedAppState): Boolean {
-        val connected = connectedServerId()
-        val (before, published) = synchronized(lock) {
-            val current = current()
-            if (AppStateStore.normalize(current) != AppStateStore.normalize(base)) return false
-            val published = normalize(keepConnectedSelected(current, next, connected))
-            publish(published)
-            current to published
-        }
-        // A refresh can drop nodes the running VPN or other settings use.
-        afterNodeChanges(before, published, connected, reconnect = true)
-        return true
     }
 
     /** Writes the state to disk now (the debounced save may not have run yet). */

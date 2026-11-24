@@ -491,6 +491,11 @@ class XrayVpnService : VpnService() {
         )
             .getOrElse { throw it }
         StreamingMediaManager.markInstalled(streamingRouting)
+        TunnelNodes.record(
+            server,
+            perAppRouting.outbounds + streamingRouting.outbounds + ruleRouting.outbounds,
+            AppController.load(applicationContext).servers,
+        )
     }
 
     private suspend fun switchActiveServer(serverId: String) {
@@ -539,6 +544,11 @@ class XrayVpnService : VpnService() {
             encryptedDns = encryptedDnsOf(state.settings),
         ).getOrElse { throw it }
         StreamingMediaManager.markInstalled(streamingRouting)
+        TunnelNodes.record(
+            server,
+            perAppRouting.outbounds + streamingRouting.outbounds + ruleRouting.outbounds,
+            AppController.load(applicationContext).servers,
+        )
     }
 
     private suspend fun disconnect(
@@ -570,6 +580,7 @@ class XrayVpnService : VpnService() {
         }
         unwatchSystemDns()
         StreamingMediaManager.clearUnapplied()
+        TunnelNodes.clear()
         statsJob?.cancel()
         statsJob = null
         logMaintenanceJob?.cancel()

@@ -1,91 +1,123 @@
 package com.mallocgfw.app.sync
 
 import android.content.Context
+import com.mallocgfw.app.core.StateOps
 import com.mallocgfw.app.model.ImportParser
+import com.mallocgfw.app.model.ImportPreview
 import com.mallocgfw.app.model.PersistedAppState
 import com.mallocgfw.app.model.RuleSourceItem
 import com.mallocgfw.app.model.RuleSourceManager
-import com.mallocgfw.app.model.ServerGroupType
 import com.mallocgfw.app.model.StreamingMediaManager
 import com.mallocgfw.app.model.SubscriptionItem
-import com.mallocgfw.app.model.isSameImportedNode
-import com.mallocgfw.app.model.mergedSubscriptionGroupNodes
-import com.mallocgfw.app.model.subscriptionMergeKey
-import com.mallocgfw.app.model.subscriptionNameKey
 import com.mallocgfw.app.xray.AppLogManager
 import com.mallocgfw.app.xray.GeoDataManager
 import com.mallocgfw.app.xray.GeoDataSnapshot
 import com.mallocgfw.app.model.tr
 
-data class SyncReport(
-    val state: PersistedAppState,
+/**
+ * What a sync fetched. The network part runs on a snapshot and can take a
+ * while; [applyTo] then merges only what it touched into the state as it is
+ * when the sync ends, so changes made meanwhile (a deleted subscription, a new
+ * import, favorites, per-app settings) are kept.
+ */
+class SyncReport(
+    private val subscriptions: List<SubscriptionFetch>,
+    private val ruleSources: List<RuleSourceFetch>,
     val geoDataSnapshot: GeoDataSnapshot,
     val refreshedSubscriptions: Int,
     val refreshedRuleSources: Int,
     val refreshedStreamingRules: Int,
     val failedItems: Int,
     val summary: String,
-)
+) {
+    /** A subscription as it was fetched: the parsed preview, or null when the fetch failed. */
+    class SubscriptionFetch(val subscription: SubscriptionItem, val preview: ImportPreview?, val syncedAtMs: Long)
+
+    /** A rule source as it was when fetched, and the refreshed (or failed) result. */
+    class RuleSourceFetch(val original: RuleSourceItem, val result: RuleSourceItem)
+
+    fun applyTo(state: PersistedAppState): PersistedAppState {
+        var next = state
+        subscriptions.forEach { fetch ->
+            // Deleted, or its link changed, during the sync: leave it alone.
+            val current = next.subscriptions.firstOrNull { it.id == fetch.subscription.id } ?: return@forEach
+            if (current.sourceUrl != fetch.subscription.sourceUrl) return@forEach
+            val preview = fetch.preview
+            next = if (preview == null) {
+                replaceSubscription(next, current.id) { it.copy(status = "刷新失败") }
+            } else {
+                // A sync isn't an import the user made: keep their recent-imports list.
+                val imported = StateOps.applyImport(next, preview, connectedServerId = null).state.copy(recentImports = next.recentImports)
+                replaceSubscription(imported, current.id) {
+                    it.copy(status = "已同步", updatedAt = "刚刚", updatedAtMs = fetch.syncedAtMs)
+                }
+            }
+        }
+        ruleSources.forEach { fetch ->
+            val current = next.ruleSources.firstOrNull { it.id == fetch.original.id } ?: return@forEach
+            // Edited during the sync: the user's edit wins.
+            if (!current.sameDefinitionAs(fetch.original)) return@forEach
+            next = next.copy(
+                ruleSources = next.ruleSources.map { if (it.id == current.id) fetch.result.copy(enabled = it.enabled) else it },
+            )
+        }
+        return next
+    }
+
+    private fun RuleSourceItem.sameDefinitionAs(other: RuleSourceItem): Boolean =
+        url == other.url && content == other.content && type == other.type &&
+            policy == other.policy && sourceKind == other.sourceKind && name == other.name
+
+    private fun replaceSubscription(
+        state: PersistedAppState,
+        subscriptionId: String,
+        transform: (SubscriptionItem) -> SubscriptionItem,
+    ): PersistedAppState = state.copy(
+        subscriptions = state.subscriptions.map { if (it.id == subscriptionId) transform(it) else it },
+    )
+}
 
 object BackgroundSyncManager {
+    /** Fetches subscriptions, rule sources, Geo data and media rules. Apply the result with [SyncReport.applyTo]. */
     suspend fun syncAll(
         context: Context,
         state: PersistedAppState,
     ): SyncReport {
         AppLogManager.append(context, "SYNC", "开始同步订阅、规则和 Geo 资源")
-        var nextState = state
         var refreshedSubscriptions = 0
         var refreshedRuleSources = 0
         var failedItems = 0
 
-        state.subscriptions
+        val subscriptionFetches = state.subscriptions
             .filter { it.autoUpdate && !it.sourceUrl.isNullOrBlank() }
-            .forEach { subscription ->
-                runCatching {
-                    ImportParser.buildPreview(subscription.sourceUrl.orEmpty())
-                }.onSuccess { preview ->
-                    nextState = applyImport(nextState, preview)
-                    nextState = replaceSubscription(
-                        nextState,
-                        subscription.id,
-                    ) { current ->
-                        current.copy(
-                            status = "已同步",
-                            updatedAt = "刚刚",
-                            updatedAtMs = System.currentTimeMillis(),
-                        )
+            .map { subscription ->
+                val preview = runCatching { ImportParser.buildPreview(subscription.sourceUrl.orEmpty()) }
+                    .onSuccess {
+                        refreshedSubscriptions += 1
+                        AppLogManager.append(context, "SYNC", "订阅已同步：${subscription.name}")
                     }
-                    refreshedSubscriptions += 1
-                    AppLogManager.append(context, "SYNC", "订阅已同步：${subscription.name}")
-                }.onFailure { error ->
-                    nextState = replaceSubscription(
-                        nextState,
-                        subscription.id,
-                    ) { current ->
-                        current.copy(status = "刷新失败")
+                    .onFailure { error ->
+                        failedItems += 1
+                        AppLogManager.append(context, "SYNC", "订阅同步失败：${subscription.name}", error)
                     }
-                    failedItems += 1
-                    AppLogManager.append(context, "SYNC", "订阅同步失败：${subscription.name}", error)
-                }
+                    .getOrNull()
+                SyncReport.SubscriptionFetch(subscription, preview, System.currentTimeMillis())
             }
 
-        nextState.ruleSources
+        val ruleFetches = state.ruleSources
             .filter { it.enabled }
-            .forEach { source ->
-                runCatching {
-                    RuleSourceManager.refreshSource(context, source)
-                }.onSuccess { result ->
-                    nextState = replaceRuleSource(nextState, result.source)
-                    refreshedRuleSources += 1
-                    AppLogManager.append(context, "SYNC", "规则已同步：${source.name}")
-                }.onFailure { error ->
-                    nextState = replaceRuleSource(
-                        nextState,
-                        RuleSourceManager.buildFailureState(source, error),
-                    )
-                    failedItems += 1
-                    AppLogManager.append(context, "SYNC", "规则同步失败：${source.name}", error)
-                }
+            .map { source ->
+                val result = runCatching { RuleSourceManager.refreshSource(context, source).source }
+                    .onSuccess {
+                        refreshedRuleSources += 1
+                        AppLogManager.append(context, "SYNC", "规则已同步：${source.name}")
+                    }
+                    .getOrElse { error ->
+                        failedItems += 1
+                        AppLogManager.append(context, "SYNC", "规则同步失败：${source.name}", error)
+                        RuleSourceManager.buildFailureState(source, error)
+                    }
+                SyncReport.RuleSourceFetch(source, result)
             }
 
         val geoSnapshot = runCatching {
@@ -119,127 +151,14 @@ object BackgroundSyncManager {
         )
         AppLogManager.append(context, "SYNC", summary)
         return SyncReport(
-            state = nextState,
+            subscriptions = subscriptionFetches,
+            ruleSources = ruleFetches,
             geoDataSnapshot = geoSnapshot,
             refreshedSubscriptions = refreshedSubscriptions,
             refreshedRuleSources = refreshedRuleSources,
             refreshedStreamingRules = refreshedStreamingRules,
             failedItems = failedItems,
             summary = summary,
-        )
-    }
-
-    private fun applyImport(
-        state: PersistedAppState,
-        preview: com.mallocgfw.app.model.ImportPreview,
-    ): PersistedAppState {
-        val serverGroups = state.serverGroups.toMutableList()
-        val servers = state.servers.toMutableList()
-        val subscriptions = state.subscriptions.toMutableList()
-        val selectedBefore = servers.firstOrNull { it.id == state.selectedServerId }
-
-        val existingGroupIndex = serverGroups.indexOfFirst { it.id == preview.group.id }
-        val targetGroupId = preview.group.id
-        val selectedWasInTargetGroup = selectedBefore?.groupId == targetGroupId
-        val targetGroup = preview.group.copy(id = targetGroupId)
-        if (existingGroupIndex >= 0) {
-            serverGroups[existingGroupIndex] = targetGroup
-        } else {
-            serverGroups.add(0, targetGroup)
-        }
-
-        val normalizedPreviewNodes = preview.nodes.map { node ->
-            if (node.groupId == targetGroupId) node else node.copy(groupId = targetGroupId)
-        }
-        if (preview.group.type == ServerGroupType.Subscription) {
-            val refreshed = com.mallocgfw.app.core.StateOps.refreshSubscriptionNodes(servers, targetGroupId, normalizedPreviewNodes)
-            servers.clear()
-            servers.addAll(refreshed)
-        } else {
-            normalizedPreviewNodes.forEach { normalizedNode ->
-                val existingNodeIndex = servers.indexOfFirst {
-                    it.isSameImportedNode(normalizedNode)
-                }
-                if (existingNodeIndex >= 0) {
-                    val existingNode = servers[existingNodeIndex]
-                    servers[existingNodeIndex] = normalizedNode.copy(
-                        id = existingNode.id,
-                        favorite = existingNode.favorite,
-                        latencyMs = existingNode.latencyMs,
-                        stable = existingNode.stable,
-                        preProxyNodeId = existingNode.preProxyNodeId,
-                        fallbackNodeId = existingNode.fallbackNodeId,
-                    )
-                } else {
-                    servers.add(normalizedNode)
-                }
-            }
-        }
-        val normalizedGroupServers = servers.toList().mergedSubscriptionGroupNodes(targetGroupId)
-        servers.clear()
-        servers.addAll(normalizedGroupServers)
-        val mergedNodeCount = servers.count { it.groupId == targetGroupId && !it.hiddenUnsupported }
-        val selectedAfter = if (selectedWasInTargetGroup && selectedBefore != null) {
-            servers.firstOrNull {
-                it.groupId == targetGroupId &&
-                    !it.hiddenUnsupported &&
-                    it.subscriptionNameKey() == selectedBefore.subscriptionNameKey()
-            } ?: servers.firstOrNull {
-                it.groupId == targetGroupId &&
-                    it.subscriptionNameKey() == selectedBefore.subscriptionNameKey()
-            } ?: servers.firstOrNull { it.groupId == targetGroupId && !it.hiddenUnsupported }
-                ?: servers.firstOrNull { it.groupId == targetGroupId }
-        } else {
-            null
-        }
-        val nextSelectedServerId = selectedAfter?.id ?: state.selectedServerId
-
-        preview.subscription?.let { subscription ->
-            val normalizedSubscription = subscription.copy(
-                id = targetGroupId,
-                name = targetGroup.name,
-                nodes = mergedNodeCount,
-                autoUpdate = targetGroup.sourceUrl != null && subscription.autoUpdate,
-                sourceUrl = targetGroup.sourceUrl,
-                nextSync = if (targetGroup.sourceUrl != null && subscription.autoUpdate) "手动" else "快照",
-                status = subscription.status,
-            )
-            val subscriptionIndex = subscriptions.indexOfFirst { it.id == targetGroupId }
-            if (subscriptionIndex >= 0) {
-                subscriptions[subscriptionIndex] = normalizedSubscription
-            } else {
-                subscriptions.add(0, normalizedSubscription)
-            }
-        }
-
-        return state.copy(
-            serverGroups = serverGroups,
-            servers = servers,
-            subscriptions = subscriptions,
-            selectedServerId = nextSelectedServerId,
-        )
-    }
-
-    private fun replaceSubscription(
-        state: PersistedAppState,
-        subscriptionId: String,
-        transform: (SubscriptionItem) -> SubscriptionItem,
-    ): PersistedAppState {
-        return state.copy(
-            subscriptions = state.subscriptions.map { subscription ->
-                if (subscription.id == subscriptionId) transform(subscription) else subscription
-            },
-        )
-    }
-
-    private fun replaceRuleSource(
-        state: PersistedAppState,
-        updated: RuleSourceItem,
-    ): PersistedAppState {
-        return state.copy(
-            ruleSources = state.ruleSources.map { source ->
-                if (source.id == updated.id) updated.copy(enabled = source.enabled) else source
-            },
         )
     }
 

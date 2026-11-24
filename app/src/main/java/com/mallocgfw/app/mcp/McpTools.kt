@@ -1069,10 +1069,14 @@ object McpTools {
         private suspend fun applyImport(preview: ImportPreview, also: (PersistedAppState) -> PersistedAppState = { it }): AppliedImport {
             var outcome: StateOps.ImportOutcome? = null
             val removal = AppController.editNodes(reconnect = false) { s ->
-                StateOps.applyImport(s, preview, AppController.connectedServerId()).also { outcome = it }.state.let(also)
+                StateOps.applyImport(s, preview, AppController.connectedServerId(), AppController.runningNodeIds())
+                    .also { outcome = it }.state.let(also)
             }
             val result = checkNotNull(outcome)
-            result.reconnectServer?.let { AppController.reconnectIfRunning("订阅已更新，正在重新连接当前线路…") }
+            when {
+                result.disconnectMessage != null -> AppController.disconnect()
+                result.reconnectServer != null -> AppController.reconnectIfRunning("订阅已更新，正在重新连接当前线路…")
+            }
             return AppliedImport(result, removal?.notice?.let(Redactor::text))
         }
 

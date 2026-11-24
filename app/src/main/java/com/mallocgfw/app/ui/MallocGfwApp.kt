@@ -844,10 +844,12 @@ fun MallocGfwApp(
         // editNodes posts what the refresh cleared (dropped nodes) for the dialog;
         // outcome.reconnectServer below covers the reconnect.
         AppController.editNodes(reconnect = false) { state ->
-            StateOps.applyImport(state, preview, connectedServerId).also { applied = it }.state
+            StateOps.applyImport(state, preview, connectedServerId, AppController.runningNodeIds()).also { applied = it }.state
         }
         warmServerSections()
         val outcome = checkNotNull(applied)
+        // The import dropped the connected node and left nothing usable.
+        outcome.disconnectMessage?.let { AppController.uiHost?.disconnect() }
         expandedGroups[preview.group.id] = true
         return ImportApplyResult(
             selectedServerChanged = outcome.selectedServerChanged,
@@ -1084,10 +1086,11 @@ fun MallocGfwApp(
             runCatching {
                 BackgroundSyncManager.syncAll(context, currentPersistedState())
             }.onSuccess { report ->
-                val nextState = report.state.copy(settings = appSettings)
-                // Reconnects (or disconnects) when the refresh dropped the
-                // connected node or one the tunnel uses, and posts what it cleared.
-                AppController.editNodes(reconnect = true) { nextState }
+                // Merged into the state as it is now (changes made during the
+                // sync are kept). Reconnects (or disconnects) when the refresh
+                // dropped the connected node or one the tunnel uses, and posts
+                // what it cleared.
+                AppController.editNodes(reconnect = true) { report.applyTo(it) }
                 warmServerSections()
                 geoDataSnapshot = report.geoDataSnapshot
                 settingsMessage = report.summary

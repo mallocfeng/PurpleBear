@@ -36,8 +36,13 @@ object StateOps {
         val state: PersistedAppState,
         val selectedServerChanged: Boolean = false,
         val message: String? = null,
-        /** The node to reconnect to, when the connected node was replaced. */
+        /**
+         * The node to reconnect to: the connected node's group was refreshed, or
+         * the import dropped a node the tunnel uses (see [removalEffect]).
+         */
         val reconnectServer: ServerNode? = null,
+        /** Set when the import dropped the connected node and left no usable one: disconnect. */
+        val disconnectMessage: String? = null,
     )
 
     data class LinkOutcome(
@@ -110,6 +115,8 @@ object StateOps {
         state: PersistedAppState,
         preview: ImportPreview,
         connectedServerId: String?,
+        /** Node ids the running tunnel was built with (null: inferred from settings). */
+        runningNodeIds: Set<String>? = null,
     ): ImportOutcome {
         val servers = state.servers.toMutableList()
         val serverGroups = state.serverGroups.toMutableList()
@@ -182,15 +189,14 @@ object StateOps {
         }
         val mergedServers = normalizeNodeLinks(servers.mergedSubscriptionGroupNodes(targetGroupId))
         val mergedNodeCount = mergedServers.count { it.groupId == targetGroupId && !it.hiddenUnsupported }
+        // Never a hidden or unrunnable node: when the refreshed group has none
+        // left, any usable node elsewhere (the VPN moves there, see below).
+        fun usable(node: ServerNode) = !node.hiddenUnsupported && ManualNodeFactory.isRunnable(node)
         val selectedAfter = if (selectedWasInTargetGroup && selectedBefore != null) {
             mergedServers.firstOrNull {
-                it.groupId == targetGroupId &&
-                    !it.hiddenUnsupported &&
-                    it.subscriptionNameKey() == selectedBefore.subscriptionNameKey()
-            } ?: mergedServers.firstOrNull {
-                it.groupId == targetGroupId && it.subscriptionNameKey() == selectedBefore.subscriptionNameKey()
-            } ?: mergedServers.firstOrNull { it.groupId == targetGroupId && !it.hiddenUnsupported }
-                ?: mergedServers.firstOrNull { it.groupId == targetGroupId }
+                it.groupId == targetGroupId && usable(it) && it.subscriptionNameKey() == selectedBefore.subscriptionNameKey()
+            } ?: mergedServers.firstOrNull { it.groupId == targetGroupId && usable(it) }
+                ?: fallbackSelection(mergedServers).let { id -> mergedServers.firstOrNull { it.id == id } }
         } else {
             null
         }
@@ -235,23 +241,36 @@ object StateOps {
         val selectedNameStillExists = selectedAfter != null &&
             selectedBefore != null &&
             selectedAfter.subscriptionNameKey() == selectedBefore.subscriptionNameKey()
-        // The refresh may also drop nodes the running tunnel uses elsewhere
-        // (pre-proxy, per-app, media, NODE: rules): reconnect on the same node.
-        val removalReconnect = (removalEffect(state, nextState, connectedServerId) as? RemovalEffect.Reconnect)?.server
-        return when {
-            selectedAfter != null && selectedBefore != null && !selectedNameStillExists -> ImportOutcome(
-                state = nextState,
-                selectedServerChanged = true,
-                message = tr(
-                    "原选中节点 ${selectedBefore.name} 已不存在，已切换到 ${selectedAfter.name}。",
-                    "The selected node ${selectedBefore.name} no longer exists; switched to ${selectedAfter.name}.",
-                    "Выбранного узла ${selectedBefore.name} больше нет, выбран ${selectedAfter.name}.",
-                ),
-                reconnectServer = if (selectedWasConnected) selectedAfter else removalReconnect,
-            )
-            selectedAfter != null && selectedWasConnected -> ImportOutcome(state = nextState, reconnectServer = selectedAfter)
-            else -> ImportOutcome(state = nextState, reconnectServer = removalReconnect)
+        // One decision for the running VPN, the same as for a delete: the
+        // connected node gone (reconnect to a usable node, or disconnect when
+        // none is left), or a node the tunnel uses gone (reconnect on the same
+        // node). Otherwise a refresh of the connected node's group reconnects
+        // to pick up its new settings.
+        var reconnectServer: ServerNode? = null
+        var disconnectMessage: String? = null
+        when (val effect = removalEffect(state, nextState, connectedServerId, runningNodeIds)) {
+            is RemovalEffect.Reconnect -> reconnectServer = effect.server
+            is RemovalEffect.Disconnect -> disconnectMessage = effect.message
+            RemovalEffect.None -> if (selectedWasConnected) {
+                reconnectServer = nextState.servers.firstOrNull { it.id == connectedServerId }
+            }
         }
+        val selectionMessage = if (selectedAfter != null && selectedBefore != null && !selectedNameStillExists) {
+            tr(
+                "原选中节点 ${selectedBefore.name} 已不存在，已切换到 ${selectedAfter.name}。",
+                "The selected node ${selectedBefore.name} no longer exists; switched to ${selectedAfter.name}.",
+                "Выбранного узла ${selectedBefore.name} больше нет, выбран ${selectedAfter.name}.",
+            )
+        } else {
+            null
+        }
+        return ImportOutcome(
+            state = nextState,
+            selectedServerChanged = selectionMessage != null,
+            message = disconnectMessage ?: selectionMessage,
+            reconnectServer = reconnectServer,
+            disconnectMessage = disconnectMessage,
+        )
     }
 
     /** Drops pre-proxy / fallback links that point at missing, hidden or unrunnable nodes. */
@@ -320,7 +339,18 @@ object StateOps {
      *   rule target (NODE:): reconnect on the same node, which drops it.
      * Removing a node the tunnel doesn't use changes nothing.
      */
-    fun removalEffect(before: PersistedAppState, after: PersistedAppState, connectedServerId: String?): RemovalEffect {
+    fun removalEffect(
+        before: PersistedAppState,
+        after: PersistedAppState,
+        connectedServerId: String?,
+        /**
+         * Node ids the running tunnel was built with (the core's node, extra
+         * routed outbounds and their pre-proxy chains), recorded when it started.
+         * Null: inferred from [before]'s settings, which can differ from the
+         * tunnel when a setting was changed but not applied yet.
+         */
+        runningNodeIds: Set<String>? = null,
+    ): RemovalEffect {
         val activeId = connectedServerId?.takeIf { it.isNotBlank() } ?: return RemovalEffect.None
         val remaining = after.servers.map { it.id }.toSet()
         val removed = before.servers.map { it.id }.filterNot { it in remaining }.toSet()
@@ -351,7 +381,8 @@ object StateOps {
             }
         }
         val active = after.servers.firstOrNull { it.id == activeId } ?: return RemovalEffect.None
-        if (nodesInRunningConfig(before, activeId).none { it in removed }) return RemovalEffect.None
+        val used = runningNodeIds ?: nodesInRunningConfig(before, activeId)
+        if (used.none { it in removed }) return RemovalEffect.None
         return RemovalEffect.Reconnect(
             active,
             tr(

@@ -23,14 +23,12 @@ class DailySyncWorker(
             val state = AppController.current()
             AppTextLanguage.apply(state.settings.language)
             val report = BackgroundSyncManager.syncAll(applicationContext, state)
-            val saved = AppController.commitIfUnchanged(base = state, next = report.state)
-            if (!saved) {
-                AppLogManager.append(applicationContext, "SYNC", "每日自动更新检测到前台状态变化，稍后重试")
-                return@runCatching Result.retry()
-            }
+            // Merged into the current state, so changes made during the sync stay;
+            // a dropped node the VPN uses makes it reconnect (see editNodes).
+            val removal = AppController.editNodes(reconnect = true) { report.applyTo(it) }
             if (state.settings.showUpdateNotifications) {
                 // Nodes the refresh dropped may have cleared pre-proxies, app pins …
-                val cleared = AppController.removalNotice.value
+                val cleared = removal?.notice
                 SyncNotifications.showSyncCompleted(applicationContext, listOfNotNull(report.summary, cleared).joinToString("\n"))
             }
             Result.success()
