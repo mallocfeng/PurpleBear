@@ -300,8 +300,14 @@ object ImportParser {
         )
         skippedTypes.get().clear()
         skippedProviders.get().clear()
+        // A downloaded provider's proxies may dial through the main config's proxies.
+        val (mainProxies, mainGroups) = if (providerContents.isEmpty()) emptyList<Map<*, *>>() to emptyList() else clashNamesOf(content)
         val parsedNodes = (listOf(ProviderContent(content)) + providerContents).flatMap { part ->
-            runCatching { parseSubscriptionNodes(overriddenContent(part.content, part.override), groupId = sourceId, sourceLabel = groupName) }
+            runCatching {
+                withClashContext(mainProxies, mainGroups) {
+                    parseSubscriptionNodes(overriddenContent(part.content, part.override), groupId = sourceId, sourceLabel = groupName)
+                }
+            }
                 .getOrElse { if (part.content === content) throw it else emptyList() }
                 .map { node -> part.override.rename(node.name).let { if (it == node.name) node else node.copy(name = it) } }
                 .filter(part.filter::keeps)
@@ -690,11 +696,13 @@ object ImportParser {
     ): List<ServerNode> {
         val nodes = mutableListOf<ServerNode>()
         (root["servers"] as? List<*>)?.let { nodes += parseSip008List(it, groupId, sourceLabel) }
+        val topProxies = (root["proxies"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>()
+        val topGroups = (root["proxy-groups"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>()
         (root["proxies"] as? List<*>)?.let { proxies ->
-            val groups = (root["proxy-groups"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>()
-            nodes += withClashContext(proxies.filterIsInstance<Map<*, *>>(), groups) { parseClashProxyList(proxies, groupId, sourceLabel) }
+            nodes += withClashContext(topProxies, topGroups) { parseClashProxyList(proxies, groupId, sourceLabel) }
         }
         // Providers with an inline payload; HTTP providers are fetched by fetchProviderContents.
+        // Their proxies may dial through the main config's proxies (override.dialer-proxy).
         (root["proxy-providers"] as? Map<*, *>)?.forEach { (providerName, provider) ->
             val map = provider as? Map<*, *> ?: return@forEach
             val url = map["url"]?.toString().orEmpty()
@@ -706,7 +714,10 @@ object ImportParser {
             val filter = ProviderFilter.from(map)
             val override = ProviderOverride.from(map)
             (map["payload"] as? List<*>)?.let { payload ->
-                nodes += parseClashProxyList(payload.map { (it as? Map<*, *>)?.let(override::apply) ?: it }, groupId, sourceLabel)
+                val applied = payload.map { (it as? Map<*, *>)?.let(override::apply) ?: it }
+                nodes += withClashContext(topProxies + applied.filterIsInstance<Map<*, *>>(), topGroups) {
+                    parseClashProxyList(applied, groupId, sourceLabel)
+                }
                     .map { node -> node.copy(name = override.rename(node.name)) }
                     .filter(filter::keeps)
             }
@@ -904,16 +915,41 @@ object ImportParser {
     /** Clash proxies and proxy-groups of the config being parsed, for dialer-proxy lookups. */
     private val clashContext = ThreadLocal<Map<String, Map<*, *>>?>()
 
+    /**
+     * Runs [block] with [proxies] and [groups] added to the names dialer-proxy
+     * can point at. Adds to an outer context instead of replacing it: a
+     * provider's proxies may point at the main config's proxies (Clash's
+     * `override.dialer-proxy`), so those stay in scope.
+     */
     private fun <T> withClashContext(proxies: List<Map<*, *>>, groups: List<Map<*, *>>, block: () -> T): T {
         val previous = clashContext.get()
-        clashContext.set((groups + proxies).mapNotNull { map -> map.string("name")?.let { it to map } }.toMap())
+        val added = (groups + proxies).mapNotNull { map -> map.string("name")?.let { it to map } }.toMap()
+        clashContext.set(previous.orEmpty() + added)
         return try { block() } finally { clashContext.set(previous) }
+    }
+
+    /** The top-level proxies and proxy-groups of a Clash config, for [withClashContext]. */
+    private fun clashNamesOf(content: String): Pair<List<Map<*, *>>, List<Map<*, *>>> {
+        if (!Regex("(?m)^(proxies|proxy-groups)\\s*:").containsMatchIn(content)) return emptyList<Map<*, *>>() to emptyList()
+        val root = runCatching { Yaml().load<Any?>(content) as? Map<*, *> }.getOrNull() ?: return emptyList<Map<*, *>>() to emptyList()
+        return (root["proxies"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>() to
+            (root["proxy-groups"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>()
     }
 
     /**
      * Embeds the dialer-proxy front node (a proxy, or a group's first member)
      * as "pb-dialer"; MihomoProxy expands it into a mihomo chain at run time.
      */
+    /**
+     * A dialer-proxy front that isn't in the config: kept as a marker so the
+     * node is listed as unsupported (MihomoNodes.sidecarRejection) instead of
+     * running without the front it needs.
+     */
+    private fun markMissingFront(config: JSONObject, name: String): Boolean {
+        config.put(MihomoProxy.DIALER_KEY, JSONObject().put("type", MihomoNodes.MISSING_FRONT_TYPE).put("name", name))
+        return true
+    }
+
     /**
      * Attaches the dialer-proxy front [frontName] (and its own front) to
      * [config]. The node needs that front, so it is never silently left out:
@@ -922,15 +958,18 @@ object ImportParser {
      *   on every later load;
      * - a front that isn't a proxy at all returns false and the caller drops
      *   the node.
-     * A name that isn't in the file is left out, as before.
+     * A name that isn't in the config (main config or provider) marks the node
+     * unsupported too ([markMissingFront]); DIRECT means no front.
      */
     private fun attachDialer(config: JSONObject, frontName: String, depth: Int): Boolean {
         if (depth > 3) return true
-        var target = clashContext.get()?.get(frontName) ?: return true
+        if (frontName.equals("DIRECT", ignoreCase = true)) return true
+        var target = clashContext.get()?.get(frontName) ?: return markMissingFront(config, frontName)
         var hops = 0
         while (target["proxies"] is List<*> && target["server"] == null && hops++ < 4) {
-            val first = (target["proxies"] as List<*>).firstOrNull()?.toString() ?: return true
-            target = clashContext.get()?.get(first) ?: return true
+            val first = (target["proxies"] as List<*>).firstOrNull()?.toString() ?: return markMissingFront(config, frontName)
+            if (first.equals("DIRECT", ignoreCase = true)) return true
+            target = clashContext.get()?.get(first) ?: return markMissingFront(config, first)
         }
         val raw = MihomoNodes.sanitizeUnchecked(target, "front") ?: return false
         val front = MihomoNodes.fitForSidecar(JSONObject(raw.toString())) ?: run {

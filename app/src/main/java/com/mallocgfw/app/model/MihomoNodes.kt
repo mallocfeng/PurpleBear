@@ -17,6 +17,9 @@ import org.json.JSONObject
  * VLESS to public hosts, legacy ciphers).
  */
 object MihomoNodes {
+    /** Marks a dialer-proxy front the config doesn't define (see ImportParser.attachDialer). */
+    const val MISSING_FRONT_TYPE = "pb-missing"
+
     /** Proxy types the bundled mihomo runs (adapter/parser.go), minus non-proxy types. */
     val PROXY_TYPES = setOf(
         "ss", "ssr", "socks5", "http", "vmess", "vless", "snell", "trojan", "hysteria", "hysteria2",
@@ -75,6 +78,7 @@ object MihomoNodes {
      */
     fun sidecarRejection(config: JSONObject): String? {
         val own = when (config.optString("type")) {
+            MISSING_FRONT_TYPE -> "找不到 ${config.optString("name")}"
             "snell" -> {
                 val version = snellVersion(config)
                 if (version == null || version !in 1..5) "兼容内核不支持 Snell 版本 ${config.opt("version")}" else null

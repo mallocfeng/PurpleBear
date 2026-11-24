@@ -69,6 +69,10 @@ class XrayVpnService : VpnService() {
     @Volatile
     private var streamingRetryJob: Job? = null
 
+    /** The newest start request handed to onStartCommand (main thread); see [stopSelfUnlessSuperseded]. */
+    @Volatile
+    private var lastStartId = 0
+
     /** Set by [startCore] when routed nodes had to be left out; shown once connected. */
     @Volatile
     private var routedFallbackNotice: String? = null
@@ -187,6 +191,7 @@ class XrayVpnService : VpnService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastStartId = startId
         when (intent?.action) {
             ACTION_CONNECT -> beginConnect(
                 serverId = intent.getStringExtra(EXTRA_SERVER_ID).orEmpty(),
@@ -782,17 +787,17 @@ class XrayVpnService : VpnService() {
 
     /**
      * Stops the service after a cleanup, unless a connect / switch / disconnect
-     * arrived meanwhile (it bumps routeGeneration on the main thread). Checked
-     * on the main thread, where onStartCommand runs, so a request is either
-     * seen here or arrives after the stop request. A request that arrives
-     * later still restarts the service (startService after stopSelf creates
-     * it again).
+     * arrived meanwhile:
+     * - one already handed to onStartCommand bumped routeGeneration (both are
+     *   read on the main thread, where onStartCommand runs);
+     * - one the system accepted but hasn't handed over yet has a newer start
+     *   id: stopSelfResult([lastStartId]) then refuses to stop, where a plain
+     *   stopSelf() would drop it with the service.
      */
     private suspend fun stopSelfUnlessSuperseded(generation: Long) {
         withContext(Dispatchers.Main) {
-            if (generation == routeGeneration) {
-                stopSelf()
-            } else {
+            val stopped = generation == routeGeneration && stopSelfResult(lastStartId)
+            if (!stopped) {
                 AppLogManager.append(applicationContext, TAG, "清理期间收到新的请求，保留服务交由新请求处理")
             }
         }
@@ -1549,7 +1554,16 @@ class XrayVpnService : VpnService() {
          */
         fun manualDisconnectBlocked(): Boolean {
             val service = runningInstance ?: return false
-            return Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && service.isAlwaysOn && service.isLockdownEnabled
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) return service.isAlwaysOn && service.isLockdownEnabled
+            // Android 8 and 9 have lockdown too, but VpnService.isAlwaysOn /
+            // isLockdownEnabled only came in 10: read the settings they are
+            // stored in (Settings.Secure ALWAYS_ON_VPN_APP / _LOCKDOWN), which
+            // those versions let apps read.
+            return runCatching {
+                val resolver = service.contentResolver
+                android.provider.Settings.Secure.getString(resolver, "always_on_vpn_app") == service.packageName &&
+                    android.provider.Settings.Secure.getInt(resolver, "always_on_vpn_lockdown", 0) == 1
+            }.getOrDefault(false)
         }
 
         /** Short: toasts on some phones (Xiaomi) show only two lines. */

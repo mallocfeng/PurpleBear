@@ -91,6 +91,57 @@ class SidecarFitTest {
         assertTrue(NodeCompatibility.coreIncompatibility(refused)!!.contains("前置节点"))
     }
 
+    private val mainWithFront = """
+        proxies:
+          - {name: Front, type: trojan, server: front.example.com, port: 443, password: pw, sni: front.example.com}
+    """.trimIndent()
+
+    private fun frontOf(node: ServerNode): JSONObject? =
+        NodeCompatibility.mihomoProxy(node)?.config?.optJSONObject(MihomoProxy.DIALER_KEY)
+
+    @Test
+    fun inlineProviderNodesKeepAFrontFromTheMainConfig() {
+        val config = mainWithFront + """
+
+            proxy-providers:
+              sub:
+                type: inline
+                override: {dialer-proxy: Front}
+                payload:
+                  - {name: Sub, type: vless, server: sub.example.com, port: 443, uuid: 0b4f8e8c-4c8a-4c34-9d36-0d2a5c1d7a11, tls: true, servername: sub.example.com}
+        """.trimIndent()
+        val sub = ImportParser.buildFilePreview("c.yaml", config).nodes.single { it.name == "Sub" }
+        assertFalse(sub.hiddenUnsupported)
+        assertEquals("front.example.com", frontOf(sub)!!.getString("server"))
+    }
+
+    @Test
+    fun downloadedProviderNodesKeepAFrontFromTheMainConfig() {
+        val provider = ImportParser.ProviderContent(
+            content = "proxies:\n  - {name: Sub, type: ss, server: sub.example.com, port: 8388, cipher: aes-128-gcm, password: pw}\n",
+            override = ImportParser.ProviderOverride(fields = mapOf("dialer-proxy" to "Front")),
+        )
+        val sub = ImportParser.buildFilePreview("c.yaml", mainWithFront, listOf(provider)).nodes.single { it.name == "Sub" }
+        assertFalse(sub.hiddenUnsupported)
+        assertEquals("front.example.com", frontOf(sub)!!.getString("server"))
+    }
+
+    @Test
+    fun aFrontThatIsNowhereMarksTheNodeUnsupported() {
+        val provider = ImportParser.ProviderContent(
+            content = "proxies:\n  - {name: Sub, type: ss, server: sub.example.com, port: 8388, cipher: aes-128-gcm, password: pw}\n",
+            override = ImportParser.ProviderOverride(fields = mapOf("dialer-proxy" to "Nowhere")),
+        )
+        val sub = ImportParser.buildFilePreview("c.yaml", mainWithFront, listOf(provider)).nodes.single { it.name == "Sub" }
+        // Not run without the front it asks for.
+        assertTrue(sub.hiddenUnsupported)
+        assertTrue(NodeCompatibility.coreIncompatibility(sub)!!.contains("Nowhere"))
+        // DIRECT is no front at all.
+        val direct = provider.copy(override = ImportParser.ProviderOverride(fields = mapOf("dialer-proxy" to "DIRECT")))
+        val plain = ImportParser.buildFilePreview("c.yaml", mainWithFront, listOf(direct)).nodes.single { it.name == "Sub" }
+        assertFalse(plain.hiddenUnsupported)
+    }
+
     @Test
     fun onlyRoutedNodesThatAddToTheSidecarAreDroppedOnRetry() {
         val uuid = "0b4f8e8c-4c8a-4c34-9d36-0d2a5c1d7a11"
