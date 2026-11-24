@@ -188,8 +188,8 @@ fun MallocGfwApp(
     var pendingImport by remember { mutableStateOf<ImportPreview?>(null) }
     var importError by remember { mutableStateOf<String?>(null) }
     var importInFlight by remember { mutableStateOf(false) }
-    /** Settings a node removal cleared (pre-proxy, app pins …), shown once. */
-    var removalNotice by rememberSaveable { mutableStateOf<String?>(null) }
+    /** Settings cleared because nodes went away (delete, refresh, sync), shown once. */
+    val removalNotice by AppController.removalNotice.collectAsState()
     var startupHiddenUnsupportedNodeCount by rememberSaveable {
         mutableIntStateOf(initialLoad.newlyHiddenUnsupportedNodeCount)
     }
@@ -840,8 +840,14 @@ fun MallocGfwApp(
         } else {
             null
         }
-        val outcome = StateOps.applyImport(currentPersistedState(), preview, connectedServerId)
-        applyPersistedState(outcome.state)
+        var applied: StateOps.ImportOutcome? = null
+        // editNodes posts what the refresh cleared (dropped nodes) for the dialog;
+        // outcome.reconnectServer below covers the reconnect.
+        AppController.editNodes(reconnect = false) { state ->
+            StateOps.applyImport(state, preview, connectedServerId).also { applied = it }.state
+        }
+        warmServerSections()
+        val outcome = checkNotNull(applied)
         expandedGroups[preview.group.id] = true
         return ImportApplyResult(
             selectedServerChanged = outcome.selectedServerChanged,
@@ -1006,8 +1012,7 @@ fun MallocGfwApp(
     }
 
     fun removeServerNode(nodeId: String) {
-        val removal = AppController.removeNodes { StateOps.removeNode(it, nodeId) } ?: return
-        removalNotice = removal.notice
+        AppController.removeNodes { StateOps.removeNode(it, nodeId) } ?: return
         warmServerSections()
         if (screen == AppScreen.NodeDetail) {
             goToMain(MainTab.Servers)
@@ -1015,8 +1020,7 @@ fun MallocGfwApp(
     }
 
     fun removeSubscriptionGroup(groupId: String) {
-        val removal = AppController.removeNodes { StateOps.removeSubscriptionGroup(it, groupId) } ?: return
-        removalNotice = removal.notice
+        AppController.removeNodes { StateOps.removeSubscriptionGroup(it, groupId) } ?: return
         warmServerSections()
         expandedGroups.remove(groupId)
         if (screen == AppScreen.Subscriptions || screen == AppScreen.NodeDetail) {
@@ -1076,41 +1080,21 @@ fun MallocGfwApp(
         if (syncInFlight) return
         syncInFlight = true
         settingsMessage = "已开始后台同步订阅、规则和 Geo 资源。"
-        val connectedServerBeforeSync = if (connectionStatus == ConnectionStatus.Connected) {
-            val activeId = vpnSnapshot.activeServerId?.takeIf { it.isNotBlank() } ?: selectedServerId
-            servers.firstOrNull { it.id == activeId }
-        } else {
-            null
-        }
         scope.launch {
             runCatching {
                 BackgroundSyncManager.syncAll(context, currentPersistedState())
             }.onSuccess { report ->
                 val nextState = report.state.copy(settings = appSettings)
-                val reconnectServer = connectedServerBeforeSync?.let { previous ->
-                    val previousStillExists = nextState.servers.any { it.id == previous.id }
-                    if (previousStillExists && nextState.selectedServerId == previous.id) {
-                        null
-                    } else {
-                        nextState.servers.firstOrNull {
-                            it.id == nextState.selectedServerId &&
-                                it.groupId == previous.groupId
-                        }
-                    }
-                }
-                applyPersistedState(nextState)
+                // Reconnects (or disconnects) when the refresh dropped the
+                // connected node or one the tunnel uses, and posts what it cleared.
+                AppController.editNodes(reconnect = true) { nextState }
+                warmServerSections()
                 geoDataSnapshot = report.geoDataSnapshot
                 settingsMessage = report.summary
                 ruleMessage = report.summary
                 subscriptionMessage = report.summary
                 if (appSettings.showUpdateNotifications) {
                     SyncNotifications.showSyncCompleted(context, report.summary)
-                }
-                reconnectServer?.let { server ->
-                    reconnectVpnForSettingsChange(
-                        server = server,
-                        message = "订阅已同步，正在重新连接当前线路…",
-                    )
                 }
             }.onFailure { error ->
                 settingsMessage = error.message ?: "后台同步失败。"
@@ -1914,11 +1898,11 @@ fun MallocGfwApp(
     CompositionLocalProvider(LocalAppLanguage provides appSettings.language.resolveAppLanguage()) {
         removalNotice?.let { notice ->
             AlertDialog(
-                onDismissRequest = { removalNotice = null },
+                onDismissRequest = AppController::consumeRemovalNotice,
                 title = { Text(uiText("相关设置已调整", "Related settings changed", "Связанные настройки изменены")) },
                 text = { Text(notice) },
                 confirmButton = {
-                    TextButton(onClick = { removalNotice = null }) {
+                    TextButton(onClick = AppController::consumeRemovalNotice) {
                         Text(uiText("知道了"))
                     }
                 },

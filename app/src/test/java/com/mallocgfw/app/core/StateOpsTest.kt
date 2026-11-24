@@ -237,6 +237,61 @@ class StateOpsTest {
         assertNull(StateOps.removalNotice(after, StateOps.removeNode(after, "b")!!))
     }
 
+    private fun localRules(name: String, text: String, enabled: Boolean = true) = com.mallocgfw.app.model.RuleSourceItem(
+        id = "rule_$name", name = name, url = "", type = com.mallocgfw.app.model.RuleSourceType.Auto,
+        policy = com.mallocgfw.app.model.RuleTargetPolicy.Proxy, enabled = enabled, systemDefault = false,
+        updatedAt = "刚刚", status = com.mallocgfw.app.model.RuleSourceStatus.Ready, totalRules = 1, convertedRules = 1,
+        skippedRules = 0, sourceKind = com.mallocgfw.app.model.RuleSourceKind.LocalText, content = text,
+    )
+
+    @Test
+    fun nodeRuleTargetsCountForNoticeAndReconnect() {
+        val target = node("t", "local", name = "Rule Node")
+        val token = com.mallocgfw.app.model.RuleSourceManager.nodePolicyToken(target)
+        val base = state(node("a", "local"), target, selected = "a")
+            .copy(ruleSources = listOf(localRules("My Rules", "DOMAIN-SUFFIX,example.com,$token")))
+        val after = StateOps.removeNode(base, "t")!!
+        val notice = StateOps.removalNotice(base, after)!!
+        assertTrue(notice, "My Rules" in notice && "Rule Node" in notice)
+        // The tunnel built a rule outbound for it: reconnect on the same node.
+        assertEquals("a", (StateOps.removalEffect(base, after, "a") as StateOps.RemovalEffect.Reconnect).server.id)
+        // Global mode builds no rules, so nothing to drop from the tunnel.
+        val global = base.copy(settings = base.settings.copy(globalProxyEnabled = true))
+        assertEquals(StateOps.RemovalEffect.None, StateOps.removalEffect(global, StateOps.removeNode(global, "t")!!, "a"))
+        // A disabled source routes nothing and isn't reported.
+        val disabled = base.copy(ruleSources = listOf(localRules("My Rules", "DOMAIN-SUFFIX,example.com,$token", enabled = false)))
+        assertNull(StateOps.removalNotice(disabled, StateOps.removeNode(disabled, "t")!!))
+        // The same server back under a new id (refresh): the token still resolves by server key.
+        val replaced = after.copy(servers = after.servers + target.copy(id = "t2"))
+        assertNull(StateOps.removalNotice(base, replaced))
+    }
+
+    @Test
+    fun refreshThatDropsANodeUsedElsewhereReconnectsAndReports() {
+        // Connected to "a" (local); its pre-proxy and an app pin are in the subscription.
+        val relay = node("s1", "sub1", name = "Relay")
+        val base = state(node("a", "local", name = "Main").copy(preProxyNodeId = "s1"), relay, node("s2", "sub1", name = "Keep"), selected = "a")
+            .copy(
+                proxyMode = ProxyMode.PerApp,
+                protectedApps = listOf(com.mallocgfw.app.model.ProtectedApp("org.telegram", "Telegram", "x", enabled = true, serverId = "s1")),
+            )
+        // The refresh no longer lists Relay.
+        val preview = ImportPreview(
+            input = "https://sub.example.com/x", group = sub,
+            nodes = listOf(node("n2", "sub1", name = "Keep", host = "s2.example.com")),
+            subscription = base.subscriptions.single(), summary = "",
+        )
+        val outcome = StateOps.applyImport(base, preview, connectedServerId = "a")
+        assertTrue(outcome.state.servers.none { it.id == "s1" })
+        assertEquals("", outcome.state.servers.single { it.id == "a" }.preProxyNodeId)
+        assertEquals("", outcome.state.protectedApps.single().serverId)
+        assertEquals("a", outcome.reconnectServer?.id)
+        val notice = StateOps.removalNotice(base, outcome.state)!!
+        assertTrue(notice, "Main" in notice && "Telegram" in notice)
+        // Not connected: no reconnect, the notice still applies.
+        assertNull(StateOps.applyImport(base, preview, connectedServerId = null).reconnectServer)
+    }
+
     @Test
     fun localImportGivesClashingIdsAFreshOne() {
         val s = state(node("local_1", "local", host = "old.example.com"))

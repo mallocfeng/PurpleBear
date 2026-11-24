@@ -235,6 +235,9 @@ object StateOps {
         val selectedNameStillExists = selectedAfter != null &&
             selectedBefore != null &&
             selectedAfter.subscriptionNameKey() == selectedBefore.subscriptionNameKey()
+        // The refresh may also drop nodes the running tunnel uses elsewhere
+        // (pre-proxy, per-app, media, NODE: rules): reconnect on the same node.
+        val removalReconnect = (removalEffect(state, nextState, connectedServerId) as? RemovalEffect.Reconnect)?.server
         return when {
             selectedAfter != null && selectedBefore != null && !selectedNameStillExists -> ImportOutcome(
                 state = nextState,
@@ -244,10 +247,10 @@ object StateOps {
                     "The selected node ${selectedBefore.name} no longer exists; switched to ${selectedAfter.name}.",
                     "Выбранного узла ${selectedBefore.name} больше нет, выбран ${selectedAfter.name}.",
                 ),
-                reconnectServer = if (selectedWasConnected) selectedAfter else null,
+                reconnectServer = if (selectedWasConnected) selectedAfter else removalReconnect,
             )
             selectedAfter != null && selectedWasConnected -> ImportOutcome(state = nextState, reconnectServer = selectedAfter)
-            else -> ImportOutcome(state = nextState)
+            else -> ImportOutcome(state = nextState, reconnectServer = removalReconnect)
         }
     }
 
@@ -313,8 +316,8 @@ object StateOps {
      * with, so a removed node it uses would keep carrying traffic:
      * - the connected node itself: reconnect to the new selection, or
      *   disconnect when no usable node is left;
-     * - a node in its pre-proxy chain, a per-app node or a media route node:
-     *   reconnect on the same node, which drops it.
+     * - a node in its pre-proxy chain, a per-app node, a media route node or a
+     *   rule target (NODE:): reconnect on the same node, which drops it.
      * Removing a node the tunnel doesn't use changes nothing.
      */
     fun removalEffect(before: PersistedAppState, after: PersistedAppState, connectedServerId: String?): RemovalEffect {
@@ -415,6 +418,19 @@ object StateOps {
                 "Медиа: узел для $names удалён, теперь используется маршрут по умолчанию.",
             )
         }
+        // A NODE: target whose node is gone and that no other node matches by
+        // server: those rules now go through the main proxy (RuleSourceManager).
+        val lostRules = RuleSourceManager.nodeRuleTargets(before.ruleSources, before.servers)
+            .filter { it.node.id in removedIds && !RuleSourceManager.resolvesNodePolicy(it.token, after.servers) }
+        if (lostRules.isNotEmpty()) {
+            val sources = list(lostRules.map { it.source.name })
+            val nodes = list(lostRules.map { it.node.name })
+            lines += tr(
+                "规则：$sources 中指定的节点 $nodes 已删除，这些规则改走当前节点。规则文本未修改，可在规则页重新选择节点。",
+                "Rules: the node $nodes chosen in $sources was deleted; those rules now use the current node. The rule text is unchanged; pick a new node on the Rules page.",
+                "Правила: узел $nodes, указанный в $sources, удалён; эти правила теперь идут через текущий узел. Текст правил не изменён, выберите новый узел на странице правил.",
+            )
+        }
         if (lines.isEmpty()) return null
         val removedNames = list(removedIds.mapNotNull { nameOf[it] })
         return tr("已删除 $removedNames。", "Deleted $removedNames.", "Удалено: $removedNames.") + "\n\n" + lines.joinToString("\n\n")
@@ -425,6 +441,10 @@ object StateOps {
         val roots = mutableListOf(activeId)
         if (state.proxyMode == ProxyMode.PerApp) {
             state.protectedApps.filter { it.enabled && it.serverId.isNotBlank() }.mapTo(roots) { it.serverId }
+        }
+        if (!state.settings.globalProxyEnabled) {
+            // Rule sources are only built outside global mode.
+            RuleSourceManager.nodeRuleTargets(state.ruleSources, state.servers).mapTo(roots) { it.node.id }
         }
         if (!state.settings.globalProxyEnabled && state.settings.streamingRoutingEnabled) {
             state.settings.streamingSelections

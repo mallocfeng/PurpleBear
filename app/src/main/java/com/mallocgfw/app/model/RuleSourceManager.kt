@@ -236,6 +236,27 @@ object RuleSourceManager {
         return "$NODE_POLICY_PREFIX${server.id}:$encodedKey:$displayName"
     }
 
+    /** A NODE: target in an enabled local rule text and the node it resolves to. */
+    data class NodeRuleTarget(val source: RuleSourceItem, val token: String, val node: ServerNode)
+
+    /**
+     * The nodes enabled local rule texts send traffic to. NODE: tokens are only
+     * written into local texts (the rule editor's node picker), since node ids
+     * mean nothing outside this app.
+     */
+    fun nodeRuleTargets(sources: List<RuleSourceItem>, servers: List<ServerNode>): List<NodeRuleTarget> =
+        sources
+            .filter { it.enabled && it.sourceKind == RuleSourceKind.LocalText }
+            .flatMap { source ->
+                extractNodePolicyTokens(source.content).distinct().mapNotNull { token ->
+                    resolveNodePolicy(token, servers)?.let { NodeRuleTarget(source, token, it) }
+                }
+            }
+
+    /** Whether [token] (NODE:…) still resolves to a node among [servers]. */
+    fun resolvesNodePolicy(token: String, servers: List<ServerNode>): Boolean =
+        resolveNodePolicy(token, servers) != null
+
     fun missingNodePolicyLabels(text: String, servers: List<ServerNode>): List<String> {
         return extractNodePolicyTokens(text)
             .filter { resolveNodePolicy(it, servers) == null }

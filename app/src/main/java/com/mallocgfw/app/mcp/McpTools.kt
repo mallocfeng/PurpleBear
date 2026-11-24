@@ -378,12 +378,13 @@ object McpTools {
                     AppController.update { s -> StateOps.setSubscriptionStatus(s, id, "刷新失败") }
                     throw ToolError(Redactor.text(error.message ?: "Refresh failed."))
                 }
-                val outcome = applyImport(preview) { s -> StateOps.setSubscriptionStatus(s, id, "已同步", System.currentTimeMillis()) }
+                val applied = applyImport(preview) { s -> StateOps.setSubscriptionStatus(s, id, "已同步", System.currentTimeMillis()) }
                 val count = preview.nodes.count { !it.hiddenUnsupported }
                 ToolResult(
                     JSONObject().put("group_id", id).put("nodes", count).put("hidden_unsupported", preview.hiddenUnsupportedNodeCount)
-                        .put("reconnected", outcome.reconnectServer != null),
-                    "${Redactor.name(sub.name)} refreshed: $count nodes.",
+                        .put("reconnected", applied.outcome.reconnectServer != null)
+                        .put("cleared_settings", applied.cleared ?: JSONObject.NULL),
+                    "${Redactor.name(sub.name)} refreshed: $count nodes." + (applied.cleared?.let { " $it" } ?: ""),
                 )
             }
         }
@@ -418,9 +419,10 @@ object McpTools {
                 }
             }
             PreparedCall(tr("导入 $visible 个节点到「${Redactor.name(preview.group.name)}」", "Import $visible nodes into \"${Redactor.name(preview.group.name)}\"", "Импорт узлов ($visible) в «${Redactor.name(preview.group.name)}»")) {
-                val outcome = applyImport(preview)
+                val applied = applyImport(preview)
                 ToolResult(
-                    previewJson.put("imported", true).put("reconnected", outcome.reconnectServer != null),
+                    previewJson.put("imported", true).put("reconnected", applied.outcome.reconnectServer != null)
+                        .put("cleared_settings", applied.cleared ?: JSONObject.NULL),
                     "Imported $visible nodes into \"${Redactor.name(preview.group.name)}\".",
                 )
             }
@@ -1061,14 +1063,17 @@ object McpTools {
 
         // ---- helpers -----------------------------------------------------------------
 
-        private suspend fun applyImport(preview: ImportPreview, also: (PersistedAppState) -> PersistedAppState = { it }): StateOps.ImportOutcome {
+        /** The import's outcome and what dropped nodes cleared (StateOps.removalNotice). */
+        private class AppliedImport(val outcome: StateOps.ImportOutcome, val cleared: String?)
+
+        private suspend fun applyImport(preview: ImportPreview, also: (PersistedAppState) -> PersistedAppState = { it }): AppliedImport {
             var outcome: StateOps.ImportOutcome? = null
-            AppController.update(message = null) { s ->
+            val removal = AppController.editNodes(reconnect = false) { s ->
                 StateOps.applyImport(s, preview, AppController.connectedServerId()).also { outcome = it }.state.let(also)
             }
             val result = checkNotNull(outcome)
             result.reconnectServer?.let { AppController.reconnectIfRunning("订阅已更新，正在重新连接当前线路…") }
-            return result
+            return AppliedImport(result, removal?.notice?.let(Redactor::text))
         }
 
         private fun previewJson(preview: ImportPreview) = JSONObject()

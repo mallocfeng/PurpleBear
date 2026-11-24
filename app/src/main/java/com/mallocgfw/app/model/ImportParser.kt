@@ -1700,16 +1700,10 @@ object ImportParser {
     const val LOCAL_GROUP_ID = "local_group"
 
     /**
-     * Local imports number their nodes from 1 and derive the id from the first
-     * characters of the link, so two separate imports from the same provider
-     * (same scheme and password) produce the same id. Node ids are used for
-     * selection, pre-proxy and fallback links and deletion, so they must be
-     * unique: this returns [base] when free, otherwise a variant of it.
-     */
-    /**
-     * A new id that no node has had before: [base] plus a random suffix. Used
-     * for nodes added by a refresh, where [base] may be the id of a node that
-     * an earlier refresh removed.
+     * A new id that no node has had before: [base] plus a random suffix. Every
+     * node an import or a refresh adds gets one, since a parsed id (group, line,
+     * link prefix) can equal that of a deleted node that settings or NODE: rule
+     * targets may still name.
      */
     fun freshNodeId(base: String, taken: Set<String>): String {
         while (true) {
@@ -1718,6 +1712,13 @@ object ImportParser {
         }
     }
 
+    /**
+     * Local imports number their nodes from 1 and derive the id from the first
+     * characters of the link, so two separate imports from the same provider
+     * (same scheme and password) produce the same id. Node ids are used for
+     * selection, pre-proxy and fallback links and deletion, so they must be
+     * unique: this returns [base] when free, otherwise a variant of it.
+     */
     fun uniqueNodeId(base: String, taken: Set<String>): String {
         if (base !in taken) return base
         var attempt = 1

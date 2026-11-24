@@ -29,7 +29,9 @@ class DailySyncWorker(
                 return@runCatching Result.retry()
             }
             if (state.settings.showUpdateNotifications) {
-                SyncNotifications.showSyncCompleted(applicationContext, report.summary)
+                // Nodes the refresh dropped may have cleared pre-proxies, app pins …
+                val cleared = AppController.removalNotice.value
+                SyncNotifications.showSyncCompleted(applicationContext, listOfNotNull(report.summary, cleared).joinToString("\n"))
             }
             Result.success()
         }.getOrElse { error ->

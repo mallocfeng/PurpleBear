@@ -111,34 +111,76 @@ object AppController {
         next
     }
 
+    private val _removalNotice = MutableStateFlow<String?>(null)
+
     /**
-     * Removes nodes ([transform] is StateOps.removeNode / removeSubscriptionGroup)
-     * and, when the running VPN used a removed node, reconnects or disconnects
-     * it (see StateOps.removalEffect). Returns the new state and what the
-     * removal cleared (StateOps.removalNotice), or null when nothing was removed.
+     * Settings cleared because nodes went away (StateOps.removalNotice), until
+     * the UI has shown it. Set by deletes, imports, refreshes and background
+     * sync alike, so the user hears about it however the node disappeared.
      */
-    fun removeNodes(transform: (PersistedAppState) -> PersistedAppState?): NodeRemoval? {
+    val removalNotice: StateFlow<String?> = _removalNotice.asStateFlow()
+
+    fun consumeRemovalNotice() {
+        _removalNotice.value = null
+    }
+
+    /**
+     * Removes nodes ([transform] is StateOps.removeNode / removeSubscriptionGroup).
+     * See [editNodes].
+     */
+    fun removeNodes(transform: (PersistedAppState) -> PersistedAppState?): NodeRemoval? =
+        editNodes(reconnect = true, transform = transform)
+
+    /**
+     * [edit] for a change that can make nodes disappear: a delete, an import or
+     * a subscription refresh. When nodes went away:
+     * - a selected (not yet connected) node that went away is replaced by the
+     *   node the VPN runs on, not an arbitrary one shown as a pending switch;
+     * - what it cleared is logged and posted to [removalNotice];
+     * - with [reconnect], the running VPN reconnects or disconnects when it used
+     *   a removed node (StateOps.removalEffect). Imports pass false: their
+     *   ImportOutcome.reconnectServer already covers it, and two reconnects in
+     *   a row would race.
+     * Returns the new state and the notice, or null when [transform] returned null.
+     */
+    fun editNodes(reconnect: Boolean, transform: (PersistedAppState) -> PersistedAppState?): NodeRemoval? {
         val connected = connectedServerId()
         var before: PersistedAppState? = null
         val next = edit { state ->
             before = state
-            transform(state)?.let { removed ->
-                // The selected (not yet connected) node went away: select the
-                // node the VPN runs on, not an arbitrary one shown as a pending switch.
-                if (connected != null && removed.servers.any { it.id == connected } &&
-                    removed.selectedServerId != state.selectedServerId
-                ) {
-                    removed.copy(selectedServerId = connected)
-                } else {
-                    removed
-                }
-            }
+            transform(state)?.let { keepConnectedSelected(state, it, connected) }
         } ?: return null
         val base = before ?: return NodeRemoval(next, null)
+        return NodeRemoval(next, afterNodeChanges(base, next, connected, reconnect))
+    }
+
+    data class NodeRemoval(val state: PersistedAppState, val notice: String?)
+
+    private fun keepConnectedSelected(before: PersistedAppState, after: PersistedAppState, connected: String?): PersistedAppState {
+        val selectedGone = before.selectedServerId.isNotBlank() && after.servers.none { it.id == before.selectedServerId }
+        return if (selectedGone && connected != null && after.servers.any { it.id == connected }) {
+            after.copy(selectedServerId = connected)
+        } else {
+            after
+        }
+    }
+
+    /** Posts the notice and, with [reconnect], fixes the running VPN. Returns the notice. */
+    private fun afterNodeChanges(
+        base: PersistedAppState,
+        next: PersistedAppState,
+        connected: String?,
+        reconnect: Boolean,
+    ): String? {
+        if (base.servers.map { it.id }.toSet() == next.servers.map { it.id }.toSet()) return null
         val notice = StateOps.removalNotice(base, next)
-        notice?.let { AppLogManager.append(appContext, "NODES", it.replace("\n\n", " ")) }
+        notice?.let {
+            AppLogManager.append(appContext, "NODES", it.replace("\n\n", " "))
+            _removalNotice.value = it
+        }
+        if (!reconnect) return notice
         val effect = StateOps.removalEffect(base, next, connected)
-        if (effect == StateOps.RemovalEffect.None) return NodeRemoval(next, notice)
+        if (effect == StateOps.RemovalEffect.None) return notice
         saveScope.launch {
             val host = uiHost
             when (effect) {
@@ -158,10 +200,8 @@ object AppController {
                 StateOps.RemovalEffect.None -> Unit
             }
         }
-        return NodeRemoval(next, notice)
+        return notice
     }
-
-    data class NodeRemoval(val state: PersistedAppState, val notice: String?)
 
     /** [edit] that also shows [message] in the open UI. */
     suspend fun update(
@@ -177,10 +217,18 @@ object AppController {
      * Saves a background-sync result computed from [base], unless the state
      * changed meanwhile (the caller retries later).
      */
-    fun commitIfUnchanged(base: PersistedAppState, next: PersistedAppState): Boolean = synchronized(lock) {
-        if (AppStateStore.normalize(current()) != AppStateStore.normalize(base)) return false
-        publish(normalize(next))
-        true
+    fun commitIfUnchanged(base: PersistedAppState, next: PersistedAppState): Boolean {
+        val connected = connectedServerId()
+        val (before, published) = synchronized(lock) {
+            val current = current()
+            if (AppStateStore.normalize(current) != AppStateStore.normalize(base)) return false
+            val published = normalize(keepConnectedSelected(current, next, connected))
+            publish(published)
+            current to published
+        }
+        // A refresh can drop nodes the running VPN or other settings use.
+        afterNodeChanges(before, published, connected, reconnect = true)
+        return true
     }
 
     /** Writes the state to disk now (the debounced save may not have run yet). */

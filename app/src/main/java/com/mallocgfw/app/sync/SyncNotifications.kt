@@ -32,6 +32,8 @@ object SyncNotifications {
         val notification = Notification.Builder(context, CHANNEL_ID)
             .setContentTitle("PurpleBear")
             .setContentText(summary)
+            // Expandable: the summary can carry what dropped nodes cleared.
+            .setStyle(Notification.BigTextStyle().bigText(summary))
             .setSmallIcon(android.R.drawable.stat_notify_sync_noanim)
             .setAutoCancel(true)
             .setContentIntent(launchIntent)
