@@ -283,7 +283,8 @@ object AppStateStore {
         }
     }
 
-    private fun parseState(json: JSONObject): PersistedAppState {
+    /** internal for tests (save / load round trip). */
+    internal fun parseState(json: JSONObject): PersistedAppState {
         return PersistedAppState(
             serverGroups = json.optJSONArray("serverGroups").toServerGroups(),
             servers = json.optJSONArray("servers").toServerNodes(),
@@ -297,7 +298,7 @@ object AppStateStore {
         )
     }
 
-    private fun serializeState(state: PersistedAppState): JSONObject {
+    internal fun serializeState(state: PersistedAppState): JSONObject {
         return JSONObject().apply {
             put("serverGroups", JSONArray().apply {
                 state.serverGroups.forEach { group ->
@@ -372,6 +373,7 @@ object AppStateStore {
                         putOpt("lastError", source.lastError)
                         put("sourceKind", source.sourceKind.name)
                         put("content", source.content)
+                        source.updatedAtMs?.let { put("updatedAtMs", it) }
                     })
                 }
             })
@@ -561,6 +563,7 @@ object AppStateStore {
                 lastError = item.optNullableString("lastError"),
                 sourceKind = item.optString("sourceKind").toEnumOrDefault(RuleSourceKind.RemoteUrl),
                 content = item.optString("content", ""),
+                updatedAtMs = item.optLong("updatedAtMs", 0L).takeIf { it > 0L },
             )
         }
     }

@@ -746,6 +746,43 @@ object StateOps {
 
     // ---- rules -------------------------------------------------------------------
 
+    /**
+     * Commits a rule-source refresh that started at [fetchStartedAtMs]; every
+     * refresh and save (rules page, MCP, sync) goes through here.
+     * [expected] is the source as it was in the state when the refresh
+     * started (null: a new source, which mustn't exist yet); [result] is the
+     * refreshed (or failed) source, built from the definition that was fetched.
+     * Null, and nothing changes, when the result no longer applies:
+     * - the source was deleted meanwhile;
+     * - its definition (link, text, default policy) was edited meanwhile;
+     * - a refresh that started later already committed.
+     * The current on/off switch and name are kept. updatedAtMs moves only on
+     * success: a failed attempt leaves the list (and its order) as it was.
+     */
+    fun applyRuleSourceRefresh(
+        state: PersistedAppState,
+        expected: RuleSourceItem?,
+        result: RuleSourceItem,
+        fetchStartedAtMs: Long,
+        succeeded: Boolean,
+    ): PersistedAppState? {
+        val current = state.ruleSources.firstOrNull { it.id == result.id }
+        if (expected == null) {
+            if (current != null) return null
+        } else {
+            if (current == null) return null
+            if (RuleSourceManager.definitionKey(current) != RuleSourceManager.definitionKey(expected)) return null
+            if ((current.updatedAtMs ?: 0L) > fetchStartedAtMs) return null
+        }
+        val stored = result.copy(
+            name = current?.name ?: result.name,
+            enabled = current?.enabled ?: result.enabled,
+            systemDefault = current?.systemDefault ?: result.systemDefault,
+            updatedAtMs = if (succeeded) fetchStartedAtMs else current?.updatedAtMs,
+        )
+        return upsertRuleSource(state, stored)
+    }
+
     fun upsertRuleSource(state: PersistedAppState, source: RuleSourceItem): PersistedAppState =
         if (state.ruleSources.any { it.id == source.id }) {
             state.copy(ruleSources = state.ruleSources.map { if (it.id == source.id) source else it })

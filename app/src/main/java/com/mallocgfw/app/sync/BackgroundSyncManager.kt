@@ -38,7 +38,12 @@ class SyncReport(
      * A rule source as it was when fetched, the refreshed (or failed) result,
      * and the compiled list, not yet written to the cache.
      */
-    class RuleSourceFetch(val original: RuleSourceItem, val result: RuleSourceItem, val compiled: CompiledRuleSet?)
+    class RuleSourceFetch(
+        val original: RuleSourceItem,
+        val result: RuleSourceItem,
+        val compiled: CompiledRuleSet?,
+        val fetchStartedAtMs: Long,
+    )
 
     /**
      * [commitRules] writes the compiled list of each rule source that is merged
@@ -62,20 +67,16 @@ class SyncReport(
             } ?: next
         }
         ruleSources.forEach { fetch ->
-            val current = next.ruleSources.firstOrNull { it.id == fetch.original.id } ?: return@forEach
-            // Edited during the sync: the user's edit wins.
-            if (!current.sameDefinitionAs(fetch.original)) return@forEach
+            // Deleted, edited or refreshed again meanwhile: skipped (and its old
+            // list isn't written to the cache).
+            val merged = StateOps.applyRuleSourceRefresh(
+                next, fetch.original, fetch.result, fetch.fetchStartedAtMs, succeeded = fetch.compiled != null,
+            ) ?: return@forEach
             fetch.compiled?.let { commitRules(fetch.original, it) }
-            next = next.copy(
-                ruleSources = next.ruleSources.map { if (it.id == current.id) fetch.result.copy(enabled = it.enabled) else it },
-            )
+            next = merged
         }
         return next
     }
-
-    private fun RuleSourceItem.sameDefinitionAs(other: RuleSourceItem): Boolean =
-        url == other.url && content == other.content && type == other.type &&
-            policy == other.policy && sourceKind == other.sourceKind && name == other.name
 }
 
 object BackgroundSyncManager {
@@ -109,18 +110,19 @@ object BackgroundSyncManager {
         val ruleFetches = state.ruleSources
             .filter { it.enabled }
             .map { source ->
+                val startedAtMs = System.currentTimeMillis()
                 // Not written to the cache yet: SyncReport.applyTo decides.
-                runCatching { RuleSourceManager.refreshSource(context, source, commit = false) }
+                runCatching { RuleSourceManager.refreshSource(context, source) }
                     .onSuccess {
                         refreshedRuleSources += 1
                         AppLogManager.append(context, "SYNC", "规则已同步：${source.name}")
                     }
                     .fold(
-                        onSuccess = { SyncReport.RuleSourceFetch(source, it.source, it.compiled) },
+                        onSuccess = { SyncReport.RuleSourceFetch(source, it.source, it.compiled, startedAtMs) },
                         onFailure = { error ->
                             failedItems += 1
                             AppLogManager.append(context, "SYNC", "规则同步失败：${source.name}", error)
-                            SyncReport.RuleSourceFetch(source, RuleSourceManager.buildFailureState(source, error), compiled = null)
+                            SyncReport.RuleSourceFetch(source, RuleSourceManager.buildFailureState(source, error), compiled = null, startedAtMs)
                         },
                     )
             }

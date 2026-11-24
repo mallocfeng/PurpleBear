@@ -372,6 +372,42 @@ class StateOpsTest {
     }
 
     @Test
+    fun aRuleRefreshOnlyCommitsWhileTheSourceIsUnchanged() {
+        val source = com.mallocgfw.app.model.RuleSourceItem(
+            id = "r1", name = "Mine", url = "https://rules.example.com/a.list", type = com.mallocgfw.app.model.RuleSourceType.Auto,
+            policy = com.mallocgfw.app.model.RuleTargetPolicy.Proxy, enabled = true, systemDefault = false, updatedAt = "刚刚",
+            status = com.mallocgfw.app.model.RuleSourceStatus.Ready, totalRules = 1, convertedRules = 1, skippedRules = 0,
+        )
+        val base = state(node("a", "local")).copy(ruleSources = listOf(source))
+        val refreshed = source.copy(totalRules = 5, convertedRules = 5, type = com.mallocgfw.app.model.RuleSourceType.Surge)
+        // Deleted meanwhile: not added back.
+        assertNull(StateOps.applyRuleSourceRefresh(base.copy(ruleSources = emptyList()), source, refreshed, 100L, succeeded = true))
+        // Link edited meanwhile: the old URL doesn't come back.
+        val edited = base.copy(ruleSources = listOf(source.copy(url = "https://rules.example.com/b.list")))
+        assertNull(StateOps.applyRuleSourceRefresh(edited, source, refreshed, 100L, succeeded = true))
+        // Turned off and renamed meanwhile: applied, but stays off with its new name.
+        val switchedOff = base.copy(ruleSources = listOf(source.copy(enabled = false, name = "Renamed")))
+        val kept = StateOps.applyRuleSourceRefresh(switchedOff, source, refreshed, 100L, succeeded = true)!!.ruleSources.single()
+        assertEquals(false, kept.enabled)
+        assertEquals("Renamed", kept.name)
+        assertEquals(5, kept.convertedRules)
+        assertEquals(100L, kept.updatedAtMs)
+        // An older refresh finishing later is dropped.
+        val afterNewer = StateOps.applyRuleSourceRefresh(base, source, refreshed, 200L, succeeded = true)!!
+        assertNull(StateOps.applyRuleSourceRefresh(afterNewer, source, source.copy(convertedRules = 2), 150L, succeeded = true))
+        // A failure records the error but keeps the order of the list in use.
+        val failed = StateOps.applyRuleSourceRefresh(
+            afterNewer, source, source.copy(status = com.mallocgfw.app.model.RuleSourceStatus.FetchFailed), 300L, succeeded = false,
+        )!!.ruleSources.single()
+        assertEquals(com.mallocgfw.app.model.RuleSourceStatus.FetchFailed, failed.status)
+        assertEquals(200L, failed.updatedAtMs)
+        // A new source (expected = null) is added once, not over an existing one.
+        assertNull(StateOps.applyRuleSourceRefresh(base, null, refreshed, 100L, succeeded = true))
+        val added = StateOps.applyRuleSourceRefresh(base.copy(ruleSources = emptyList()), null, refreshed, 100L, succeeded = true)!!
+        assertEquals(listOf("r1"), added.ruleSources.map { it.id })
+    }
+
+    @Test
     fun localImportGivesClashingIdsAFreshOne() {
         val s = state(node("local_1", "local", host = "old.example.com"))
         val preview = ImportPreview(

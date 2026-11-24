@@ -204,7 +204,7 @@ class XrayVpnService : VpnService() {
                         cleanupCompleted = false
                         runCatching { connect(serverId, keepFailover) }
                             .onSuccess {
-                                if (recheckInstalledNodes(serverId)) return@onSuccess
+                                if (recheckInstalledNodes()) return@onSuccess
                                 val connectedAtMs = System.currentTimeMillis()
                                 AppLogManager.append(applicationContext, TAG, "VPN 已连接，serverId=$serverId")
                                 VpnRuntimeStore.updateConnection(
@@ -256,7 +256,7 @@ class XrayVpnService : VpnService() {
                         val previousServerId = VpnRuntimeStore.snapshot.value.activeServerId
                         runCatching { switchActiveServer(serverId) }
                             .onSuccess {
-                                if (recheckInstalledNodes(serverId)) return@onSuccess
+                                if (recheckInstalledNodes()) return@onSuccess
                                 val server = AppController.load(applicationContext).servers.firstOrNull { it.id == serverId }
                                 val message = server?.let { tr("已切换到 ${it.name}", "Switched to ${it.name}", "Переключено на ${it.name}") } ?: tr("已切换线路", "Node switched", "Узел переключён")
                                 AppLogManager.append(applicationContext, TAG, message)
@@ -664,10 +664,14 @@ class XrayVpnService : VpnService() {
      * The core is up; before announcing it, check that every node it was built
      * with still exists. A node removed while the tunnel was being set up (the
      * service had already read the old settings) would otherwise keep carrying
-     * traffic. True when a reconnect or a disconnect was started instead; the
-     * new request is queued behind this one (operationMutex).
+     * traffic. Every path that installs a core config runs this before it
+     * publishes Connected: connect, hot switch, switch to the fallback, switch
+     * back to the primary and the recovery after a failed switch.
+     * True when a reconnect or a disconnect was started instead; the new
+     * request is queued behind this one (operationMutex).
      */
-    private fun recheckInstalledNodes(serverId: String): Boolean {
+    private fun recheckInstalledNodes(): Boolean {
+        val serverId = TunnelNodes.serverId() ?: return false
         val installed = TunnelNodes.current() ?: return false
         val state = AppController.load(applicationContext)
         return when (val effect = com.mallocgfw.app.core.StateOps.staleTunnelEffect(state, serverId, installed)) {
@@ -931,6 +935,7 @@ class XrayVpnService : VpnService() {
 
             runCatching { switchActiveServer(latestFallback.id) }
                 .onSuccess {
+                    if (recheckInstalledNodes()) return@onSuccess
                     val message = tr("已切换到备用节点 ${latestFallback.name}", "Switched to fallback node ${latestFallback.name}", "Переключено на резервный узел ${latestFallback.name}")
                     AppLogManager.append(applicationContext, TAG, message)
                     VpnRuntimeStore.updateConnection(
@@ -990,6 +995,7 @@ class XrayVpnService : VpnService() {
 
             runCatching { switchActiveServer(latestPrimary.id) }
                 .onSuccess {
+                    if (recheckInstalledNodes()) return@onSuccess
                     val message = tr("已切回主节点 ${latestPrimary.name}", "Switched back to primary node ${latestPrimary.name}", "Возврат на основной узел ${latestPrimary.name}")
                     AppLogManager.append(applicationContext, TAG, message)
                     resetFailoverState()
@@ -1032,7 +1038,9 @@ class XrayVpnService : VpnService() {
         val previousId = previousServerId?.takeIf { it.isNotBlank() }
         if (previousId != null && runCatching { switchActiveServer(previousId) }.isSuccess) {
             AppLogManager.append(applicationContext, TAG, "切换失败，已恢复原节点")
-            return true
+            // The restored node or one it uses may have been removed meanwhile:
+            // a reconnect / disconnect is under way, so don't report Connected.
+            return !recheckInstalledNodes()
         }
         val message = tr(
             "切换线路失败，VPN 已断开：${error.message.orEmpty()}",

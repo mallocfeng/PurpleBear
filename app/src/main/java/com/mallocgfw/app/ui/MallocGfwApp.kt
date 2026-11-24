@@ -1066,16 +1066,28 @@ fun MallocGfwApp(
             navigateSecondary(AppScreen.RuleSourceDetail)
         }
         scope.launch {
-            runCatching {
-                RuleSourceManager.refreshSource(context, source)
-            }.onSuccess { result: RuleRefreshResult ->
-                replaceRuleSource(result.source)
-                ruleMessage = tr("${result.source.name} 已更新，转换 ${result.compiled.convertedRules} 条。", "${result.source.name} updated, ${result.compiled.convertedRules} rules converted.", "${result.source.name}: обновлено, преобразовано правил: ${result.compiled.convertedRules}.")
-            }.onFailure { error ->
-                replaceRuleSource(RuleSourceManager.buildFailureState(source, error))
+            try {
+                // Committed only if the source wasn't deleted, edited or refreshed
+                // again meanwhile; its on/off switch stays as it is now.
+                val commit = AppController.refreshRuleSourceAndCommit(source, expected = source)
+                val result = commit.result
+                ruleMessage = when {
+                    commit.stored == null -> tr(
+                        "${source.name} 在更新期间已修改或删除，本次结果未保存。",
+                        "${source.name} was changed or deleted while updating; this result wasn't saved.",
+                        "${source.name} изменён или удалён во время обновления; результат не сохранён.",
+                    )
+                    result != null -> tr("${result.source.name} 已更新，转换 ${result.compiled.convertedRules} 条。", "${result.source.name} updated, ${result.compiled.convertedRules} rules converted.", "${result.source.name}: обновлено, преобразовано правил: ${result.compiled.convertedRules}.")
+                    else -> commit.error?.message ?: "规则更新失败。"
+                }
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                // Saving the compiled list failed (disk full …): nothing was changed.
+                AppLogManager.append(context, "RULES", "规则保存失败：${source.name}", error)
                 ruleMessage = error.message ?: "规则更新失败。"
+            } finally {
+                ruleUpdateInFlight.remove(sourceId)
             }
-            ruleUpdateInFlight.remove(sourceId)
         }
     }
 
@@ -1105,13 +1117,13 @@ fun MallocGfwApp(
         syncInFlight = true
         settingsMessage = "已开始后台同步订阅、规则和 Geo 资源。"
         scope.launch {
-            runCatching {
-                BackgroundSyncManager.syncAll(context, currentPersistedState())
-            }.onSuccess { report ->
+            try {
+                val report = BackgroundSyncManager.syncAll(context, currentPersistedState())
                 // Merged into the state as it is now (changes made during the
                 // sync are kept). Reconnects (or disconnects) when the refresh
                 // dropped the connected node or one the tunnel uses, and posts
-                // what it cleared.
+                // what it cleared. A rule cache that can't be written (disk
+                // full …) throws here, before the state changes.
                 AppController.editNodes(reconnect = true) { state ->
                     report.applyTo(state) { source, compiled -> RuleSourceManager.commitCompiled(context, source, compiled) }
                 }
@@ -1123,11 +1135,13 @@ fun MallocGfwApp(
                 if (appSettings.showUpdateNotifications) {
                     SyncNotifications.showSyncCompleted(context, report.summary)
                 }
-            }.onFailure { error ->
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
                 settingsMessage = error.message ?: "后台同步失败。"
                 AppLogManager.append(context, "SYNC", "手动同步失败", error)
+            } finally {
+                syncInFlight = false
             }
-            syncInFlight = false
         }
     }
 

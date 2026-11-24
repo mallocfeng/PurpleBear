@@ -303,16 +303,16 @@ object RuleSourceManager {
     }
 
     /**
-     * Fetches (remote) and compiles [source]. With [commit] (the default) the
-     * compiled list is written to its cache at once; a sync passes false and
-     * calls [commitCompiled] only if the source is still as it was fetched, so
-     * a sync that finishes after the user edited the source can't put the old
-     * list back.
+     * Fetches (remote) and compiles [source] without touching its cache. The
+     * caller commits the list with [commitCompiled] inside the state edit, and
+     * only if the source is still as it was fetched (StateOps.applyRuleSourceRefresh),
+     * so a refresh that finishes after an edit, a delete or a newer refresh
+     * can't put an old list back.
      */
+    @Suppress("UNUSED_PARAMETER")
     suspend fun refreshSource(
         context: Context,
         source: RuleSourceItem,
-        commit: Boolean = true,
     ): RuleRefreshResult {
         return withContext(Dispatchers.IO) {
             val text = when (source.sourceKind) {
@@ -325,7 +325,6 @@ object RuleSourceManager {
                 requestedType = source.type,
                 fallbackPolicy = source.policy,
             )
-            if (commit) saveCompiledRules(context, compiled, definitionKey(source))
             val updatedSource = source.copy(
                 type = if (source.type == RuleSourceType.Auto) compiled.detectedType else source.type,
                 updatedAt = "刚刚",

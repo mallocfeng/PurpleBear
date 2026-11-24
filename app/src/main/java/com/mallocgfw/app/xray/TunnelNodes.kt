@@ -14,18 +14,23 @@ import com.mallocgfw.app.model.XrayNamedOutbound
  * the running core.
  */
 object TunnelNodes {
+    private class Installed(val serverId: String, val ids: Set<String>)
+
     @Volatile
-    private var ids: Set<String>? = null
+    private var installed: Installed? = null
 
     /** Null while no tunnel was recorded (disconnected, or started before this process). */
-    fun current(): Set<String>? = ids
+    fun current(): Set<String>? = installed?.ids
+
+    /** The node the core was last started on. */
+    fun serverId(): String? = installed?.serverId
 
     fun record(server: ServerNode, additionalOutbounds: List<XrayNamedOutbound>, servers: List<ServerNode>) {
-        ids = collect(server, additionalOutbounds, servers)
+        installed = Installed(server.id, collect(server, additionalOutbounds, servers))
     }
 
     fun clear() {
-        ids = null
+        installed = null
     }
 
     /** Same pre-proxy resolution the config uses (XrayConfigFactory.buildOutboundChain). */

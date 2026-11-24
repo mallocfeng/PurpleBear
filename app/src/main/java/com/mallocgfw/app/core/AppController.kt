@@ -8,6 +8,9 @@ import com.mallocgfw.app.model.ConnectionStatus
 import com.mallocgfw.app.model.LoadedAppState
 import com.mallocgfw.app.model.PersistedAppState
 import com.mallocgfw.app.model.ServerNode
+import com.mallocgfw.app.model.RuleRefreshResult
+import com.mallocgfw.app.model.RuleSourceManager
+import com.mallocgfw.app.model.RuleSourceItem
 import com.mallocgfw.app.model.tr
 import com.mallocgfw.app.xray.AppLogManager
 import com.mallocgfw.app.xray.TailscaleRuntimeManager
@@ -216,6 +219,31 @@ object AppController {
             }
         }
         return notice
+    }
+
+    /** A rule-source refresh: what was stored (null: dropped, see StateOps.applyRuleSourceRefresh) and how it went. */
+    class RuleCommit(val stored: RuleSourceItem?, val result: RuleRefreshResult?, val error: Throwable?)
+
+    /**
+     * Downloads (remote) / compiles [draft] and commits it: the state and the
+     * compiled cache together, under the state lock, only when the result still
+     * applies (StateOps.applyRuleSourceRefresh). [expected] is the source as it
+     * is in the state now (null: [draft] is a new source). A cache write that
+     * fails throws before the state changes.
+     */
+    suspend fun refreshRuleSourceAndCommit(draft: RuleSourceItem, expected: RuleSourceItem?): RuleCommit {
+        val startedAtMs = System.currentTimeMillis()
+        val outcome = runCatching { RuleSourceManager.refreshSource(appContext, draft) }
+        val refreshed = outcome.getOrNull()
+        val result = refreshed?.source ?: RuleSourceManager.buildFailureState(draft, outcome.exceptionOrNull() ?: IllegalStateException())
+        var stored: RuleSourceItem? = null
+        edit { state ->
+            StateOps.applyRuleSourceRefresh(state, expected, result, startedAtMs, succeeded = refreshed != null)?.also { next ->
+                refreshed?.let { RuleSourceManager.commitCompiled(appContext, draft, it.compiled) }
+                stored = next.ruleSources.first { it.id == draft.id }
+            }
+        }
+        return RuleCommit(stored, refreshed, outcome.exceptionOrNull())
     }
 
     /** [edit] that also shows [message] in the open UI. */

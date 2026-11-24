@@ -283,6 +283,11 @@ data class RuleSourceItem(
     val lastError: String? = null,
     val sourceKind: RuleSourceKind = RuleSourceKind.RemoteUrl,
     val content: String = "",
+    /**
+     * When the download / compile of the list now in use started. Orders
+     * refreshes: one that started earlier can't replace it (StateOps.applyRuleSourceRefresh).
+     */
+    val updatedAtMs: Long? = null,
 )
 
 data class RuleSourceDetailSummary(

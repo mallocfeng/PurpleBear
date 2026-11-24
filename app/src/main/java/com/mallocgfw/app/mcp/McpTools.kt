@@ -656,9 +656,8 @@ object McpTools {
             val draft = existing?.copy(content = text, type = type, status = RuleSourceStatus.Updating, lastError = null)
                 ?: RuleSourceManager.createTextDraft(name = args.optStr("name") ?: "MCP", text = text, requestedType = type)
             PreparedCall(tr("${if (existing == null) "新建" else "替换"}自定义规则「${Redactor.name(draft.name)}」（${text.lines().count { it.isNotBlank() }} 行）", "${if (existing == null) "Create" else "Replace"} custom rules \"${Redactor.name(draft.name)}\" (${text.lines().count { it.isNotBlank() }} lines)", "${if (existing == null) "Создать" else "Заменить"} свои правила «${Redactor.name(draft.name)}» (строк: ${text.lines().count { it.isNotBlank() }})")) {
-                val refreshed = runCatching { RuleSourceManager.refreshSource(context, draft).source }
-                    .getOrElse { RuleSourceManager.buildFailureState(draft, it) }
-                AppController.update { s -> StateOps.upsertRuleSource(s, refreshed) }
+                val refreshed = AppController.refreshRuleSourceAndCommit(draft, expected = existing).stored
+                    ?: throw ToolError("The rule source was changed or deleted meanwhile; nothing was saved.")
                 if (refreshed.status != RuleSourceStatus.Ready) {
                     throw ToolError("Saved, but the rules didn't parse: ${Redactor.text(refreshed.lastError ?: "unknown error")}")
                 }
@@ -720,9 +719,9 @@ object McpTools {
                     "Добавить список правил «${Redactor.name(name)}» (правил: ${preview.convertedRules}, $action)",
                 ),
             ) {
-                val refreshed = runCatching { RuleSourceManager.refreshSource(context, draft).source }
-                    .getOrElse { throw ToolError("Couldn't download the list: ${Redactor.text(it.message ?: "unknown error")}") }
-                AppController.update { s -> StateOps.upsertRuleSource(s, refreshed) }
+                val commit = AppController.refreshRuleSourceAndCommit(draft, expected = null)
+                commit.error?.let { throw ToolError("Couldn't download the list: ${Redactor.text(it.message ?: "unknown error")}") }
+                val refreshed = commit.stored ?: throw ToolError("A rule source with this id already exists; nothing was saved.")
                 val reconnected = AppController.reconnectIfRunning("规则源已添加，正在重连 VPN…")
                 ToolResult(
                     ruleJson(refreshed).put("reconnected", reconnected),
@@ -743,9 +742,9 @@ object McpTools {
             val source = state().ruleSources.firstOrNull { it.id == id } ?: throw ToolError("Rule source $id not found.")
             PreparedCall(tr("${if (enabled) "启用" else "停用"}规则源 ${Redactor.name(source.name)}", "${if (enabled) "Enable" else "Disable"} rule source ${Redactor.name(source.name)}", "${if (enabled) "Включить" else "Отключить"} источник правил ${Redactor.name(source.name)}")) {
                 if (enabled && source.status != RuleSourceStatus.Ready && source.sourceKind == RuleSourceKind.RemoteUrl) {
-                    val refreshed = runCatching { RuleSourceManager.refreshSource(context, source).source }
-                        .getOrElse { throw ToolError("Couldn't download ${Redactor.name(source.name)}: ${Redactor.text(it.message ?: "unknown error")}") }
-                    AppController.update { s -> StateOps.upsertRuleSource(s, refreshed) }
+                    val commit = AppController.refreshRuleSourceAndCommit(source, expected = source)
+                    commit.error?.let { throw ToolError("Couldn't download ${Redactor.name(source.name)}: ${Redactor.text(it.message ?: "unknown error")}") }
+                    if (commit.stored == null) throw ToolError("${Redactor.name(source.name)} was changed or deleted meanwhile; nothing was saved.")
                 }
                 AppController.update { s -> StateOps.setRuleSourceEnabled(s, id, enabled) }
                 val reconnected = AppController.reconnectIfRunning("规则源已变更，正在重连 VPN…")
@@ -761,10 +760,10 @@ object McpTools {
             val id = args.reqStr("source_id")
             val source = state().ruleSources.firstOrNull { it.id == id } ?: throw ToolError("Rule source $id not found.")
             PreparedCall(tr("更新规则源 ${Redactor.name(source.name)}", "Refresh rule source ${Redactor.name(source.name)}", "Обновить источник правил ${Redactor.name(source.name)}")) {
-                val result = runCatching { RuleSourceManager.refreshSource(context, source) }
-                val updated = result.map { it.source }.getOrElse { RuleSourceManager.buildFailureState(source, it) }
-                AppController.update { s -> StateOps.upsertRuleSource(s, updated) }
-                result.exceptionOrNull()?.let { throw ToolError(Redactor.text(it.message ?: "Refresh failed.")) }
+                val commit = AppController.refreshRuleSourceAndCommit(source, expected = source)
+                val updated = commit.stored
+                    ?: throw ToolError("${Redactor.name(source.name)} was changed or deleted while refreshing; this result was dropped.")
+                commit.error?.let { throw ToolError(Redactor.text(it.message ?: "Refresh failed.")) }
                 ToolResult(ruleJson(updated), "${Redactor.name(updated.name)}: ${updated.convertedRules} rules.")
             }
         }

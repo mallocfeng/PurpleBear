@@ -61,7 +61,7 @@ class SyncReportTest {
                 fetchStartedAtMs = 100L,
             ),
         ),
-        ruleSources = listOf(SyncReport.RuleSourceFetch(rules, rules.copy(totalRules = 9, convertedRules = 9), compiled(rules))),
+        ruleSources = listOf(SyncReport.RuleSourceFetch(rules, rules.copy(totalRules = 9, convertedRules = 9), compiled(rules), fetchStartedAtMs = 100L)),
         geoDataSnapshot = GeoDataSnapshot(GeoDataStatus.Ready, "刚刚", "test", 0, 0),
         refreshedSubscriptions = 1, refreshedRuleSources = 1, refreshedStreamingRules = 0, failedItems = 0, summary = "",
     )
@@ -138,5 +138,31 @@ class SyncReportTest {
         assertTrue(key(rules) != key(rules.copy(content = "DOMAIN,b.com,PROXY")))
         assertTrue(key(rules) != key(rules.copy(url = "https://x.example.com/r.list")))
         assertTrue(key(rules) != key(rules.copy(policy = RuleTargetPolicy.Direct)))
+    }
+
+    @Test
+    fun anOlderSyncDoesNotRollBackANewerRuleRefresh() {
+        val atStart = snapshot()
+        val fetched = report(atStart) // rules fetched at 100
+        // A single refresh of the same source that started later (200) committed first.
+        val newer = com.mallocgfw.app.core.StateOps.applyRuleSourceRefresh(
+            atStart, rules, rules.copy(totalRules = 20, convertedRules = 20), 200L, succeeded = true,
+        )!!
+        val committed = mutableListOf<String>()
+        val merged = fetched.applyTo(newer) { source, _ -> committed += source.id }
+        assertEquals(20, merged.ruleSources.single().convertedRules)
+        assertEquals(200L, merged.ruleSources.single().updatedAtMs)
+        // Its old list isn't written to the cache either.
+        assertTrue(committed.isEmpty())
+    }
+
+    @Test
+    fun theRefreshOrderSurvivesSavingAndLoading() {
+        val saved = snapshot().copy(ruleSources = listOf(rules.copy(updatedAtMs = 1234L)))
+        val loaded = AppStateStore.parseState(AppStateStore.serializeState(saved))
+        assertEquals(1234L, loaded.ruleSources.single().updatedAtMs)
+        // Saved by an older version: no order yet, any refresh applies.
+        val old = AppStateStore.serializeState(snapshot())
+        assertEquals(null, AppStateStore.parseState(old).ruleSources.single().updatedAtMs)
     }
 }
