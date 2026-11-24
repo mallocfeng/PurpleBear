@@ -69,6 +69,10 @@ class XrayVpnService : VpnService() {
     @Volatile
     private var streamingRetryJob: Job? = null
 
+    /** Set by [startCore] when routed nodes had to be left out; shown once connected. */
+    @Volatile
+    private var routedFallbackNotice: String? = null
+
     /**
      * Bumped (on the main thread) by every connect, switch and disconnect
      * request, so a delayed task can tell that the user picked another route
@@ -184,72 +188,35 @@ class XrayVpnService : VpnService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_CONNECT -> {
-                publishDisconnectedOnDestroy = false
-                destroyMessage = null
-                val serverId = intent.getStringExtra(EXTRA_SERVER_ID).orEmpty()
-                val keepFailover = intent.getBooleanExtra(EXTRA_KEEP_FAILOVER, false)
-                val generation = newRouteGeneration()
-                AppLogManager.append(applicationContext, TAG, "收到连接请求，serverId=$serverId")
-                VpnRuntimeStore.reset(
-                    applicationContext,
-                    status = ConnectionStatus.Connecting,
-                    activeServerId = serverId,
-                    message = tr("正在建立系统 VPN 隧道…", "Setting up the system VPN tunnel…", "Создание системного VPN-туннеля…"),
-                )
-                VpnQuickSettingsTileHelper.requestRefresh(applicationContext)
-                startServiceForeground(buildNotification(tr("正在建立 VPN 隧道…", "Setting up the VPN tunnel…", "Создание VPN-туннеля…")))
-                scope.launch {
-                    operationMutex.withLock {
-                        cleanupCompleted = false
-                        runCatching { connect(serverId, keepFailover) }
-                            .onSuccess {
-                                if (recheckInstalledNodes()) return@onSuccess
-                                val connectedAtMs = System.currentTimeMillis()
-                                AppLogManager.append(applicationContext, TAG, "VPN 已连接，serverId=$serverId")
-                                VpnRuntimeStore.updateConnection(
-                                    applicationContext,
-                                    status = ConnectionStatus.Connected,
-                                    activeServerId = serverId,
-                                    message = tr("系统 VPN 已建立，Xray 正在运行", "System VPN is up and Xray is running", "Системный VPN установлен, Xray работает"),
-                                    connectedAtMs = connectedAtMs,
-                                    interfaceName = null,
-                                )
-                                VpnQuickSettingsTileHelper.requestRefresh(applicationContext)
-                                startSpeedMeasurement()
-                                startLogMaintenance()
-                                startHeartbeatMonitor()
-                                watchSystemDns()
-                                retryUnappliedStreamingRules(serverId, generation)
-                                val notification = buildNotification(tr("VPN 已连接", "VPN connected", "VPN подключён"))
-                                val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                                manager.notify(NOTIFICATION_ID, notification)
-                            }
-                            .onFailure { error ->
-                                if (error is CancellationException) return@onFailure
-                                publishDisconnectedOnDestroy = false
-                                val failureMessage = XrayCoreManager.snapshot.value.message
-                                    ?: error.message
-                                    ?: tr("VPN 建立失败。", "Couldn't set up the VPN.", "Не удалось установить VPN.")
-                                AppLogManager.append(applicationContext, TAG, "VPN 连接失败：$failureMessage", error)
-                                Log.e(TAG, "VPN connect failed: $failureMessage", error)
-                                VpnRuntimeStore.reset(
-                                    applicationContext,
-                                    status = ConnectionStatus.Disconnected,
-                                    activeServerId = null,
-                                    message = failureMessage,
-                                )
-                                VpnQuickSettingsTileHelper.requestRefresh(applicationContext)
-                                disconnect(updateRuntime = false)
-                                stopSelf()
-                            }
-                    }
+            ACTION_CONNECT -> beginConnect(
+                serverId = intent.getStringExtra(EXTRA_SERVER_ID).orEmpty(),
+                keepFailover = intent.getBooleanExtra(EXTRA_KEEP_FAILOVER, false),
+            )
+
+            // The system starts the VPN itself for Always-on (at boot, after an
+            // update, when the user turns it on), with this action and none of
+            // ours. Without handling it, "Block connections without VPN" leaves
+            // the phone offline.
+            VpnService.SERVICE_INTERFACE -> {
+                val serverId = alwaysOnServerId()
+                if (serverId == null) {
+                    val message = tr(
+                        "系统要求启动 Always-on VPN，但没有可用节点，请先在 PurpleBear 中导入并选择节点。",
+                        "The system started the Always-on VPN, but there's no usable node. Import and select one in PurpleBear.",
+                        "Система запустила постоянный VPN, но подходящего узла нет. Импортируйте и выберите узел в PurpleBear.",
+                    )
+                    AppLogManager.append(applicationContext, TAG, message)
+                    VpnRuntimeStore.reset(applicationContext, status = ConnectionStatus.Disconnected, activeServerId = null, message = message)
+                    stopSelf(startId)
+                } else {
+                    AppLogManager.append(applicationContext, TAG, "系统启动 Always-on VPN，serverId=$serverId")
+                    beginConnect(serverId, keepFailover = false)
                 }
             }
 
             ACTION_SWITCH -> {
                 val serverId = intent.getStringExtra(EXTRA_SERVER_ID).orEmpty()
-                newRouteGeneration()
+                val generation = newRouteGeneration()
                 AppLogManager.append(applicationContext, TAG, "收到热切换请求，serverId=$serverId")
                 scope.launch {
                     operationMutex.withLock {
@@ -258,7 +225,9 @@ class XrayVpnService : VpnService() {
                             .onSuccess {
                                 if (recheckInstalledNodes()) return@onSuccess
                                 val server = AppController.load(applicationContext).servers.firstOrNull { it.id == serverId }
-                                val message = server?.let { tr("已切换到 ${it.name}", "Switched to ${it.name}", "Переключено на ${it.name}") } ?: tr("已切换线路", "Node switched", "Узел переключён")
+                                val message = routedFallbackNotice
+                                    ?: server?.let { tr("已切换到 ${it.name}", "Switched to ${it.name}", "Переключено на ${it.name}") }
+                                    ?: tr("已切换线路", "Node switched", "Узел переключён")
                                 AppLogManager.append(applicationContext, TAG, message)
                                 resetFailoverState()
                                 VpnRuntimeStore.updateConnection(
@@ -273,7 +242,7 @@ class XrayVpnService : VpnService() {
                             }
                             .onFailure { error ->
                                 if (error is CancellationException) return@onFailure
-                                if (!recoverFromFailedSwitch(previousServerId, error)) return@onFailure
+                                if (!recoverFromFailedSwitch(previousServerId, error, generation)) return@onFailure
                                 val activeServerId = VpnRuntimeStore.snapshot.value.activeServerId
                                 val failureMessage = error.message ?: tr("切换线路失败。", "Couldn't switch nodes.", "Не удалось переключить узел.")
                                 AppLogManager.append(applicationContext, TAG, failureMessage, error)
@@ -292,7 +261,7 @@ class XrayVpnService : VpnService() {
             ACTION_DISCONNECT -> {
                 publishDisconnectedOnDestroy = true
                 destroyMessage = null
-                newRouteGeneration()
+                val generation = newRouteGeneration()
                 AppLogManager.append(applicationContext, TAG, "收到断开请求")
                 VpnRuntimeStore.reset(
                     applicationContext,
@@ -305,7 +274,13 @@ class XrayVpnService : VpnService() {
                 scope.launch {
                     operationMutex.withLock {
                         disconnect(updateRuntime = false, message = destroyMessage ?: tr("VPN 已断开", "VPN disconnected", "VPN отключён"))
-                        stopSelf()
+                        // A connect that arrived after this disconnect is queued
+                        // behind it: stopping would cancel it (onDestroy cancels scope).
+                        if (generation == routeGeneration) {
+                            stopSelf()
+                        } else {
+                            AppLogManager.append(applicationContext, TAG, "断开后已有新的连接请求，保留服务")
+                        }
                     }
                 }
             }
@@ -479,25 +454,7 @@ class XrayVpnService : VpnService() {
 
         AppProcessFinder.register(applicationContext)
         val perAppRouting = PerAppRouting.buildSetup(applicationContext, state, server.id)
-        XrayCoreManager.startVpn(
-            context = applicationContext,
-            server = server,
-            tunFd = tunFd,
-            routingRules = perAppRouting.routingRules + streamingRouting.routingRules + ruleRouting.routingRules,
-            additionalOutbounds = perAppRouting.outbounds + streamingRouting.outbounds + ruleRouting.outbounds,
-            vpnMtu = vpnMtu,
-            magicDnsUpstream = activeMagicDnsUpstream,
-            dnsServer = dnsServer,
-            dnsOverProxy = state.settings.dnsMode == AppDnsMode.Remote,
-            encryptedDns = encryptedDnsOf(state.settings),
-        )
-            .getOrElse { throw it }
-        StreamingMediaManager.markInstalled(streamingRouting)
-        TunnelNodes.record(
-            server,
-            perAppRouting.outbounds + streamingRouting.outbounds + ruleRouting.outbounds,
-            AppController.load(applicationContext).servers,
-        )
+        startCore(server, tunFd, state.settings, vpnMtu, dnsServer, perAppRouting, streamingRouting, ruleRouting)
     }
 
     private suspend fun switchActiveServer(serverId: String) {
@@ -533,24 +490,67 @@ class XrayVpnService : VpnService() {
         dnsEndpoint?.let(::installProcessDns)
         AppProcessFinder.register(applicationContext)
         val perAppRouting = PerAppRouting.buildSetup(applicationContext, state, server.id)
-        XrayCoreManager.startVpn(
-            context = applicationContext,
-            server = server,
-            tunFd = tunFd,
-            routingRules = perAppRouting.routingRules + streamingRouting.routingRules + ruleRouting.routingRules,
-            additionalOutbounds = perAppRouting.outbounds + streamingRouting.outbounds + ruleRouting.outbounds,
-            vpnMtu = vpnMtu,
-            magicDnsUpstream = activeMagicDnsUpstream,
-            dnsServer = dnsServer,
-            dnsOverProxy = state.settings.dnsMode == AppDnsMode.Remote,
-            encryptedDns = encryptedDnsOf(state.settings),
-        ).getOrElse { throw it }
-        StreamingMediaManager.markInstalled(streamingRouting)
-        TunnelNodes.record(
-            server,
-            perAppRouting.outbounds + streamingRouting.outbounds + ruleRouting.outbounds,
-            AppController.load(applicationContext).servers,
+        startCore(server, tunFd, state.settings, vpnMtu, dnsServer, perAppRouting, streamingRouting, ruleRouting)
+    }
+
+    /**
+     * Starts the core for [server] with the routed outbounds (per-app, media,
+     * NODE: rules). When that fails and some routed nodes run in the mihomo
+     * sidecar beside the main node, a refused one (say a Snell version mihomo
+     * rejects) would keep the whole VPN off: start again without them, their
+     * traffic going by the rule's policy (the main node), and say so
+     * ([routedFallbackNotice]). Records what was installed.
+     */
+    private suspend fun startCore(
+        server: ServerNode,
+        tunFd: Int,
+        settings: com.mallocgfw.app.model.AppSettings,
+        vpnMtu: Int,
+        dnsServer: String?,
+        perAppRouting: StreamingRoutingSetup,
+        streamingRouting: StreamingRoutingSetup,
+        ruleRouting: RuleRoutingSetup,
+    ) {
+        val servers = AppController.load(applicationContext).servers
+        val extras = perAppRouting.outbounds + streamingRouting.outbounds + ruleRouting.outbounds
+        val rules = perAppRouting.routingRules + streamingRouting.routingRules + ruleRouting.routingRules
+        suspend fun start(routingRules: List<com.mallocgfw.app.model.XrayRoutingRule>, outbounds: List<com.mallocgfw.app.model.XrayNamedOutbound>) =
+            XrayCoreManager.startVpn(
+                context = applicationContext,
+                server = server,
+                tunFd = tunFd,
+                routingRules = routingRules,
+                additionalOutbounds = outbounds,
+                vpnMtu = vpnMtu,
+                magicDnsUpstream = activeMagicDnsUpstream,
+                dnsServer = dnsServer,
+                dnsOverProxy = settings.dnsMode == AppDnsMode.Remote,
+                encryptedDns = encryptedDnsOf(settings),
+            )
+        routedFallbackNotice = null
+        var installed = extras
+        val first = start(rules, extras)
+        if (first.isFailure) {
+            val error = first.exceptionOrNull() ?: IllegalStateException()
+            val dropped = RoutedOutboundFallback.sidecarOutbounds(server, extras, servers)
+            if (dropped.isEmpty()) throw error
+            val names = dropped.map { it.node.name }.distinct().joinToString("、")
+            AppLogManager.append(applicationContext, TAG, "分流节点启动失败（${error.message.orEmpty()}），去掉 $names 后重试", error)
+            installed = extras - dropped.toSet()
+            // Still failing: the main node itself is the problem; report the first error.
+            start(RoutedOutboundFallback.withoutOutbounds(rules, dropped), installed).getOrElse { throw error }
+            routedFallbackNotice = tr(
+                "VPN 已连接，但分流节点 $names 无法启动，相关应用、流媒体和规则暂时改走当前节点。",
+                "VPN connected, but the routed node $names couldn't start; the apps, media and rules using it go through the current node for now.",
+                "VPN подключён, но узел маршрутизации $names не запустился; связанные приложения, медиа и правила пока идут через текущий узел.",
+            )
+            AppLogManager.append(applicationContext, TAG, routedFallbackNotice.orEmpty())
+        }
+        val droppedIds = (extras - installed.toSet()).map { it.node.id }.toSet()
+        StreamingMediaManager.markInstalled(
+            streamingRouting.copy(appliedRoutes = streamingRouting.appliedRoutes.filterValues { it !in droppedIds }),
         )
+        TunnelNodes.record(server, installed, servers)
     }
 
     private suspend fun disconnect(
@@ -688,6 +688,84 @@ class XrayVpnService : VpnService() {
             }
         }
     }
+
+    /**
+     * Starts a connection to [serverId]: an ACTION_CONNECT from the app, or the
+     * system starting the VPN (Always-on, see [alwaysOnServerId]).
+     */
+    private fun beginConnect(serverId: String, keepFailover: Boolean) {
+        publishDisconnectedOnDestroy = false
+        destroyMessage = null
+        val generation = newRouteGeneration()
+        AppLogManager.append(applicationContext, TAG, "收到连接请求，serverId=$serverId")
+        VpnRuntimeStore.reset(
+            applicationContext,
+            status = ConnectionStatus.Connecting,
+            activeServerId = serverId,
+            message = tr("正在建立系统 VPN 隧道…", "Setting up the system VPN tunnel…", "Создание системного VPN-туннеля…"),
+        )
+        VpnQuickSettingsTileHelper.requestRefresh(applicationContext)
+        startServiceForeground(buildNotification(tr("正在建立 VPN 隧道…", "Setting up the VPN tunnel…", "Создание VPN-туннеля…")))
+        scope.launch {
+            operationMutex.withLock {
+                cleanupCompleted = false
+                runCatching { connect(serverId, keepFailover) }
+                    .onSuccess {
+                        if (recheckInstalledNodes()) return@onSuccess
+                        val connectedAtMs = System.currentTimeMillis()
+                        AppLogManager.append(applicationContext, TAG, "VPN 已连接，serverId=$serverId")
+                        VpnRuntimeStore.updateConnection(
+                            applicationContext,
+                            status = ConnectionStatus.Connected,
+                            activeServerId = serverId,
+                            message = routedFallbackNotice
+                                ?: tr("系统 VPN 已建立，Xray 正在运行", "System VPN is up and Xray is running", "Системный VPN установлен, Xray работает"),
+                            connectedAtMs = connectedAtMs,
+                            interfaceName = null,
+                        )
+                        VpnQuickSettingsTileHelper.requestRefresh(applicationContext)
+                        startSpeedMeasurement()
+                        startLogMaintenance()
+                        startHeartbeatMonitor()
+                        watchSystemDns()
+                        retryUnappliedStreamingRules(serverId, generation)
+                        val notification = buildNotification(tr("VPN 已连接", "VPN connected", "VPN подключён"))
+                        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                        manager.notify(NOTIFICATION_ID, notification)
+                    }
+                    .onFailure { error ->
+                        if (error is CancellationException) return@onFailure
+                        if (generation != routeGeneration) {
+                            // A newer connect / switch / disconnect already arrived and
+                            // is waiting for operationMutex: it takes over the tunnel.
+                            // Stopping the service here would cancel it (onDestroy
+                            // cancels scope).
+                            AppLogManager.append(applicationContext, TAG, "旧的连接请求失败，已有新的请求，交由新请求处理：${error.message.orEmpty()}")
+                            return@onFailure
+                        }
+                        publishDisconnectedOnDestroy = false
+                        val failureMessage = XrayCoreManager.snapshot.value.message
+                            ?: error.message
+                            ?: tr("VPN 建立失败。", "Couldn't set up the VPN.", "Не удалось установить VPN.")
+                        AppLogManager.append(applicationContext, TAG, "VPN 连接失败：$failureMessage", error)
+                        Log.e(TAG, "VPN connect failed: $failureMessage", error)
+                        VpnRuntimeStore.reset(
+                            applicationContext,
+                            status = ConnectionStatus.Disconnected,
+                            activeServerId = null,
+                            message = failureMessage,
+                        )
+                        VpnQuickSettingsTileHelper.requestRefresh(applicationContext)
+                        disconnect(updateRuntime = false)
+                        stopSelf()
+                    }
+            }
+        }
+    }
+
+    /** The node an Always-on start connects to (StateOps.alwaysOnServerId). */
+    private fun alwaysOnServerId(): String? =
+        com.mallocgfw.app.core.StateOps.alwaysOnServerId(AppController.load(applicationContext))
 
     private fun newRouteGeneration(): Long {
         streamingRetryJob?.cancel()
@@ -908,6 +986,7 @@ class XrayVpnService : VpnService() {
         reason: String,
     ) {
         operationMutex.withLock {
+            val generation = routeGeneration
             val runtime = VpnRuntimeStore.snapshot.value
             if (runtime.status != ConnectionStatus.Connected || runtime.activeServerId != source.id) return
             val latestState = AppController.load(applicationContext)
@@ -951,7 +1030,7 @@ class XrayVpnService : VpnService() {
                 .onFailure { error ->
                     if (error is CancellationException) return@onFailure
                     resetFailoverState()
-                    if (!recoverFromFailedSwitch(latestSource.id, error)) return@onFailure
+                    if (!recoverFromFailedSwitch(latestSource.id, error, generation)) return@onFailure
                     val failureMessage = error.message ?: tr("备用节点切换失败。", "Couldn't switch to the fallback node.", "Не удалось переключиться на резервный узел.")
                     AppLogManager.append(applicationContext, TAG, failureMessage, error)
                     VpnRuntimeStore.updateConnection(
@@ -971,6 +1050,7 @@ class XrayVpnService : VpnService() {
         fallback: ServerNode,
     ) {
         operationMutex.withLock {
+            val generation = routeGeneration
             val runtime = VpnRuntimeStore.snapshot.value
             if (runtime.status != ConnectionStatus.Connected || runtime.activeServerId != fallback.id) return
             val latestState = AppController.load(applicationContext)
@@ -1012,7 +1092,7 @@ class XrayVpnService : VpnService() {
                 .onFailure { error ->
                     if (error is CancellationException) return@onFailure
                     failbackPrimarySuccessCount = 0
-                    if (!recoverFromFailedSwitch(fallback.id, error)) return@onFailure
+                    if (!recoverFromFailedSwitch(fallback.id, error, generation)) return@onFailure
                     val failureMessage = error.message ?: tr("主节点切回失败。", "Couldn't switch back to the primary node.", "Не удалось вернуться на основной узел.")
                     AppLogManager.append(applicationContext, TAG, failureMessage, error)
                     VpnRuntimeStore.updateConnection(
@@ -1034,7 +1114,14 @@ class XrayVpnService : VpnService() {
      * disconnect rather than report a tunnel that carries nothing.
      * Returns true when the previous node is running again.
      */
-    private suspend fun recoverFromFailedSwitch(previousServerId: String?, error: Throwable): Boolean {
+    private suspend fun recoverFromFailedSwitch(previousServerId: String?, error: Throwable, generation: Long): Boolean {
+        if (generation != routeGeneration) {
+            // A newer connect / switch / disconnect is queued behind this one and
+            // sets the tunnel up (or down) itself; disconnecting and stopping the
+            // service here would cancel it.
+            AppLogManager.append(applicationContext, TAG, "切换失败，已有新的请求，交由新请求处理：${error.message.orEmpty()}")
+            return false
+        }
         val previousId = previousServerId?.takeIf { it.isNotBlank() }
         if (previousId != null && runCatching { switchActiveServer(previousId) }.isSuccess) {
             AppLogManager.append(applicationContext, TAG, "切换失败，已恢复原节点")

@@ -362,6 +362,16 @@ object StateOps {
         )
     }
 
+    /**
+     * The node a system-started (Always-on) VPN connects to: the last connected
+     * node, else the selected one, else any usable node; null when none can run.
+     */
+    fun alwaysOnServerId(state: PersistedAppState): String? {
+        fun usable(id: String) = state.servers.any { it.id == id && !it.hiddenUnsupported && ManualNodeFactory.isRunnable(it) }
+        return listOf(state.settings.lastConnectedServerId, state.selectedServerId, fallbackSelection(state.servers))
+            .firstOrNull { it.isNotBlank() && usable(it) }
+    }
+
     /** The node to select when the selected one is gone: a visible, runnable one when there is one. */
     fun fallbackSelection(servers: List<ServerNode>): String =
         (

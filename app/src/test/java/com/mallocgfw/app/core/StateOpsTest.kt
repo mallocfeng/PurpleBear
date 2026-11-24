@@ -408,6 +408,17 @@ class StateOpsTest {
     }
 
     @Test
+    fun alwaysOnConnectsToTheLastUsableNode() {
+        val hidden = node("h", "local").copy(hiddenUnsupported = true)
+        val s = state(hidden, node("a", "local"), node("b", "local"), selected = "b")
+        assertEquals("a", StateOps.alwaysOnServerId(s.copy(settings = s.settings.copy(lastConnectedServerId = "a"))))
+        // Last node gone or unusable: the selection, then any usable node.
+        assertEquals("b", StateOps.alwaysOnServerId(s.copy(settings = s.settings.copy(lastConnectedServerId = "h"))))
+        assertEquals("a", StateOps.alwaysOnServerId(s.copy(selectedServerId = "h")))
+        assertNull(StateOps.alwaysOnServerId(state(hidden)))
+    }
+
+    @Test
     fun localImportGivesClashingIdsAFreshOne() {
         val s = state(node("local_1", "local", host = "old.example.com"))
         val preview = ImportPreview(

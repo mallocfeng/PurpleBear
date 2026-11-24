@@ -58,7 +58,10 @@ object NodeCompatibility {
     /** Why no bundled core can run this node, or null when one can. */
     fun coreIncompatibility(server: ServerNode): String? {
         if (mihomoProxy(server) != null) return null
-        if (server.mihomoProxyJson.isNotBlank()) return "节点配置无法解析"
+        if (server.mihomoProxyJson.isNotBlank()) {
+            return runCatching { JSONObject(server.mihomoProxyJson) }.getOrNull()?.let(MihomoNodes::sidecarRejection)
+                ?: "节点配置无法解析"
+        }
         val outbound = runCatching { ManualNodeFactory.inspectOutbound(server) }.getOrNull() ?: return null
         return reasonFor(outbound)
     }
@@ -111,7 +114,10 @@ object NodeCompatibility {
         server.mihomoProxyJson.takeIf { it.isNotBlank() }?.let { raw ->
             val config = runCatching { JSONObject(raw) }.getOrNull() ?: return null
             if (config.optString("type").isBlank()) return null
-            return MihomoProxy(name, config.put("name", name))
+            // Saved by an older version: re-checked, so a node the sidecar refuses
+            // can't take the whole sidecar (and the VPN) down.
+            val fitted = MihomoNodes.fitForSidecar(config) ?: return null
+            return MihomoProxy(name, fitted.put("name", name))
         }
         ManualNodeFactory.ssrEndpointFromServer(server)?.let { return ssrProxy(it, name) }
         val outbound = runCatching { ManualNodeFactory.inspectOutbound(server) }.getOrNull() ?: return null

@@ -58,8 +58,38 @@ object MihomoNodes {
         if (type in setOf("socks5", "http") && map["type"].toString().lowercase(Locale.ROOT).let { it == "https" || it == "socks5-tls" }) {
             json.put("tls", true)
         }
-        return json
+        return fitForSidecar(json)
     }
+
+    /**
+     * Why the bundled mihomo refuses [config], or null. Checked against its own
+     * config test (mihomo -t): Snell runs versions 1 to 5 (none means 1).
+     * One refused node fails the whole sidecar, so such a node is shown as
+     * unsupported instead of being offered.
+     */
+    fun sidecarRejection(config: JSONObject): String? = when (config.optString("type")) {
+        "snell" -> {
+            val version = snellVersion(config)
+            if (version == null || version !in 1..5) "兼容内核不支持 Snell 版本 ${config.opt("version")}" else null
+        }
+        else -> null
+    }
+
+    /**
+     * [config] as the sidecar accepts it, or null when it can't run (see
+     * [sidecarRejection]). Snell 1 and 2 have no UDP and mihomo refuses the
+     * node when udp is on (Surge lines and older imports set it): turned off.
+     */
+    fun fitForSidecar(config: JSONObject): JSONObject? {
+        if (sidecarRejection(config) != null) return null
+        if (config.optString("type") == "snell" && (snellVersion(config) ?: 1) < 3 && config.optBoolean("udp")) {
+            config.put("udp", false)
+        }
+        return config
+    }
+
+    private fun snellVersion(config: JSONObject): Int? =
+        if (!config.has("version") || config.isNull("version")) 1 else config.opt("version").toString().trim().toIntOrNull()
 
     fun protocolLabel(type: String): String = when (type) {
         "ss" -> "SHADOWSOCKS"

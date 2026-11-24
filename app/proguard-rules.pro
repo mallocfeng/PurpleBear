@@ -6,6 +6,12 @@
 -dontwarn java.beans.Introspector
 -dontwarn java.beans.PropertyDescriptor
 
+# SnakeYAML creates loggers with Logger.getLogger(X.class.getPackage().getName())
+# (TypeDescription, among others). Moved into the unnamed package by R8, its
+# classes have no Package, the static initializer throws and every YAML
+# (Clash) import fails in release builds. Keep the package names.
+-keeppackagenames org.yaml.snakeyaml.**
+
 # Readable stack traces in release crash logs (decode with the R8 mapping file).
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
