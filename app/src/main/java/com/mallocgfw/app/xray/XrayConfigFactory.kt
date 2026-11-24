@@ -1,5 +1,6 @@
 package com.mallocgfw.app.xray
 
+import com.mallocgfw.app.model.DnsInput
 import com.mallocgfw.app.model.ManualNodeFactory
 import com.mallocgfw.app.model.NodeCompatibility
 import com.mallocgfw.app.model.SsrMihomoConfigFactory
@@ -26,6 +27,16 @@ object XrayConfigFactory {
     private const val MAGIC_DNS_OUTBOUND_TAG = "magic-dns-out"
     private const val REMOTE_DNS_OUTBOUND_TAG = "remote-dns-out"
     private const val MAGIC_DNS_PASSTHROUGH_TAG = "magic-dns-pass"
+    /**
+     * Encrypted DNS: the address Android is given (inside the tunnel's /30).
+     * Queries to it are answered by Xray's DNS module, which asks the
+     * DoH / DoT / DoQ server.
+     */
+    const val ENCRYPTED_DNS_ADDRESS = "172.19.0.2"
+    private const val ENCRYPTED_DNS_OUTBOUND_TAG = "encrypted-dns-out"
+    private const val DNS_MODULE_TAG = "dns-module"
+    private const val DOT_OUTBOUND_TAG = "dot-out"
+    private const val DOT_LOOPBACK_TAG = "dot-loop"
     /** Tailscale's resolver; also the DNS address the VPN advertises for MagicDNS. */
     const val TAILSCALE_RESOLVER = "100.100.100.100"
     private const val NXDOMAIN = 3
@@ -139,6 +150,8 @@ object XrayConfigFactory {
         dnsServer: String? = null,
         /** Remote DNS: send it as DNS-over-TCP through the proxy, so nodes without UDP still resolve. */
         dnsOverProxy: Boolean = false,
+        /** Encrypted custom DNS; [dnsServer] is then [ENCRYPTED_DNS_ADDRESS]. */
+        encryptedDns: DnsInput.EncryptedDns? = null,
         localProxy: LocalProxyAllocation = LocalProxyRuntime.current() ?: LocalProxyAllocation.ephemeral(),
     ): String {
         val normalizedMtu = normalizedAppVpnMtu(vpnMtu)
@@ -183,6 +196,7 @@ object XrayConfigFactory {
                     if (dnsServer != null && dnsOverProxy) {
                         put(remoteDnsOutbound(dnsServer, if (tailscale?.routeAllTraffic == true) "tailscale" else "proxy"))
                     }
+                    encryptedDns?.let { encryptedDnsOutbounds(it).forEach(::put) }
                     put(JSONObject().apply {
                         put("tag", "direct")
                         put("protocol", "freedom")
@@ -214,12 +228,15 @@ object XrayConfigFactory {
                             magicDns = magicDnsUpstream != null,
                             dnsServer = dnsServer,
                             dnsOverProxy = dnsOverProxy,
+                            encryptedDns = encryptedDns,
                         ),
                     )
                 },
             )
-            if (magicDnsUpstream != null) {
-                tailscale?.takeIf { it.resolvesMagicDns }?.let { put("dns", magicDnsSettings(it)) }
+            val magicDnsHosts = tailscale?.takeIf { magicDnsUpstream != null && it.resolvesMagicDns }
+            when {
+                encryptedDns != null -> put("dns", encryptedDnsSettings(encryptedDns, magicDnsHosts))
+                magicDnsHosts != null -> put("dns", magicDnsSettings(magicDnsHosts))
             }
         }.toString(2)
     }
@@ -236,6 +253,7 @@ object XrayConfigFactory {
         magicDns: Boolean = false,
         dnsServer: String? = null,
         dnsOverProxy: Boolean = false,
+        encryptedDns: DnsInput.EncryptedDns? = null,
     ): JSONArray {
         val rules = JSONArray()
 
@@ -264,7 +282,30 @@ object XrayConfigFactory {
                     put("type", "field")
                     put("ip", JSONArray().put(server))
                     put("port", "53")
-                    put("outboundTag", if (dnsOverProxy) REMOTE_DNS_OUTBOUND_TAG else "direct")
+                    put(
+                        "outboundTag",
+                        when {
+                            encryptedDns != null -> ENCRYPTED_DNS_OUTBOUND_TAG
+                            dnsOverProxy -> REMOTE_DNS_OUTBOUND_TAG
+                            else -> "direct"
+                        },
+                    )
+                },
+            )
+        }
+
+        if (encryptedDns?.kind == DnsInput.EncryptedDns.Kind.DoT) {
+            // The DNS module sends DoT queries as plain DNS-over-TCP; this
+            // outbound adds the TLS, then hands the connection back to routing
+            // (see encryptedDnsOutbounds), so the server goes direct or
+            // through the proxy like any other site.
+            rules.put(
+                JSONObject().apply {
+                    put("type", "field")
+                    put("inboundTag", JSONArray().put(DNS_MODULE_TAG))
+                    put("network", "tcp")
+                    put("port", encryptedDns.port.toString())
+                    put("outboundTag", DOT_OUTBOUND_TAG)
                 },
             )
         }
@@ -532,6 +573,64 @@ object XrayConfigFactory {
      * instead was tried: the userspace node does not serve it to SOCKS clients
      * and every lookup waited for timeouts.
      */
+    /**
+     * Xray's DNS module for encrypted DNS. DoH and DoT queries are routed like
+     * other traffic (a domestic server goes direct, a foreign one through the
+     * proxy); DoQ is always dialed directly (Xray only supports it that way).
+     * With MagicDNS on, tailnet names are answered here too.
+     */
+    private fun encryptedDnsSettings(dns: DnsInput.EncryptedDns, magicDns: TailscaleRouting?): JSONObject =
+        JSONObject().apply {
+            put("tag", DNS_MODULE_TAG)
+            put("servers", JSONArray().put(dns.xrayServer))
+            put("queryStrategy", "UseIP")
+            magicDns?.let { config ->
+                put(
+                    "hosts",
+                    JSONObject().apply {
+                        config.magicDnsHosts.forEach { (name, addresses) -> put("full:$name", JSONArray(addresses)) }
+                    },
+                )
+            }
+        }
+
+    /**
+     * The dns outbound answers A/AAAA from the DNS module (other query types
+     * get an empty answer: they can't be sent encrypted). DoT adds a TLS
+     * outbound that dials through a loopback back into routing.
+     */
+    private fun encryptedDnsOutbounds(dns: DnsInput.EncryptedDns): List<JSONObject> = buildList {
+        add(
+            JSONObject().apply {
+                put("tag", ENCRYPTED_DNS_OUTBOUND_TAG)
+                put("protocol", "dns")
+            },
+        )
+        if (dns.kind == DnsInput.EncryptedDns.Kind.DoT) {
+            add(
+                JSONObject().apply {
+                    put("tag", DOT_OUTBOUND_TAG)
+                    put("protocol", "freedom")
+                    put(
+                        "streamSettings",
+                        JSONObject().apply {
+                            put("security", "tls")
+                            put("tlsSettings", JSONObject().put("serverName", dns.host))
+                            put("sockopt", JSONObject().put("dialerProxy", DOT_LOOPBACK_TAG))
+                        },
+                    )
+                },
+            )
+            add(
+                JSONObject().apply {
+                    put("tag", DOT_LOOPBACK_TAG)
+                    put("protocol", "loopback")
+                    put("settings", JSONObject().put("inboundTag", DOT_LOOPBACK_TAG))
+                },
+            )
+        }
+    }
+
     private fun magicDnsSettings(config: TailscaleRouting): JSONObject = JSONObject().apply {
         put("tag", "magic-dns")
         put(

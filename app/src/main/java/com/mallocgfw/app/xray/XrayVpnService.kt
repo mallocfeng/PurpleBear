@@ -365,6 +365,9 @@ class XrayVpnService : VpnService() {
         val dnsServer = resolveDnsAddress(applicationContext, state.settings)
         val dnsEndpoint = resolveDnsEndpoint(applicationContext, state.settings)
         tunnelSystemDns = dnsServer.takeIf { usesSystemDns(state.settings) }
+        encryptedDnsOf(state.settings)?.let { dns ->
+            AppLogManager.append(applicationContext, TAG, "使用加密 DNS（${dns.label}）：${state.settings.customDnsValue.trim()}")
+        }
         val server = state.servers.firstOrNull { it.id == serverId }
             ?: error("未找到要连接的节点。")
         val vpnMtu = normalizedAppVpnMtu(state.settings.vpnMtu)
@@ -401,7 +404,9 @@ class XrayVpnService : VpnService() {
         // the tunnel (a LAN resolver is excluded from it). Xray answers tailnet
         // names and forwards every other query to the real resolver, routed as
         // before; see XrayConfigFactory.magicDnsOutbounds.
-        val magicDnsUpstream = dnsEndpoint?.takeIf { tailscaleRouting?.resolvesMagicDns == true }
+        // With encrypted DNS, non-tailnet names go on to the DNS module's address.
+        val magicDnsUpstream = (if (encryptedDnsOf(state.settings) != null) "${XrayConfigFactory.ENCRYPTED_DNS_ADDRESS}:53" else dnsEndpoint)
+            ?.takeIf { tailscaleRouting?.resolvesMagicDns == true }
         activeMagicDnsUpstream = magicDnsUpstream
         if (magicDnsUpstream != null) {
             builder.addDnsServer(XrayConfigFactory.TAILSCALE_RESOLVER)
@@ -468,6 +473,7 @@ class XrayVpnService : VpnService() {
             magicDnsUpstream = activeMagicDnsUpstream,
             dnsServer = dnsServer,
             dnsOverProxy = state.settings.dnsMode == AppDnsMode.Remote,
+            encryptedDns = encryptedDnsOf(state.settings),
         )
             .getOrElse { throw it }
     }
@@ -514,6 +520,7 @@ class XrayVpnService : VpnService() {
             magicDnsUpstream = activeMagicDnsUpstream,
             dnsServer = dnsServer,
             dnsOverProxy = state.settings.dnsMode == AppDnsMode.Remote,
+            encryptedDns = encryptedDnsOf(state.settings),
         ).getOrElse { throw it }
     }
 
@@ -607,7 +614,14 @@ class XrayVpnService : VpnService() {
     /** System mode, or a custom value that isn't usable (which falls back to the system DNS). */
     private fun usesSystemDns(settings: com.mallocgfw.app.model.AppSettings): Boolean =
         settings.dnsMode == AppDnsMode.System ||
-            (settings.dnsMode == AppDnsMode.Custom && DnsInput.hostOf(settings.customDnsValue) == null)
+            (
+                settings.dnsMode == AppDnsMode.Custom &&
+                    DnsInput.hostOf(settings.customDnsValue) == null &&
+                    encryptedDnsOf(settings) == null
+                )
+
+    private fun encryptedDnsOf(settings: com.mallocgfw.app.model.AppSettings): DnsInput.EncryptedDns? =
+        DnsInput.encryptedOf(settings.customDnsValue).takeIf { settings.dnsMode == AppDnsMode.Custom }
 
     private fun watchSystemDns() {
         unwatchSystemDns()
@@ -1086,8 +1100,11 @@ class XrayVpnService : VpnService() {
         return when (settings.dnsMode) {
             AppDnsMode.System -> resolveSystemDns(context) ?: DEFAULT_REMOTE_DNS
             AppDnsMode.Remote -> DEFAULT_REMOTE_DNS
-            // An invalid saved value (e.g. an old DoH link) falls back to the system DNS.
-            AppDnsMode.Custom -> DnsInput.hostOf(settings.customDnsValue) ?: resolveSystemDns(context) ?: DEFAULT_REMOTE_DNS
+            // Encrypted DNS is answered inside the tunnel; an unusable value falls back to the system DNS.
+            AppDnsMode.Custom -> DnsInput.hostOf(settings.customDnsValue)
+                ?: XrayConfigFactory.ENCRYPTED_DNS_ADDRESS.takeIf { encryptedDnsOf(settings) != null }
+                ?: resolveSystemDns(context)
+                ?: DEFAULT_REMOTE_DNS
         }
     }
 
@@ -1099,7 +1116,8 @@ class XrayVpnService : VpnService() {
             AppDnsMode.System -> dnsEndpointOf(resolveSystemDns(context) ?: DEFAULT_REMOTE_DNS)
             AppDnsMode.Remote -> dnsEndpointOf(DEFAULT_REMOTE_DNS)
             AppDnsMode.Custom -> dnsEndpointOf(
-                // Port 53, like Android's own queries to this server.
+                // Port 53, like Android's own queries to this server. With encrypted
+                // DNS, PurpleBear's own lookups (e.g. the DoQ server name) use the system DNS.
                 DnsInput.hostOf(settings.customDnsValue) ?: resolveSystemDns(context) ?: DEFAULT_REMOTE_DNS,
             )
         }

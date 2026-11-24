@@ -113,6 +113,7 @@ object XrayCoreManager {
         magicDnsUpstream: String? = null,
         dnsServer: String? = null,
         dnsOverProxy: Boolean = false,
+        encryptedDns: com.mallocgfw.app.model.DnsInput.EncryptedDns? = null,
     ): Result<XrayCoreSnapshot> {
         return startWithConfig(
             context = context,
@@ -140,6 +141,7 @@ object XrayCoreManager {
                 proxyQuicEnabled = settings.proxyQuicEnabled,
                 dnsServer = dnsServer,
                 dnsOverProxy = dnsOverProxy,
+                encryptedDns = encryptedDns,
                 localProxy = localProxy,
             )
         }

@@ -1,12 +1,38 @@
 package com.mallocgfw.app.model
 
 /**
- * Checks what the user types as a custom DNS server: an IP, optionally with
- * port 53. Android's VPN DNS setting takes only an IP and always queries
- * port 53, so other ports are refused instead of being silently ignored.
+ * Checks what the user types as a custom DNS server: a plain IP (port 53
+ * only: Android's VPN DNS setting takes only an IP and always queries port
+ * 53), or an encrypted server written as a URL:
+ * - DoH: https://dns.google/dns-query
+ * - DoT: tls://dns.google (port 853 unless given)
+ * - DoQ: quic://dns.adguard-dns.com (port 853 unless given)
  */
 object DnsInput {
     data class Preset(val name: String, val address: String)
+
+    /** An encrypted DNS server. */
+    data class EncryptedDns(val kind: Kind, val host: String, val port: Int, val path: String = "") {
+        enum class Kind { DoH, DoT, DoQ }
+
+        private val hostPort: String
+            get() = (if (host.contains(':')) "[$host]" else host) + ":" + port
+
+        /** The server as Xray's DNS module takes it. DoT's TLS is added by an outbound. */
+        val xrayServer: String
+            get() = when (kind) {
+                Kind.DoH -> "https://$hostPort$path"
+                Kind.DoT -> "tcp://$hostPort"
+                Kind.DoQ -> "quic+local://$hostPort"
+            }
+
+        val label: String
+            get() = when (kind) {
+                Kind.DoH -> "DoH"
+                Kind.DoT -> "DoT"
+                Kind.DoQ -> "DoQ"
+            }
+    }
 
     val presets = listOf(
         Preset("阿里 DNS", "223.5.5.5"),
@@ -15,6 +41,67 @@ object DnsInput {
         Preset("Cloudflare", "1.1.1.1"),
         Preset("Quad9", "9.9.9.9"),
     )
+
+    /** Well-known encrypted servers, shown under the address box. */
+    val encryptedPresets = listOf(
+        Preset("阿里 DoH", "https://dns.alidns.com/dns-query"),
+        Preset("腾讯 DoH", "https://doh.pub/dns-query"),
+        Preset("Google DoH", "https://dns.google/dns-query"),
+        Preset("Cloudflare DoH", "https://cloudflare-dns.com/dns-query"),
+        Preset("阿里 DoT", "tls://dns.alidns.com"),
+        Preset("腾讯 DoT", "tls://dot.pub"),
+        Preset("Google DoT", "tls://dns.google"),
+        Preset("Cloudflare DoT", "tls://one.one.one.one"),
+        Preset("阿里 DoQ", "quic://dns.alidns.com"),
+        Preset("AdGuard DoQ", "quic://dns.adguard-dns.com"),
+    )
+
+    private val hostLabel = Regex("""^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$""")
+
+    /** The encrypted server in [raw], or null when it isn't one. */
+    fun encryptedOf(raw: String): EncryptedDns? {
+        val value = raw.trim()
+        val scheme = value.substringBefore("://", "").lowercase()
+        val kind = when (scheme) {
+            "https" -> EncryptedDns.Kind.DoH
+            "tls" -> EncryptedDns.Kind.DoT
+            "quic" -> EncryptedDns.Kind.DoQ
+            else -> return null
+        }
+        val rest = value.substringAfter("://")
+        val authority = rest.substringBefore('/')
+        val path = rest.drop(authority.length)
+        if (kind != EncryptedDns.Kind.DoH && path.isNotEmpty() && path != "/") return null
+        if (path.any { it.isWhitespace() || it == '#' }) return null
+        val (host, port) = splitHostPort(authority) ?: return null
+        val defaultPort = if (kind == EncryptedDns.Kind.DoH) 443 else 853
+        return EncryptedDns(
+            kind = kind,
+            host = host,
+            port = port ?: defaultPort,
+            path = if (kind == EncryptedDns.Kind.DoH) path.ifEmpty { "/dns-query" } else "",
+        )
+    }
+
+    /** Host (domain or IP literal) and optional port of an encrypted server. */
+    private fun splitHostPort(authority: String): Pair<String, Int?>? {
+        if (authority.isEmpty() || authority.contains('@')) return null
+        if (authority.startsWith("[")) {
+            val host = authority.substringAfter('[').substringBefore(']', missingDelimiterValue = "")
+            if (!isIpv6(host)) return null
+            val rest = authority.substringAfter(']', "")
+            if (rest.isEmpty()) return host to null
+            if (!rest.startsWith(":")) return null
+            return portOf(rest.drop(1))?.let { host to it }
+        }
+        if (authority.count { it == ':' } > 1) return null
+        val host = authority.substringBefore(':').lowercase()
+        val port = if (authority.contains(':')) portOf(authority.substringAfter(':')) ?: return null else null
+        val isDomain = host.length <= 253 && host.contains('.') &&
+            host.split('.').all { hostLabel.matches(it) } && !host.split('.').last().all(Char::isDigit)
+        if (!isIpv4(host) && !isDomain) return null
+        return host to port
+    }
 
     private const val DNS_PORT = 53
 
@@ -25,8 +112,9 @@ object DnsInput {
      */
     fun hostOf(raw: String): String? = parse(raw.trim())?.first
 
-    /** 8.8.8.8, 8.8.8.8:53, 2001:4860:4860::8888, [2001:4860:4860::8888]:53 */
+    /** A plain IP (port 53 only) or an encrypted server URL. */
     fun isValid(raw: String): Boolean {
+        if (encryptedOf(raw) != null) return true
         val (_, port) = parse(raw.trim()) ?: return false
         return port == null || port == DNS_PORT
     }

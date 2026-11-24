@@ -240,6 +240,36 @@ class XrayConfigFactoryTest {
         assertEquals("proxy", dns.getJSONObject("streamSettings").getJSONObject("sockopt").getString("dialerProxy"))
     }
 
+    @Test
+    fun encryptedDnsGoesToTheDnsModule() {
+        val dot = com.mallocgfw.app.model.DnsInput.encryptedOf("tls://dns.google")!!
+        val config = JSONObject(
+            XrayConfigFactory.buildVpn(node = testNode(), dnsServer = XrayConfigFactory.ENCRYPTED_DNS_ADDRESS, encryptedDns = dot),
+        )
+        val dns = config.getJSONObject("dns")
+        assertEquals("tcp://dns.google:853", dns.getJSONArray("servers").getString(0))
+        val tag = dns.getString("tag")
+        val outbounds = config.getJSONArray("outbounds")
+        val byTag = List(outbounds.length()) { outbounds.getJSONObject(it) }.associateBy { it.optString("tag") }
+        assertEquals("dns", byTag.getValue("encrypted-dns-out").getString("protocol"))
+        val dotOut = byTag.getValue("dot-out")
+        assertEquals("tls", dotOut.getJSONObject("streamSettings").getString("security"))
+        assertEquals("dns.google", dotOut.getJSONObject("streamSettings").getJSONObject("tlsSettings").getString("serverName"))
+        assertEquals("dot-loop", dotOut.getJSONObject("streamSettings").getJSONObject("sockopt").getString("dialerProxy"))
+        assertEquals("loopback", byTag.getValue("dot-loop").getString("protocol"))
+        val rules = config.getJSONObject("routing").getJSONArray("rules")
+        val list = List(rules.length()) { rules.getJSONObject(it) }
+        assertTrue(list.any { it.ipValues() == listOf(XrayConfigFactory.ENCRYPTED_DNS_ADDRESS) && it.optString("outboundTag") == "encrypted-dns-out" })
+        assertTrue(list.any { it.optJSONArray("inboundTag")?.getString(0) == tag && it.optString("port") == "853" && it.optString("outboundTag") == "dot-out" })
+
+        val doh = com.mallocgfw.app.model.DnsInput.encryptedOf("https://dns.alidns.com/dns-query")!!
+        val dohConfig = JSONObject(
+            XrayConfigFactory.buildVpn(node = testNode(), dnsServer = XrayConfigFactory.ENCRYPTED_DNS_ADDRESS, encryptedDns = doh),
+        )
+        val dohOutbounds = dohConfig.getJSONArray("outbounds")
+        assertTrue(List(dohOutbounds.length()) { dohOutbounds.getJSONObject(it).optString("tag") }.none { it == "dot-out" })
+    }
+
     private fun JSONArray.indexOfFirstRule(predicate: (JSONObject) -> Boolean): Int {
         for (index in 0 until length()) {
             if (predicate(getJSONObject(index))) return index

@@ -2,6 +2,16 @@
 
 PurpleBear 各版本的完整更新记录。安装包见 [GitHub Releases](https://github.com/mallocfeng/PurpleBear/releases)。
 
+## 0.9.2
+
+1. 自定义 DNS 支持加密 DNS：可直接输入 DoH（`https://dns.google/dns-query`）、DoT（`tls://dns.google`，默认 853 端口）和 DoQ（`quic://dns.adguard-dns.com`，默认 853 端口），并提供常用服务器一键填入：阿里 / 腾讯 / Google / Cloudflare 的 DoH 与 DoT，阿里与 AdGuard 的 DoQ。
+
+2. DoH 和 DoT 按分流规则连接服务器：国内服务器（阿里、腾讯）直连，国外服务器（Google、Cloudflare）经代理，在国内也能正常使用；DoQ 由内核限制始终直连。查询由内置的 Xray DNS 模块加密发送，服务器不可用时不会悄悄退回普通 DNS。
+
+3. 设置页 DNS 摘要显示为“DoH · dns.alidns.com”这类形式；MCP 的 `set_dns` 同样接受加密 DNS 地址。
+
+4. 更新版本号到 `0.9.2`，`versionCode` 更新为 `320`。
+
 ## 0.9.1.2
 
 1. 流媒体规则下载失败不再静默：为服务选了出口或直连、但规则下载失败且没有缓存时，日志会记录，流媒体分流页提示哪些服务暂未生效，并提供“重试下载规则”；连接后会经代理自动重试一次，成功即重连生效。MCP 的 `list_streaming_services` 增加 `applied` 字段。

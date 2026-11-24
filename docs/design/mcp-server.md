@@ -186,7 +186,7 @@ Tailnet 模式下，`:tailscale` 进程里的 tsnet 节点在 Tailnet 地址上�
 | `delete_node` / `delete_group` | 危险 | |
 | `set_pre_proxy` / `set_fallback` | 修改 | 沿用 App 里同样的校验 |
 | `set_proxy_mode` | 修改 | 规则分流 / 全局代理 |
-| `set_dns` | 修改 | 系统 / 远端（Cloudflare 1.1.1.1，经代理）/ 自定义；自定义只接受 IP 地址，端口只能是 53（不支持域名和 DoH / DoT），VPN 开着时自动重连 |
+| `set_dns` | 修改 | 系统 / 远端（Cloudflare 1.1.1.1，经代理）/ 自定义；自定义可填 IP 地址（端口只能是 53），或加密 DNS：`https://`（DoH）、`tls://`（DoT）、`quic://`（DoQ），VPN 开着时自动重连 |
 | `set_direct_region`、`set_mtu`、`set_heartbeat` | 修改 | |
 | `set_proxy_quic` | 修改 | 是否允许国外 QUIC（UDP 443）走代理；关闭（默认）时回退到 TCP，发往本地区的 QUIC 始终直连 |
 | `list_rule_sources` / `get_custom_rules` / `set_custom_rules` / `toggle_rule_source` / `refresh_rule_source` | 读 / 修改 | 内置规则源带 `about` 说明；Steam 下载直连、BT Tracker 直连默认开启，可选内置源（广告拦截、屏蔽国内 App 私有 DNS）默认关闭，用 `toggle_rule_source` 开关，从未下载过的会先下载 |

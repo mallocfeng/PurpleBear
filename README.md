@@ -115,7 +115,7 @@ Xray 能运行的节点交给 Xray；Xray 不支持的协议和配置（包括�
 
 - **系统诊断**：一键检查配置解析、规则资源、Xray 内核、VPN、DNS、节点连通性和代理出口，并可复制诊断摘要。
 - **日志**：应用内查看运行日志、Xray 错误日志和访问日志；日志级别可选 error、warning、info、debug；最多保留半年。
-- **DNS**：系统 DNS、远程 DNS、自定义 DNS 三种模式。
+- **DNS**：系统 DNS、远程 DNS、自定义 DNS 三种模式；自定义 DNS 支持普通 IP 和加密 DNS（DoH / DoT / DoQ）。
 - **其他**：中文、英文、俄文界面；浅色、深色主题；VPN MTU 设置；备用节点心跳间隔设置。
 - **应用内更新**：每天自动检查 GitHub Release，可在应用内直接下载 APK 并交给系统安装。
 
@@ -177,6 +177,10 @@ Release 包输出在 `app/build/outputs/apk/release/app-release.apk`。签名读
 | `index.html`、`privacy-policy.html` | GitHub Pages 项目页与隐私政策 |
 
 ## 更新日志
+
+### 0.9.2
+
+- 自定义 DNS 支持加密 DNS（DoH / DoT / DoQ），可直接输入地址或选用常用服务器；DoH、DoT 按分流规则直连或经代理，在国内也能使用。
 
 ### 0.9.1.2
 

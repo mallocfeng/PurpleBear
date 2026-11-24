@@ -497,7 +497,7 @@ object McpTools {
                 "host names and DoH / DoT links are not supported. Reconnects if the VPN is on.",
             schema(
                 "mode" to str("system, remote or custom.", listOf("system", "remote", "custom")),
-                "custom_value" to str("IP address for custom mode, e.g. 223.5.5.5 or 2001:4860:4860::8888."),
+                "custom_value" to str("Custom mode: a plain IP (223.5.5.5, port 53) or encrypted DNS: https://dns.alidns.com/dns-query (DoH), tls://dns.google (DoT), quic://dns.adguard-dns.com (DoQ)."),
                 required = listOf("mode"),
             ),
         ) { args ->
@@ -510,7 +510,7 @@ object McpTools {
             val custom = args.optStr("custom_value")?.trim().orEmpty()
             if (mode == AppDnsMode.Custom && custom.isBlank()) throw ToolError("custom_value is required for custom mode.")
             if (mode == AppDnsMode.Custom && !DnsInput.isValid(custom)) {
-                throw ToolError("custom_value must be an IP address such as 223.5.5.5 or 2001:4860:4860::8888 (port 53 only); host names and DoH / DoT links are not supported.")
+                throw ToolError("custom_value must be a plain IP such as 223.5.5.5 (port 53 only) or an encrypted DNS URL: https://host/path (DoH), tls://host[:port] (DoT) or quic://host[:port] (DoQ).")
             }
             val target = when (mode) {
                 AppDnsMode.System -> tr("系统 DNS", "the system DNS", "системный DNS")

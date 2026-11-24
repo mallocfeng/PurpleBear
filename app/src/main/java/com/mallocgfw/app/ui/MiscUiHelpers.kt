@@ -143,7 +143,9 @@ internal fun AppSettings.dnsSummary(): String {
     return when (dnsMode) {
         AppDnsMode.System -> "系统 DNS"
         AppDnsMode.Remote -> "远端 DNS 1.1.1.1"
-        AppDnsMode.Custom -> customDnsValue.ifBlank { "手动输入" }
+        AppDnsMode.Custom -> com.mallocgfw.app.model.DnsInput.encryptedOf(customDnsValue)
+            ?.let { "${it.label} · ${it.host}" }
+            ?: customDnsValue.ifBlank { "手动输入" }
     }
 }
 

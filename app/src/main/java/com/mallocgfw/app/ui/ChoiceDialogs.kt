@@ -193,7 +193,7 @@ internal fun DnsSettingsDialog(
                         icon = Icons.Rounded.Edit,
                         title = uiText("手动输入", "Enter manually", "Вручную"),
                         subtitle = if (mode == AppDnsMode.Custom || custom.isBlank()) {
-                            uiText("填写指定的 DNS 服务器 IP。", "Use a DNS server IP of your choice.", "Укажите IP DNS-сервера.")
+                            uiText("填写 DNS 服务器 IP，或加密 DNS（DoH / DoT / DoQ）地址。", "A DNS server IP, or an encrypted DNS (DoH / DoT / DoQ) address.", "IP DNS-сервера или адрес зашифрованного DNS (DoH / DoT / DoQ).")
                         } else {
                             uiText("上次填写：$custom", "Last used: $custom", "Ранее: $custom")
                         },
@@ -211,7 +211,7 @@ internal fun DnsSettingsDialog(
                         singleLine = true,
                         textStyle = compactInputTextStyle(),
                         label = { CompactInputLabel(uiText("DNS 服务器地址", "DNS server address", "Адрес DNS-сервера")) },
-                        placeholder = { CompactInputPlaceholder("8.8.8.8") },
+                        placeholder = { CompactInputPlaceholder("8.8.8.8 / https://… / tls://… / quic://…") },
                         isError = custom.isNotBlank() && !customValid,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                         shape = RoundedCornerShape(14.dp),
@@ -227,11 +227,25 @@ internal fun DnsSettingsDialog(
                             unfocusedTextColor = TextPrimary,
                         ),
                     )
+                    val encrypted = DnsInput.encryptedOf(custom)
                     Text(
-                        text = if (custom.isNotBlank() && !customValid) {
-                            uiText("需要填 IP 地址，例如 8.8.8.8 或 2001:4860:4860::8888（端口固定为 53，不支持域名和 DoH 链接）。", "Needs an IP address, e.g. 8.8.8.8 or 2001:4860:4860::8888 (port is always 53; no host names or DoH links).", "Нужен IP-адрес, например 8.8.8.8 или 2001:4860:4860::8888 (порт всегда 53; без имён и DoH).")
-                        } else {
-                            uiText("也可以直接点下面的常用服务器：", "Or pick a common server:", "Или выберите популярный сервер:")
+                        text = when {
+                            custom.isNotBlank() && !customValid -> uiText(
+                                "请填 IP 地址（端口固定 53），或加密 DNS 地址：https://…（DoH）、tls://…（DoT）、quic://…（DoQ）。",
+                                "Enter an IP (port 53), or an encrypted DNS address: https://… (DoH), tls://… (DoT), quic://… (DoQ).",
+                                "Введите IP (порт 53) или адрес зашифрованного DNS: https://… (DoH), tls://… (DoT), quic://… (DoQ).",
+                            )
+                            encrypted?.kind == DnsInput.EncryptedDns.Kind.DoQ -> uiText(
+                                "加密 DNS（DoQ）：查询加密发送，DoQ 始终直连服务器，不经代理。",
+                                "Encrypted DNS (DoQ): queries are encrypted; DoQ always connects directly, not through the proxy.",
+                                "Зашифрованный DNS (DoQ): запросы шифруются; DoQ всегда подключается напрямую, без прокси.",
+                            )
+                            encrypted != null -> uiText(
+                                "加密 DNS（${encrypted.label}）：查询加密发送，按分流规则直连或经代理连接服务器。",
+                                "Encrypted DNS (${encrypted.label}): queries are encrypted and reach the server direct or through the proxy, following your rules.",
+                                "Зашифрованный DNS (${encrypted.label}): запросы шифруются и идут к серверу напрямую или через прокси по правилам.",
+                            )
+                            else -> uiText("也可以直接点下面的常用服务器：", "Or pick a common server:", "Или выберите популярный сервер:")
                         },
                         color = if (custom.isNotBlank() && !customValid) Error else TextSecondary,
                         fontSize = TypeScale.Meta,
@@ -239,27 +253,41 @@ internal fun DnsSettingsDialog(
                         modifier = Modifier.padding(top = 6.dp, start = 4.dp),
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        DnsInput.presets.forEach { preset ->
-                            val selected = custom.trim() == preset.address
-                            Column(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .background(if (selected) Primary.copy(alpha = 0.18f) else SurfaceLow)
-                                    .border(1.dp, if (selected) Primary.copy(alpha = 0.6f) else Color.Transparent, RoundedCornerShape(14.dp))
-                                    .clickable { custom = preset.address }
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                            ) {
-                                Text(uiText(preset.name), color = if (selected) Primary else TextPrimary, fontSize = TypeScale.Meta, lineHeight = TypeScale.MetaLine, fontWeight = FontWeight.SemiBold)
-                                Text(preset.address, color = TextSecondary, fontSize = TypeScale.Tiny, lineHeight = TypeScale.TinyLine)
-                            }
-                        }
-                    }
+                    DnsPresetRow(DnsInput.presets, custom) { custom = it }
+                    Text(
+                        text = uiText("加密 DNS", "Encrypted DNS", "Зашифрованный DNS"),
+                        color = TextSecondary,
+                        fontSize = TypeScale.Meta,
+                        lineHeight = TypeScale.MetaLine,
+                        modifier = Modifier.padding(top = 10.dp, bottom = 8.dp, start = 4.dp),
+                    )
+                    DnsPresetRow(DnsInput.encryptedPresets, custom) { custom = it }
                 }
 
+    }
+}
+
+/** A scrollable row of DNS servers; tapping one fills the address box. */
+@Composable
+private fun DnsPresetRow(presets: List<DnsInput.Preset>, current: String, onPick: (String) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        presets.forEach { preset ->
+            val selected = current.trim() == preset.address
+            Column(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(if (selected) Primary.copy(alpha = 0.18f) else SurfaceLow)
+                    .border(1.dp, if (selected) Primary.copy(alpha = 0.6f) else Color.Transparent, RoundedCornerShape(14.dp))
+                    .clickable { onPick(preset.address) }
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+            ) {
+                Text(uiText(preset.name), color = if (selected) Primary else TextPrimary, fontSize = TypeScale.Meta, lineHeight = TypeScale.MetaLine, fontWeight = FontWeight.SemiBold)
+                Text(preset.address.removePrefix("https://").removeSuffix("/dns-query"), color = TextSecondary, fontSize = TypeScale.Tiny, lineHeight = TypeScale.TinyLine)
+            }
+        }
     }
 }
 
