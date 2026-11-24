@@ -42,7 +42,9 @@ PurpleBear 各版本的完整更新记录。安装包见 [GitHub Releases](https
 
 19. 订阅提供者（proxy-providers）的 `override` 不再改掉带 `v2ray-plugin` 的 Shadowsocks 节点的传输方式：以前加上 `udp` 等覆盖项后，TLS 上的 WebSocket 节点会变成普通 TCP 却仍显示可用；现在保留 WebSocket / TLS，经兼容内核运行时转成 mihomo 的 `v2ray-plugin` 写法，无法完整保留传输方式的节点保持原设置。前置代理组用 `use:` 引用 HTTP 订阅提供者时，会从下载到的节点中选前置节点，不再把主节点列为不支持；从提供者中选前置节点时也遵守 `filter`、`exclude-filter` 和 `exclude-type`，不会选到被过滤掉的节点。
 
-20. 更新版本号到 `0.9.2.2`，`versionCode` 更新为 `322`。
+20. 订阅提供者的 `override` 不再清空 VLESS / VMess 节点的 XHTTP、HTTP/2 路径和 Host：Clash 配置里的 `xhttp-opts`、`h2-opts` 现在会被读取，`ws-opts` 带 `v2ray-http-upgrade` 的按 HTTPUpgrade 导入；URI / Base64 提供者的节点只有在转换前后连接参数完全一致时才应用覆盖项，否则保持原设置。`dialer-proxy: DIRECT` 表示不使用前置代理，节点按原样保留，不再被丢弃。多个 HTTP 订阅提供者使用同一个链接时只下载一次，并各自保留名称、过滤和覆盖配置，不再只剩第一个。前置代理组自身的 `filter`（只作用于 `use:` 引入的节点）、`exclude-filter` 和 `exclude-type` 也会生效；筛选后没有节点时，主节点列为不支持并说明原因。
+
+21. 更新版本号到 `0.9.2.2`，`versionCode` 更新为 `322`。
 
 ## 0.9.2.1
 

@@ -271,6 +271,119 @@ $provider
         assertEquals("old.example.com", frontOf(downloaded.single { it.name == "MyVPS" })!!.getString("server"))
     }
 
+    private val uuid = "0b4f8e8c-4c8a-4c34-9d36-0d2a5c1d7a11"
+
+    @Test
+    fun anOverrideKeepsXhttpAndHttpUpgradeSettings() {
+        val xhttp = "vless://$uuid@x.example.com:443?encryption=none&security=tls&sni=cdn.example.com&type=xhttp&host=h.example.com&path=%2Fxp#X\n"
+        val udp = ImportParser.ProviderOverride(fields = mapOf("udp" to true))
+        val x = ImportParser.buildFilePreview("c.yaml", mainWithFront, listOf(ImportParser.ProviderContent(xhttp, override = udp)))
+            .nodes.single { it.name == "X" }
+        val stream = ManualNodeFactory.inspectOutbound(x)!!.getJSONObject("streamSettings")
+        assertEquals("/xp", stream.getJSONObject("xhttpSettings").getString("path"))
+        assertEquals("h.example.com", stream.getJSONObject("xhttpSettings").getString("host"))
+        assertEquals("cdn.example.com", stream.getJSONObject("tlsSettings").getString("serverName"))
+        // Through a front (sidecar): the same path, host and server name.
+        val front = ImportParser.ProviderOverride(fields = mapOf("dialer-proxy" to "Front"))
+        val chained = ImportParser.buildFilePreview("c.yaml", mainWithFront, listOf(ImportParser.ProviderContent(xhttp, override = front)))
+            .nodes.single { it.name == "X" }
+        val config = NodeCompatibility.mihomoProxy(chained)!!.config
+        assertEquals("/xp", config.getJSONObject("xhttp-opts").getString("path"))
+        assertEquals("h.example.com", config.getJSONObject("xhttp-opts").getString("host"))
+        assertEquals("cdn.example.com", config.getString("servername"))
+        // HTTPUpgrade becomes mihomo's ws + v2ray-http-upgrade and back.
+        val hu = "vless://$uuid@d.example.com:443?encryption=none&security=tls&sni=d.example.com&type=httpupgrade&host=d.example.com&path=%2Fhu#HU\n"
+        val huNode = ImportParser.buildFilePreview("c.yaml", mainWithFront, listOf(ImportParser.ProviderContent(hu, override = front)))
+            .nodes.single { it.name == "HU" }
+        assertEquals("HTTPUpgrade", huNode.transport)
+        assertTrue(NodeCompatibility.mihomoProxy(huNode)!!.config.getJSONObject("ws-opts").getBoolean("v2ray-http-upgrade"))
+        // Clash XHTTP proxies keep theirs too.
+        val yaml = "proxies:\n  - {name: Y, type: vless, server: y.example.com, port: 443, uuid: $uuid, tls: true, servername: cdn.example.com, " +
+            "network: xhttp, xhttp-opts: {path: /yp, host: hy.example.com}}\n"
+        val y = ManualNodeFactory.inspectOutbound(ImportParser.buildFilePreview("y.yaml", yaml).nodes.single())!!
+            .getJSONObject("streamSettings").getJSONObject("xhttpSettings")
+        assertEquals("/yp", y.getString("path"))
+        assertEquals("hy.example.com", y.getString("host"))
+    }
+
+    @Test
+    fun aDirectDialerOverrideKeepsTheNode() {
+        val hy2 = "hysteria2://pw@h2.example.com:443?sni=h2.example.com#H2\n"
+        val direct = ImportParser.ProviderOverride(fields = mapOf("dialer-proxy" to "DIRECT"))
+        val preview = ImportParser.buildFilePreview("c.yaml", mainWithFront, listOf(ImportParser.ProviderContent(hy2, override = direct)))
+        val node = preview.nodes.single { it.name == "H2" }
+        assertFalse(node.hiddenUnsupported)
+        assertNull(frontOf(node))
+    }
+
+    private fun groupFront(group: String): ServerNode = ImportParser.buildFilePreview(
+        "g.yaml",
+        """
+            proxies:
+              - {name: MyVPS, type: ss, server: vps.example.com, port: 8388, cipher: aes-128-gcm, password: pw, dialer-proxy: Relay}
+              - {name: Own, type: trojan, server: own.example.com, port: 443, password: pw, sni: own.example.com}
+            proxy-groups:
+              - $group
+            proxy-providers:
+              sub:
+                type: inline
+                payload:
+                  - {name: HK, type: trojan, server: hk.example.com, port: 443, password: pw, sni: hk.example.com}
+                  - {name: JP, type: trojan, server: jp.example.com, port: 443, password: pw, sni: jp.example.com}
+        """.trimIndent(),
+    ).nodes.single { it.name == "MyVPS" }
+
+    @Test
+    fun aFrontGroupAppliesItsOwnFilters() {
+        assertEquals("jp.example.com", frontOf(groupFront("{name: Relay, type: select, use: [sub], filter: \"^JP$\"}"))!!.getString("server"))
+        assertEquals("jp.example.com", frontOf(groupFront("{name: Relay, type: select, use: [sub], exclude-filter: HK}"))!!.getString("server"))
+        // filter picks among provider proxies only; exclude-filter drops listed ones too.
+        assertEquals("own.example.com", frontOf(groupFront("{name: Relay, type: select, proxies: [Own], use: [sub], filter: JP}"))!!.getString("server"))
+        assertEquals("jp.example.com", frontOf(groupFront("{name: Relay, type: select, proxies: [Own], use: [sub], exclude-filter: \"Own|HK\"}"))!!.getString("server"))
+        // Nothing left: listed as unsupported with the reason.
+        val none = groupFront("{name: Relay, type: select, use: [sub], filter: US}")
+        assertTrue(none.hiddenUnsupported)
+        assertTrue(NodeCompatibility.coreIncompatibility(none)!!.contains("筛选"))
+    }
+
+    @Test
+    fun providersSharingALinkAreAllKept() {
+        val list = "proxies:\n" +
+            "  - {name: HK1, type: trojan, server: hk.example.com, port: 443, password: pw, sni: hk.example.com}\n" +
+            "  - {name: JP1, type: trojan, server: jp.example.com, port: 443, password: pw, sni: jp.example.com}\n"
+        var hits = 0
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0).apply {
+            createContext("/list.yaml") { exchange ->
+                hits++
+                val body = list.toByteArray()
+                exchange.sendResponseHeaders(200, body.size.toLong())
+                exchange.responseBody.use { it.write(body) }
+            }
+            start()
+        }
+        try {
+            val url = "http://127.0.0.1:${server.address.port}/list.yaml"
+            val config = """
+                proxies:
+                  - {name: MyVPS, type: ss, server: vps.example.com, port: 8388, cipher: aes-128-gcm, password: pw, dialer-proxy: Relay}
+                proxy-groups:
+                  - {name: Relay, type: select, use: [jp]}
+                proxy-providers:
+                  hk: {type: http, url: "$url", filter: HK}
+                  jp: {type: http, url: "$url", filter: JP}
+            """.trimIndent()
+            val nodes = kotlinx.coroutines.runBlocking { ImportParser.buildFilePreviewWithProviders("s.yaml", config) }.nodes
+            assertEquals(1, hits)
+            assertTrue(nodes.any { it.name == "HK1" })
+            assertTrue(nodes.any { it.name == "JP1" })
+            val vps = nodes.single { it.name == "MyVPS" }
+            assertFalse(vps.hiddenUnsupported)
+            assertEquals("jp.example.com", frontOf(vps)!!.getString("server"))
+        } finally {
+            server.stop(0)
+        }
+    }
+
     @Test
     fun onlyRoutedNodesThatAddToTheSidecarAreDroppedOnRetry() {
         val uuid = "0b4f8e8c-4c8a-4c34-9d36-0d2a5c1d7a11"

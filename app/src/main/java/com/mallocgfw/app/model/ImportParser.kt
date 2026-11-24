@@ -105,17 +105,59 @@ object ImportParser {
         groupId: String,
         sourceLabel: String,
     ): List<ServerNode> = nodes.mapIndexedNotNull { index, node ->
-        val rebuilt = clashMapOf(node)?.let { parseClashProxyMap(override.apply(it), groupId, sourceLabel, index + 1) }
-            // Lost its transport or TLS on the way (a conversion that can't
-            // carry them): not the same node any more.
+        val map = clashMapOf(node)?.takeIf { faithful(it, node, groupId, sourceLabel, index + 1) }
+        val rebuilt = map?.let { parseClashProxyMap(override.apply(it), groupId, sourceLabel, index + 1) }
             ?.takeIf { sameTransport(it, node) }
+        // DIRECT is no front at all: the node is fine as it is.
+        val needsFront = override.fields["dialer-proxy"]?.toString()?.let { !it.equals("DIRECT", ignoreCase = true) } == true
         when {
             rebuilt != null -> rebuilt
-            "dialer-proxy" in override.fields -> {
+            needsFront -> {
                 skipType("${node.protocol}（无法加上提供者指定的前置代理）")
                 null
             }
             else -> node
+        }
+    }
+
+    /**
+     * Whether [map] (the Clash form of [node]) builds the same node again. A
+     * sidecar node's map is its own config; an Xray node's map is converted,
+     * and the conversion can drop what Clash can't say (XHTTP extras, header
+     * obfuscation …): rebuilt from it, the node must have the same outbound.
+     */
+    private fun faithful(map: Map<String, Any?>, node: ServerNode, groupId: String, sourceLabel: String, index: Int): Boolean {
+        if (node.mihomoProxyJson.isNotBlank()) return true
+        val original = outboundShape(node) ?: return false
+        val again = withoutSkipNotes { parseClashProxyMap(map, groupId, sourceLabel, index) } ?: return false
+        return outboundShape(again) == original
+    }
+
+    /** The outbound's settings and stream, without its tag. */
+    private fun outboundShape(node: ServerNode): String? {
+        if (node.mihomoProxyJson.isNotBlank()) return null
+        val outbound = runCatching { ManualNodeFactory.inspectOutbound(node) }.getOrNull() ?: return null
+        return JSONObject()
+            .put("protocol", outbound.optString("protocol"))
+            .put("settings", canonical(outbound.opt("settings")))
+            .put("streamSettings", canonical(outbound.opt("streamSettings")))
+            .toString()
+    }
+
+    private fun canonical(value: Any?): Any? = when (value) {
+        is JSONObject -> JSONObject().apply { value.keys().asSequence().sorted().forEach { put(it, canonical(value.opt(it))) } }
+        is JSONArray -> JSONArray().apply { for (i in 0 until value.length()) put(canonical(value.opt(i))) }
+        else -> value
+    }
+
+    /** Runs [block] without leaving "unsupported type" notes (a trial parse, not the import's). */
+    private fun <T> withoutSkipNotes(block: () -> T): T {
+        val skipped = skippedTypes.get()
+        val before = skipped.size
+        try {
+            return block()
+        } finally {
+            while (skipped.size > before) skipped.removeAt(skipped.lastIndex)
         }
     }
 
@@ -161,7 +203,7 @@ object ImportParser {
     private fun providerCandidates(proxies: List<Map<*, *>>, filter: ProviderFilter, override: ProviderOverride): List<Map<*, *>> =
         proxies.mapNotNull { proxy ->
             val name = override.rename(proxy["name"]?.toString().orEmpty())
-            override.apply(proxy).takeIf { filter.keeps(name, it) }
+            LinkedHashMap<Any?, Any?>(override.apply(proxy)).apply { put("name", name) }.takeIf { filter.keeps(name, it) }
         }
 
     /**
@@ -169,10 +211,9 @@ object ImportParser {
      * provider's proxies, or the Clash maps of a URI / Base64 provider's nodes.
      */
     private fun downloadedProviderCandidates(parts: List<ProviderContent>, groupId: String, sourceLabel: String): Map<String, List<Map<*, *>>> {
-        val skipped = skippedTypes.get()
-        val skippedBefore = skipped.size
-        try {
-            return parts.filter { it.name.isNotBlank() }.associate { part ->
+        // Counted once, when the provider's nodes are parsed for the list.
+        return withoutSkipNotes {
+            parts.filter { it.name.isNotBlank() }.associate { part ->
                 val proxies = runCatching {
                     if (isClashProxyDocument(part.content)) {
                         ((Yaml().load<Any?>(part.content) as Map<*, *>)["proxies"] as List<*>).filterIsInstance<Map<*, *>>()
@@ -182,9 +223,6 @@ object ImportParser {
                 }.getOrDefault(emptyList())
                 part.name to providerCandidates(proxies, part.filter, part.override)
             }
-        } finally {
-            // Counted once, when the provider's nodes are parsed for the list.
-            while (skipped.size > skippedBefore) skipped.removeAt(skipped.lastIndex)
         }
     }
 
@@ -508,9 +546,12 @@ object ImportParser {
             val map = provider as? Map<*, *> ?: return@mapNotNull null
             val url = map["url"]?.toString()?.takeIf { it.startsWith("http://") || it.startsWith("https://") } ?: return@mapNotNull null
             ProviderTarget(name.toString(), url, ProviderFilter.from(map), ProviderOverride.from(map))
-        }.distinctBy { it.url }.take(MAX_PROVIDERS)
-        return withContext(Dispatchers.IO) {
-            targets.mapNotNull { (name, url, filter, override) ->
+        }
+        // Providers sharing a link share one download, each keeping its own
+        // name, filters and override.
+        val urls = targets.map { it.url }.distinct().take(MAX_PROVIDERS)
+        val downloads = withContext(Dispatchers.IO) {
+            urls.associateWith { url ->
                 runCatching {
                     ResourceFetchClient.fetchText(
                         url = url,
@@ -519,8 +560,11 @@ object ImportParser {
                         label = tr("订阅提供者", "Subscription provider", "Провайдер подписки"),
                         requestProfile = ResourceFetchClient.RequestProfile.DEFAULT,
                     )
-                }.getOrNull()?.let { ProviderContent(it, filter, override, name) }
+                }.getOrNull()
             }
+        }
+        return targets.mapNotNull { target ->
+            downloads[target.url]?.let { ProviderContent(it, target.filter, target.override, target.name) }
         }
     }
 
@@ -1117,18 +1161,34 @@ object ImportParser {
         // providers it uses (`use:`), like the group's default selection.
         while (target["server"] == null && (target["proxies"] is List<*> || target["use"] is List<*>) && hops++ < 4) {
             val groupName = target.string("name") ?: frontName
-            val first = (target["proxies"] as? List<*>)?.firstOrNull()?.toString()
-            if (first != null) {
-                if (first.equals("DIRECT", ignoreCase = true)) return true
-                target = clashContext.get()?.get(first) ?: return markMissingFront(config, first)
-                continue
+            // Mihomo: listed proxies first, then the providers' proxies; the
+            // group's filter picks among provider proxies only, exclude-filter
+            // and exclude-type drop from both.
+            val groupFilter = ProviderFilter.from(target)
+            val excludes = groupFilter.copy(include = emptyList())
+            var next: Map<*, *>? = null
+            for (name in (target["proxies"] as? List<*>).orEmpty().map { it.toString() }) {
+                if (!excludes.keeps(name, emptyMap<String, Any?>())) continue
+                if (name.equals("DIRECT", ignoreCase = true)) return true
+                val member = clashContext.get()?.get(name) ?: return markMissingFront(config, name)
+                if (excludes.keeps(name, member)) {
+                    next = member
+                    break
+                }
             }
             val used = (target["use"] as? List<*>).orEmpty().map { it.toString() }
-            target = used.firstNotNullOfOrNull { clashProviders.get()?.get(it)?.firstOrNull() }
+            val providers = clashProviders.get().orEmpty()
+            target = next
+                ?: used.asSequence().flatMap { providers[it].orEmpty().asSequence() }
+                    .firstOrNull { groupFilter.keeps(it.string("name").orEmpty(), it) }
                 ?: return markMissingFront(
                     config,
                     groupName,
-                    reason = "前置代理组 $groupName 的节点来自订阅提供者（${used.joinToString("、")}），无法确定前置节点",
+                    reason = when {
+                        used.any { it in providers } -> "前置代理组 $groupName 按其筛选条件没有可用的前置节点"
+                        used.isNotEmpty() -> "前置代理组 $groupName 的节点来自订阅提供者（${used.joinToString("、")}），无法确定前置节点"
+                        else -> "无法从前置代理组 $groupName 确定前置节点"
+                    },
                 )
         }
         if (target["server"] == null && target.string("type")?.lowercase(Locale.ROOT) in PROXY_GROUP_TYPES) {
@@ -1292,7 +1352,7 @@ object ImportParser {
         val grpc = item.map("grpc-opts")
         val http = item.map("http-opts")
         val reality = item.map("reality-opts")
-        val transport = transportFromType(item.string("network"))
+        val transport = clashTransport(item)
         return ManualNodeFactory.applyProtocolDefaults(LocalNodeDraft(), LocalNodeProtocol.VMESS).copy(
             nodeName = item.string("name").orEmpty(),
             address = item.string("server").orEmpty(),
@@ -1305,8 +1365,8 @@ object ImportParser {
                 item.boolLike("tls") == true -> LocalNodeSecurity.TLS
                 else -> LocalNodeSecurity.NONE
             },
-            host = ws?.headersHost().orEmpty().ifBlank { item.string("servername").orEmpty() },
-            path = ws?.string("path").orEmpty().ifBlank { http?.string("path").orEmpty() },
+            host = clashTransportHost(item).ifBlank { item.string("servername").orEmpty() },
+            path = clashTransportPath(item),
             serviceName = grpc?.string("grpc-service-name").orEmpty(),
             serverName = item.string("servername").orEmpty().ifBlank { item.string("sni").orEmpty() },
             fingerprint = item.string("client-fingerprint").orEmpty(),
@@ -1329,14 +1389,14 @@ object ImportParser {
             port = item.intLike("port")?.toString().orEmpty(),
             userId = item.string("uuid").orEmpty(),
             vlessFlow = item.string("flow").orEmpty(),
-            transport = transportFromType(item.string("network")),
+            transport = clashTransport(item),
             security = when {
                 reality != null -> LocalNodeSecurity.REALITY
                 item.boolLike("tls") == true -> LocalNodeSecurity.TLS
                 else -> LocalNodeSecurity.NONE
             },
-            host = ws?.headersHost().orEmpty(),
-            path = ws?.string("path").orEmpty().ifBlank { http?.string("path").orEmpty() },
+            host = clashTransportHost(item),
+            path = clashTransportPath(item),
             serviceName = grpc?.string("grpc-service-name").orEmpty(),
             serverName = item.string("servername").orEmpty().ifBlank { item.string("sni").orEmpty() },
             fingerprint = item.string("client-fingerprint").orEmpty(),
@@ -1347,6 +1407,29 @@ object ImportParser {
             realityShortId = reality?.string("short-id").orEmpty(),
         )
     }
+
+    /** A Clash proxy's transport; a WebSocket with `v2ray-http-upgrade` is HTTPUpgrade. */
+    private fun clashTransport(item: Map<*, *>): LocalNodeTransport {
+        val network = item.string("network")
+        if (network.equals("ws", ignoreCase = true) && item.map("ws-opts")?.boolLike("v2ray-http-upgrade") == true) {
+            return LocalNodeTransport.HTTP_UPGRADE
+        }
+        return transportFromType(network)
+    }
+
+    /** Host header of whichever transport the Clash proxy uses (ws, h2, http, xhttp). */
+    private fun clashTransportHost(item: Map<*, *>): String =
+        item.map("ws-opts")?.headersHost().orEmpty()
+            .ifBlank { item.map("xhttp-opts")?.string("host").orEmpty() }
+            .ifBlank { item.map("h2-opts")?.list("host")?.firstOrNull().orEmpty() }
+            .ifBlank { item.map("http-opts")?.headersHost().orEmpty() }
+
+    /** Path of whichever transport the Clash proxy uses; h2 / http list theirs. */
+    private fun clashTransportPath(item: Map<*, *>): String =
+        item.map("ws-opts")?.string("path").orEmpty()
+            .ifBlank { item.map("xhttp-opts")?.string("path").orEmpty() }
+            .ifBlank { item.map("h2-opts")?.string("path").orEmpty() }
+            .ifBlank { item.map("http-opts")?.list("path")?.firstOrNull().orEmpty() }
 
     private fun buildClashTrojanDraft(item: Map<*, *>): LocalNodeDraft? {
         val ws = item.map("ws-opts")

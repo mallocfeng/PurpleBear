@@ -145,7 +145,7 @@ object MihomoNodes {
                     else -> "WebSocket"
                 }
                 "" -> when (map.optString("network").lowercase(Locale.ROOT)) {
-                    "ws" -> "WebSocket"
+                    "ws" -> if (map.optJSONObject("ws-opts")?.optBoolean("v2ray-http-upgrade") == true) "HTTPUpgrade" else "WebSocket"
                     "grpc" -> "gRPC"
                     "h2" -> "HTTP/2"
                     "http" -> "HTTP"
