@@ -204,6 +204,73 @@ $provider
         assertTrue(NodeCompatibility.coreIncompatibility(kept)!!.contains("Relay"))
     }
 
+    private val ssWsUri =
+        "ss://YWVzLTEyOC1nY206cHc@sub.example.com:443?plugin=v2ray-plugin%3Bmode%3Dwebsocket%3Btls%3Bhost%3Dsub.example.com%3Bpath%3D%2Fws#Sub\n"
+
+    @Test
+    fun anOverrideKeepsAShadowsocksPluginTransport() {
+        val udp = ImportParser.ProviderOverride(prefix = "P-", fields = mapOf("udp" to true))
+        val sub = ImportParser.buildFilePreview("c.yaml", mainWithFront, listOf(ImportParser.ProviderContent(ssWsUri, override = udp)))
+            .nodes.single { it.name == "P-Sub" }
+        assertFalse(sub.hiddenUnsupported)
+        assertEquals("WebSocket", sub.transport)
+        assertTrue(sub.security.contains("TLS"))
+        // With a front it runs in the sidecar: still WebSocket over TLS there.
+        val front = ImportParser.ProviderOverride(fields = mapOf("dialer-proxy" to "Front"))
+        val chained = ImportParser.buildFilePreview("c.yaml", mainWithFront, listOf(ImportParser.ProviderContent(ssWsUri, override = front)))
+            .nodes.single { it.name == "Sub" }
+        assertFalse(chained.hiddenUnsupported)
+        val config = NodeCompatibility.mihomoProxy(chained)!!.config
+        assertEquals("v2ray-plugin", config.getString("plugin"))
+        val opts = config.getJSONObject("plugin-opts")
+        assertEquals("websocket", opts.getString("mode"))
+        assertTrue(opts.getBoolean("tls"))
+        assertEquals("/ws", opts.getString("path"))
+        assertEquals("sub.example.com", opts.getString("host"))
+        assertEquals("front.example.com", frontOf(chained)!!.getString("server"))
+    }
+
+    @Test
+    fun aFrontGroupUsingADownloadedProviderTakesItsFirstNode() {
+        val config = useGroupConfig("            type: http\n            url: https://sub.example.com/list.yaml")
+        val yaml = "proxies:\n  - {name: SubNode, type: trojan, server: subnode.example.com, port: 443, password: pw, sni: subnode.example.com}\n"
+        val uri = "trojan://pw@subnode.example.com:443?sni=subnode.example.com#SubNode\n"
+        listOf("YAML" to yaml, "URI" to uri).forEach { (label, content) ->
+            val nodes = ImportParser.buildFilePreview("u.yaml", config, listOf(ImportParser.ProviderContent(content, name = "sub"))).nodes
+            val vps = nodes.single { it.name == "MyVPS" }
+            assertFalse(label, vps.hiddenUnsupported)
+            assertEquals(label, "subnode.example.com", frontOf(vps)!!.getString("server"))
+        }
+    }
+
+    @Test
+    fun aFrontGroupSkipsProviderNodesTheFiltersDrop() {
+        val payload = """
+            |            payload:
+            |              - {name: Bad, type: trojan, server: bad.example.com, port: 443, password: pw, sni: bad.example.com}
+            |              - {name: Old, type: ss, server: old.example.com, port: 8388, cipher: aes-128-gcm, password: pw}
+            |              - {name: Good, type: trojan, server: good.example.com, port: 443, password: pw, sni: good.example.com}
+        """.trimMargin()
+        val inline = useGroupConfig("            type: inline\n            exclude-filter: \"Bad\"\n            exclude-type: \"ss\"\n$payload")
+        val nodes = ImportParser.buildFilePreview("e.yaml", inline).nodes
+        assertEquals("good.example.com", frontOf(nodes.single { it.name == "MyVPS" })!!.getString("server"))
+        assertFalse(nodes.any { it.name == "Bad" || it.name == "Old" })
+        // filter matches the renamed node, as in the list.
+        val renamed = useGroupConfig(
+            "            type: inline\n            filter: \"^HK-Good\"\n            override: {additional-prefix: HK-}\n$payload",
+        )
+        assertEquals(
+            "good.example.com",
+            frontOf(ImportParser.buildFilePreview("r.yaml", renamed).nodes.single { it.name == "MyVPS" })!!.getString("server"),
+        )
+        // Downloaded providers are filtered the same way.
+        val http = useGroupConfig("            type: http\n            url: https://sub.example.com/list.yaml")
+        val content = "proxies:\n" + payload.lines().drop(1).joinToString("\n") { it.removePrefix("            ") } + "\n"
+        val filter = ImportParser.ProviderFilter(exclude = listOf(Regex("Bad")))
+        val downloaded = ImportParser.buildFilePreview("h.yaml", http, listOf(ImportParser.ProviderContent(content, filter, name = "sub"))).nodes
+        assertEquals("old.example.com", frontOf(downloaded.single { it.name == "MyVPS" })!!.getString("server"))
+    }
+
     @Test
     fun onlyRoutedNodesThatAddToTheSidecarAreDroppedOnRetry() {
         val uuid = "0b4f8e8c-4c8a-4c34-9d36-0d2a5c1d7a11"

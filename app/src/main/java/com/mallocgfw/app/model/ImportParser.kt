@@ -47,6 +47,8 @@ object ImportParser {
         val content: String,
         val filter: ProviderFilter = ProviderFilter(),
         val override: ProviderOverride = ProviderOverride(),
+        /** The provider's key under proxy-providers, for groups that use it (`use:`). */
+        val name: String = "",
     )
 
     /** Clash provider `override`: renames and fields forced onto every proxy. */
@@ -104,6 +106,9 @@ object ImportParser {
         sourceLabel: String,
     ): List<ServerNode> = nodes.mapIndexedNotNull { index, node ->
         val rebuilt = clashMapOf(node)?.let { parseClashProxyMap(override.apply(it), groupId, sourceLabel, index + 1) }
+            // Lost its transport or TLS on the way (a conversion that can't
+            // carry them): not the same node any more.
+            ?.takeIf { sameTransport(it, node) }
         when {
             rebuilt != null -> rebuilt
             "dialer-proxy" in override.fields -> {
@@ -112,6 +117,13 @@ object ImportParser {
             }
             else -> node
         }
+    }
+
+    /** Same transport and TLS as [original], whichever core each runs in. */
+    private fun sameTransport(rebuilt: ServerNode, original: ServerNode): Boolean {
+        fun transport(node: ServerNode) = node.transport.lowercase(Locale.ROOT).let { if (it == "websocket") "ws" else it }
+        fun secured(node: ServerNode) = node.security.uppercase(Locale.ROOT).let { it.contains("TLS") || it.contains("REALITY") }
+        return transport(rebuilt) == transport(original) && secured(rebuilt) == secured(original)
     }
 
     private fun clashMapOf(node: ServerNode): Map<String, Any?>? {
@@ -141,16 +153,57 @@ object ImportParser {
         return JSONObject().put("proxies", json).toString()
     }
 
+    /**
+     * The proxies a group using this provider (`use:`) picks from: override
+     * fields and renames applied, then the provider's filters, so the group's
+     * first member is the first node the import lists from that provider.
+     */
+    private fun providerCandidates(proxies: List<Map<*, *>>, filter: ProviderFilter, override: ProviderOverride): List<Map<*, *>> =
+        proxies.mapNotNull { proxy ->
+            val name = override.rename(proxy["name"]?.toString().orEmpty())
+            override.apply(proxy).takeIf { filter.keeps(name, it) }
+        }
+
+    /**
+     * [providerCandidates] of downloaded providers, by provider name: a YAML
+     * provider's proxies, or the Clash maps of a URI / Base64 provider's nodes.
+     */
+    private fun downloadedProviderCandidates(parts: List<ProviderContent>, groupId: String, sourceLabel: String): Map<String, List<Map<*, *>>> {
+        val skipped = skippedTypes.get()
+        val skippedBefore = skipped.size
+        try {
+            return parts.filter { it.name.isNotBlank() }.associate { part ->
+                val proxies = runCatching {
+                    if (isClashProxyDocument(part.content)) {
+                        ((Yaml().load<Any?>(part.content) as Map<*, *>)["proxies"] as List<*>).filterIsInstance<Map<*, *>>()
+                    } else {
+                        parseSubscriptionNodes(part.content, groupId = groupId, sourceLabel = sourceLabel).mapNotNull(::clashMapOf)
+                    }
+                }.getOrDefault(emptyList())
+                part.name to providerCandidates(proxies, part.filter, part.override)
+            }
+        } finally {
+            // Counted once, when the provider's nodes are parsed for the list.
+            while (skipped.size > skippedBefore) skipped.removeAt(skipped.lastIndex)
+        }
+    }
+
     /** Clash `filter` / `exclude-filter` (regexes, "`"-separated) and `exclude-type` ("|"-separated). */
     data class ProviderFilter(
         val include: List<Regex> = emptyList(),
         val exclude: List<Regex> = emptyList(),
         val excludeTypes: Set<String> = emptySet(),
     ) {
-        fun keeps(node: ServerNode): Boolean {
-            if (include.isNotEmpty() && include.none { it.containsMatchIn(node.name) }) return false
-            if (exclude.any { it.containsMatchIn(node.name) }) return false
-            return clashType(node) !in excludeTypes
+        fun keeps(node: ServerNode): Boolean = keeps(node.name, clashType(node))
+
+        /** A provider proxy as a Clash map, [name] being the name it is listed under. */
+        fun keeps(name: String, map: Map<*, *>): Boolean =
+            keeps(name, map["type"]?.toString()?.let { MihomoNodes.normalizedType(it) ?: it.lowercase(Locale.ROOT) }.orEmpty())
+
+        private fun keeps(name: String, type: String): Boolean {
+            if (include.isNotEmpty() && include.none { it.containsMatchIn(name) }) return false
+            if (exclude.any { it.containsMatchIn(name) }) return false
+            return type !in excludeTypes
         }
 
         companion object {
@@ -349,7 +402,10 @@ object ImportParser {
         skippedProviders.get().clear()
         // A downloaded provider's proxies may dial through the main config's proxies.
         val (mainProxies, mainGroups) = if (providerContents.isEmpty()) emptyList<Map<*, *>>() to emptyList() else clashNamesOf(content)
-        val parsedNodes = (listOf(ProviderContent(content)) + providerContents).flatMap { part ->
+        // Groups that use a downloaded provider pick their front from it.
+        val previousProviders = clashProviders.get()
+        clashProviders.set(downloadedProviderCandidates(providerContents, sourceId, groupName))
+        val parsedNodes = try { (listOf(ProviderContent(content)) + providerContents).flatMap { part ->
             runCatching {
                 withClashContext(mainProxies, mainGroups) {
                     if (part.override.fields.isNotEmpty() && !isClashProxyDocument(part.content)) {
@@ -368,10 +424,11 @@ object ImportParser {
                 .getOrElse { if (part.content === content) throw it else emptyList() }
                 .map { node -> part.override.rename(node.name).let { if (it == node.name) node else node.copy(name = it) } }
                 .filter(part.filter::keeps)
-        }.let(::withUniqueIds)
+        } } finally { clashProviders.set(previousProviders) }
+        val uniqueNodes = withUniqueIds(parsedNodes)
         val skipped = skippedTypes.get().toList()
         val unreadableProviders = skippedProviders.get().toList()
-        val nodes = parsedNodes.filterNot(::isDecorativeNode).map(::markHiddenIfUnsupported)
+        val nodes = uniqueNodes.filterNot(::isDecorativeNode).map(::markHiddenIfUnsupported)
         val visibleNodeCount = nodes.count { !it.hiddenUnsupported }
         val hiddenUnsupportedNodeCount = nodes.count { it.hiddenUnsupported }
 
@@ -447,13 +504,13 @@ object ImportParser {
         if (!Regex("(?m)^proxy-providers\\s*:").containsMatchIn(content)) return emptyList()
         val providers = runCatching { (Yaml().load<Any?>(content) as? Map<*, *>)?.get("proxy-providers") as? Map<*, *> }
             .getOrNull() ?: return emptyList()
-        val targets = providers.values.mapNotNull { provider ->
+        val targets = providers.mapNotNull { (name, provider) ->
             val map = provider as? Map<*, *> ?: return@mapNotNull null
             val url = map["url"]?.toString()?.takeIf { it.startsWith("http://") || it.startsWith("https://") } ?: return@mapNotNull null
-            Triple(url, ProviderFilter.from(map), ProviderOverride.from(map))
-        }.distinctBy { it.first }.take(MAX_PROVIDERS)
+            ProviderTarget(name.toString(), url, ProviderFilter.from(map), ProviderOverride.from(map))
+        }.distinctBy { it.url }.take(MAX_PROVIDERS)
         return withContext(Dispatchers.IO) {
-            targets.mapNotNull { (url, filter, override) ->
+            targets.mapNotNull { (name, url, filter, override) ->
                 runCatching {
                     ResourceFetchClient.fetchText(
                         url = url,
@@ -462,10 +519,12 @@ object ImportParser {
                         label = tr("订阅提供者", "Subscription provider", "Провайдер подписки"),
                         requestProfile = ResourceFetchClient.RequestProfile.DEFAULT,
                     )
-                }.getOrNull()?.let { ProviderContent(it, filter, override) }
+                }.getOrNull()?.let { ProviderContent(it, filter, override, name) }
             }
         }
     }
+
+    private data class ProviderTarget(val name: String, val url: String, val filter: ProviderFilter, val override: ProviderOverride)
 
     private const val MAX_PROVIDERS = 20
 
@@ -754,7 +813,11 @@ object ImportParser {
         val previousProviders = clashProviders.get()
         val inlineProviders = (root["proxy-providers"] as? Map<*, *>).orEmpty().mapNotNull { (name, provider) ->
             val payload = (provider as? Map<*, *>)?.get("payload") as? List<*> ?: return@mapNotNull null
-            name.toString() to payload.filterIsInstance<Map<*, *>>().map { ProviderOverride.from(provider).apply(it) }
+            name.toString() to providerCandidates(
+                payload.filterIsInstance<Map<*, *>>(),
+                ProviderFilter.from(provider),
+                ProviderOverride.from(provider),
+            )
         }.toMap()
         clashProviders.set(previousProviders.orEmpty() + inlineProviders)
         try {
@@ -992,7 +1055,7 @@ object ImportParser {
 
     private val PROXY_GROUP_TYPES = setOf("select", "url-test", "fallback", "load-balance", "relay")
 
-    /** Inline proxy-provider payloads by provider name, for groups that pick from them (`use:`). */
+    /** Proxy-provider proxies (inline or downloaded) by provider name, for groups that pick from them (`use:`). */
     private val clashProviders = ThreadLocal<Map<String, List<Map<*, *>>>?>()
 
     /**

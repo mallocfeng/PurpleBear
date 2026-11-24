@@ -40,7 +40,9 @@ PurpleBear 各版本的完整更新记录。安装包见 [GitHub Releases](https
 
 18. 链式代理（dialer-proxy）的前置节点也按兼容内核的支持范围检查：Snell v1 / v2 前置节点自动关闭 UDP（包括旧版本保存的数据）；前置节点无法运行时，主节点显示为不支持并说明原因，不再悄悄去掉前置节点后照常显示可用。订阅提供者（内联或在线下载，YAML、URI 或 Base64 格式）里通过 `override.dialer-proxy` 指向主配置代理的节点，现在能正确带上前置节点；前置代理组只用 `use:` 引用订阅提供者时，取其中第一个节点作为前置；找不到或无法确定的前置节点会让该节点显示为不支持并说明原因（不再从导入结果中消失），`DIRECT` 视为不使用前置。
 
-19. 更新版本号到 `0.9.2.2`，`versionCode` 更新为 `322`。
+19. 订阅提供者（proxy-providers）的 `override` 不再改掉带 `v2ray-plugin` 的 Shadowsocks 节点的传输方式：以前加上 `udp` 等覆盖项后，TLS 上的 WebSocket 节点会变成普通 TCP 却仍显示可用；现在保留 WebSocket / TLS，经兼容内核运行时转成 mihomo 的 `v2ray-plugin` 写法，无法完整保留传输方式的节点保持原设置。前置代理组用 `use:` 引用 HTTP 订阅提供者时，会从下载到的节点中选前置节点，不再把主节点列为不支持；从提供者中选前置节点时也遵守 `filter`、`exclude-filter` 和 `exclude-type`，不会选到被过滤掉的节点。
+
+20. 更新版本号到 `0.9.2.2`，`versionCode` 更新为 `322`。
 
 ## 0.9.2.1
 

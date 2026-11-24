@@ -115,6 +115,8 @@ object MihomoNodes {
         else -> type.uppercase(Locale.ROOT)
     }
 
+    private val V2RAY_PLUGINS = setOf("v2ray-plugin", "gost-plugin")
+
     fun securityLabel(map: JSONObject): String {
         val type = map.optString("type")
         return when {
@@ -124,6 +126,7 @@ object MihomoNodes {
             type in setOf("trojan", "anytls", "tuic", "hysteria", "hysteria2", "shadowquic", "masque", "trusttunnel") -> "TLS"
             map.optBoolean("tls") -> "TLS"
             map.optString("plugin") == "shadow-tls" -> "ShadowTLS"
+            map.optString("plugin") in V2RAY_PLUGINS && map.optJSONObject("plugin-opts")?.optBoolean("tls") == true -> "TLS"
             else -> "NONE"
         }
     }
@@ -136,6 +139,11 @@ object MihomoNodes {
             "ssh" -> "SSH"
             else -> when (val plugin = map.optString("plugin")) {
                 "obfs" -> "obfs-" + (map.optJSONObject("plugin-opts")?.optString("mode")?.ifBlank { "http" } ?: "http")
+                in V2RAY_PLUGINS -> when (map.optJSONObject("plugin-opts")?.optString("mode")?.lowercase(Locale.ROOT)) {
+                    "grpc" -> "gRPC"
+                    "quic" -> "QUIC"
+                    else -> "WebSocket"
+                }
                 "" -> when (map.optString("network").lowercase(Locale.ROOT)) {
                     "ws" -> "WebSocket"
                     "grpc" -> "gRPC"
@@ -609,6 +617,37 @@ object MihomoNodes {
                 }
             }
             else -> return null // QUIC, mKCP: mihomo has neither
+        }
+        if (protocol == "shadowsocks") return shadowsocksTransportAsPlugin(map)
+        return map
+    }
+
+    /**
+     * Mihomo's Shadowsocks takes no network / tls keys: a WebSocket (and TLS)
+     * transport is a v2ray-plugin there, as in the share links it came from.
+     * Null when the transport can't be a plugin (TLS without WebSocket, gRPC,
+     * XHTTP …), so the caller knows the conversion would lose it.
+     */
+    private fun shadowsocksTransportAsPlugin(map: LinkedHashMap<String, Any?>): Map<String, Any?>? {
+        val network = map.remove("network")?.toString()
+        val tls = map.remove("tls") == true
+        @Suppress("UNCHECKED_CAST")
+        val ws = map.remove("ws-opts") as? Map<String, Any?>
+        val sni = map.remove("servername")?.toString()
+        map.remove("client-fingerprint")
+        map.remove("alpn")
+        map.remove("fingerprint")
+        val skipCertVerify = map.remove("skip-cert-verify") == true
+        if (network == null && !tls) return map
+        if (network != "ws") return null
+        @Suppress("UNCHECKED_CAST")
+        val host = (ws?.get("headers") as? Map<String, Any?>)?.get("Host")?.toString() ?: sni
+        map["plugin"] = "v2ray-plugin"
+        map["plugin-opts"] = linkedMapOf<String, Any?>("mode" to "websocket", "tls" to tls).apply {
+            host?.takeIf { it.isNotBlank() }?.let { put("host", it) }
+            put("path", ws?.get("path")?.toString() ?: "/")
+            if (skipCertVerify) put("skip-cert-verify", true)
+            if (ws?.get("v2ray-http-upgrade") == true) put("v2ray-http-upgrade", true)
         }
         return map
     }
