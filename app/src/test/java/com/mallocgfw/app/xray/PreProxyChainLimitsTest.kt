@@ -154,6 +154,32 @@ class PreProxyChainLimitsTest {
         }
     }
 
+    @Test
+    fun onlyAFreedomFrontThatDoesNothingCountsAsDirect() {
+        fun freedom(tag: String, settings: JSONObject?) = JSONObject().put("tag", tag).put("protocol", "freedom")
+            .apply { settings?.let { put("settings", it) } }
+        val config = JSONObject().put(
+            "outbounds",
+            JSONArray()
+                .put(xrayOutbound("A", "plain"))
+                .put(xrayOutbound("B", "asis"))
+                .put(xrayOutbound("C", "redirect"))
+                .put(xrayOutbound("D", "fragment"))
+                .put(xrayOutbound("E", "useip"))
+                .put(xrayOutbound("F", "chained"))
+                .put(freedom("plain", null))
+                .put(freedom("asis", JSONObject().put("domainStrategy", "AsIs").put("userLevel", 0)))
+                .put(freedom("redirect", JSONObject().put("redirect", "127.0.0.1:3366")))
+                .put(freedom("fragment", JSONObject().put("fragment", JSONObject().put("packets", "tlshello"))))
+                .put(freedom("useip", JSONObject().put("domainStrategy", "UseIPv4")))
+                .put(freedom("chained", null).put("streamSettings", JSONObject().put("sockopt", JSONObject().put("dialerProxy", "X")))),
+        )
+        val preview = ImportParser.buildFilePreview("f.json", config.toString())
+        assertEquals(setOf("A", "B"), preview.nodes.map { it.name }.toSet())
+        assertTrue(preview.summary, preview.summary.contains("redirect"))
+        assertTrue(preview.summary, preview.summary.contains("4 个节点的前置代理链"))
+    }
+
     private fun xrayOutbound(tag: String, dialer: String?) = JSONObject()
         .put("tag", tag)
         .put("protocol", "vless")

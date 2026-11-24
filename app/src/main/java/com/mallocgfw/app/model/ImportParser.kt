@@ -544,6 +544,24 @@ object ImportParser {
 
     private val skippedProviders: ThreadLocal<MutableList<String>> = ThreadLocal.withInitial { mutableListOf() }
 
+    /**
+     * A freedom outbound that only goes direct: no keys beyond tag, protocol
+     * and settings, and settings with nothing but a user level or the default
+     * domain strategy (AsIs).
+     */
+    private fun isPlainFreedom(outbound: JSONObject): Boolean {
+        val keys = outbound.keys().asSequence().toSet()
+        if (!setOf("tag", "protocol", "settings").containsAll(keys)) return false
+        val settings = outbound.optJSONObject("settings") ?: return !outbound.has("settings") || outbound.isNull("settings")
+        return settings.keys().asSequence().all { key ->
+            when (key) {
+                "userLevel" -> true
+                "domainStrategy" -> settings.optString(key).equals("AsIs", ignoreCase = true)
+                else -> false
+            }
+        }
+    }
+
     /** Nodes left out because their pre-proxy chain can't run (a loop, too long). */
     private val refusedChains: ThreadLocal<MutableList<String>> = ThreadLocal.withInitial { mutableListOf() }
 
@@ -822,17 +840,21 @@ object ImportParser {
                     ?.takeIf { it.isNotBlank() }?.let { dialers += node to it }
             }
             // sockopt.dialerProxy between two proxy outbounds → the app's pre-proxy chain.
-            val protocolByTag = (0 until outbounds.length()).mapNotNull { outbounds.optJSONObject(it) }
+            val outboundByTag = (0 until outbounds.length()).mapNotNull { outbounds.optJSONObject(it) }
                 .filter { it.optString("tag").isNotBlank() }
-                .associate { it.optString("tag") to it.optString("protocol").lowercase(Locale.ROOT) }
+                .associateBy { it.optString("tag") }
             val unreachable = mutableSetOf<String>()
             dialers.forEach { (node, tag) ->
                 val front = byTag[tag] ?: run {
-                    // A plain freedom outbound is going direct, as without a front.
-                    val protocol = protocolByTag[tag]
-                    if (protocol == "freedom") return@forEach
+                    val target = outboundByTag[tag]
+                    val protocol = target?.optString("protocol")?.lowercase(Locale.ROOT)
+                    // A freedom outbound with nothing of its own is going direct, as
+                    // without a front; redirect, fragment, a domain strategy, its own
+                    // stream or dialer … would be lost, so those aren't.
+                    if (protocol == "freedom" && isPlainFreedom(target)) return@forEach
                     val reason = when (protocol) {
                         null -> "找不到前置出站 $tag"
+                        "freedom" -> "前置出站 $tag 带有额外设置（如 redirect、fragment），无法保留"
                         in setOf("blackhole", "dns", "loopback") -> "前置出站 $tag 是 $protocol 出站，不能作为前置"
                         else -> "前置出站 $tag 无法导入"
                     }
