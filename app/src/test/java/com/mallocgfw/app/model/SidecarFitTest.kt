@@ -347,6 +347,40 @@ $provider
     }
 
     @Test
+    fun aProviderFrontKeepsItsCertificateName() {
+        val config = useGroupConfig("            type: http\n            url: https://sub.example.com/list.txt")
+        val vcn = "vless://$uuid@x.example.com:443?encryption=none&security=tls&sni=cdn.example.com&vcn=cert.example.com" +
+            "&type=xhttp&host=h.example.com&path=%2Fxp#SubNode\n"
+        val nodes = ImportParser.buildFilePreview("u.yaml", config, listOf(ImportParser.ProviderContent(vcn, name = "sub"))).nodes
+        // Listed on its own, the node checks the certificate against that name.
+        val own = ManualNodeFactory.inspectOutbound(nodes.single { it.name == "SubNode" })!!
+        assertEquals("cert.example.com", own.getJSONObject("streamSettings").getJSONObject("tlsSettings").getString("verifyPeerCertByName"))
+        // As a front in the sidecar too.
+        val front = frontOf(nodes.single { it.name == "MyVPS" })!!
+        assertEquals("cdn.example.com", front.getString("servername"))
+        assertEquals("cert.example.com", front.getString("name-cert-verify"))
+        assertEquals("/xp", front.getJSONObject("xhttp-opts").getString("path"))
+        // Clash proxies with name-cert-verify keep it in Xray.
+        val yaml = "proxies:\n  - {name: Y, type: trojan, server: y.example.com, port: 443, password: pw, sni: y.example.com, name-cert-verify: cert.example.com}\n"
+        val y = ManualNodeFactory.inspectOutbound(ImportParser.buildFilePreview("y.yaml", yaml).nodes.single())!!
+        assertEquals("cert.example.com", y.getJSONObject("streamSettings").getJSONObject("tlsSettings").getString("verifyPeerCertByName"))
+    }
+
+    @Test
+    fun aFrontGroupStartsOnItsDefaultSelection() {
+        fun front(group: String) = frontOf(groupFront(group))?.optString("server")
+        assertEquals("jp.example.com", front("{name: Relay, type: select, proxies: [DIRECT], use: [sub], default-selected: JP}"))
+        assertEquals("own.example.com", front("{name: Relay, type: select, proxies: [DIRECT, Own], default-selected: Own}"))
+        // Filtered out or not in the group: the first member, as in mihomo.
+        assertEquals("hk.example.com", front("{name: Relay, type: select, use: [sub], default-selected: JP, exclude-filter: JP}"))
+        assertEquals("hk.example.com", front("{name: Relay, type: select, use: [sub], default-selected: Nowhere}"))
+        // DIRECT selected: no front.
+        val direct = groupFront("{name: Relay, type: select, proxies: [Own, DIRECT], default-selected: DIRECT}")
+        assertFalse(direct.hiddenUnsupported)
+        assertNull(frontOf(direct))
+    }
+
+    @Test
     fun providersSharingALinkAreAllKept() {
         val list = "proxies:\n" +
             "  - {name: HK1, type: trojan, server: hk.example.com, port: 443, password: pw, sni: hk.example.com}\n" +

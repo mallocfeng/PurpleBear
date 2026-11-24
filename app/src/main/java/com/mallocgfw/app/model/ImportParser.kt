@@ -218,7 +218,15 @@ object ImportParser {
                     if (isClashProxyDocument(part.content)) {
                         ((Yaml().load<Any?>(part.content) as Map<*, *>)["proxies"] as List<*>).filterIsInstance<Map<*, *>>()
                     } else {
-                        parseSubscriptionNodes(part.content, groupId = groupId, sourceLabel = sourceLabel).mapNotNull(::clashMapOf)
+                        parseSubscriptionNodes(part.content, groupId = groupId, sourceLabel = sourceLabel).mapIndexed { index, node ->
+                            // As a front it runs in the sidecar: only if its Clash form is the same node.
+                            clashMapOf(node)?.takeIf { faithful(it, node, groupId, sourceLabel, index + 1) }
+                                ?: mapOf(
+                                    "name" to node.name,
+                                    "type" to MihomoNodes.MISSING_FRONT_TYPE,
+                                    "reason" to "前置节点 ${node.name} 的连接参数无法完整转换给兼容内核",
+                                )
+                        }
                     }
                 }.getOrDefault(emptyList())
                 part.name to providerCandidates(proxies, part.filter, part.override)
@@ -1099,6 +1107,9 @@ object ImportParser {
 
     private val PROXY_GROUP_TYPES = setOf("select", "url-test", "fallback", "load-balance", "relay")
 
+    /** A group member whose name is nowhere in the config. */
+    private val NO_MEMBER: Map<*, *> = mapOf("type" to MihomoNodes.MISSING_FRONT_TYPE)
+
     /** Proxy-provider proxies (inline or downloaded) by provider name, for groups that pick from them (`use:`). */
     private val clashProviders = ThreadLocal<Map<String, List<Map<*, *>>>?>()
 
@@ -1164,23 +1175,29 @@ object ImportParser {
             // Mihomo: listed proxies first, then the providers' proxies; the
             // group's filter picks among provider proxies only, exclude-filter
             // and exclude-type drop from both.
+            // The group's selection is its default-selected member when that
+            // one is still in the group, else its first member.
             val groupFilter = ProviderFilter.from(target)
             val excludes = groupFilter.copy(include = emptyList())
-            var next: Map<*, *>? = null
-            for (name in (target["proxies"] as? List<*>).orEmpty().map { it.toString() }) {
-                if (!excludes.keeps(name, emptyMap<String, Any?>())) continue
-                if (name.equals("DIRECT", ignoreCase = true)) return true
-                val member = clashContext.get()?.get(name) ?: return markMissingFront(config, name)
-                if (excludes.keeps(name, member)) {
-                    next = member
-                    break
-                }
-            }
             val used = (target["use"] as? List<*>).orEmpty().map { it.toString() }
             val providers = clashProviders.get().orEmpty()
-            target = next
-                ?: used.asSequence().flatMap { providers[it].orEmpty().asSequence() }
-                    .firstOrNull { groupFilter.keeps(it.string("name").orEmpty(), it) }
+            // Members by name: null for DIRECT, NO_MEMBER for a name that isn't in the config.
+            val listed = (target["proxies"] as? List<*>).orEmpty().asSequence().map { it.toString() }
+                .filter { excludes.keeps(it, emptyMap<String, Any?>()) }
+                .mapNotNull { name ->
+                    if (name.equals("DIRECT", ignoreCase = true)) return@mapNotNull name to null
+                    val member = clashContext.get()?.get(name) ?: return@mapNotNull name to NO_MEMBER
+                    (name to member).takeIf { excludes.keeps(name, member) }
+                }
+            val provided = used.asSequence().flatMap { providers[it].orEmpty().asSequence() }
+                .map { it.string("name").orEmpty() to it }
+                .filter { (name, member) -> groupFilter.keeps(name, member) }
+            val members = listed + provided
+            val chosen = target.string("default-selected")?.let { wanted -> members.firstOrNull { it.first == wanted } }
+                ?: members.firstOrNull()
+            if (chosen != null && chosen.second == null) return true // DIRECT
+            if (chosen != null && chosen.second === NO_MEMBER) return markMissingFront(config, chosen.first)
+            target = chosen?.second
                 ?: return markMissingFront(
                     config,
                     groupName,
@@ -1190,6 +1207,10 @@ object ImportParser {
                         else -> "无法从前置代理组 $groupName 确定前置节点"
                     },
                 )
+        }
+        // A provider node that can't be written for the sidecar as it is.
+        if (target.string("type") == MihomoNodes.MISSING_FRONT_TYPE) {
+            return markMissingFront(config, target.string("name") ?: frontName, reason = target.string("reason"))
         }
         if (target["server"] == null && target.string("type")?.lowercase(Locale.ROOT) in PROXY_GROUP_TYPES) {
             val groupName = target.string("name") ?: frontName
@@ -1373,6 +1394,7 @@ object ImportParser {
             alpn = item.csv("alpn"),
             allowInsecure = item.boolLike("skip-cert-verify") == true,
             pinnedPeerCertSha256 = item.clashCertificatePin(),
+            verifyPeerCertByName = item.string("name-cert-verify").orEmpty(),
             realityPublicKey = reality?.string("public-key").orEmpty(),
             realityShortId = reality?.string("short-id").orEmpty(),
         )
@@ -1403,6 +1425,7 @@ object ImportParser {
             alpn = item.csv("alpn"),
             allowInsecure = item.boolLike("skip-cert-verify") == true,
             pinnedPeerCertSha256 = item.clashCertificatePin(),
+            verifyPeerCertByName = item.string("name-cert-verify").orEmpty(),
             realityPublicKey = reality?.string("public-key").orEmpty(),
             realityShortId = reality?.string("short-id").orEmpty(),
         )
@@ -1449,6 +1472,7 @@ object ImportParser {
             alpn = item.csv("alpn"),
             allowInsecure = item.boolLike("skip-cert-verify") == true,
             pinnedPeerCertSha256 = item.clashCertificatePin(),
+            verifyPeerCertByName = item.string("name-cert-verify").orEmpty(),
         )
     }
 
@@ -1473,6 +1497,7 @@ object ImportParser {
             serverName = item.string("servername").orEmpty(),
             allowInsecure = item.boolLike("skip-cert-verify") == true,
             pinnedPeerCertSha256 = item.clashCertificatePin(),
+            verifyPeerCertByName = item.string("name-cert-verify").orEmpty(),
         )
     }
 
@@ -1486,6 +1511,7 @@ object ImportParser {
             alpn = item.csv("alpn"),
             allowInsecure = item.boolLike("skip-cert-verify") == true,
             pinnedPeerCertSha256 = item.clashCertificatePin(),
+            verifyPeerCertByName = item.string("name-cert-verify").orEmpty(),
             hysteriaObfsPassword = item.string("obfs-password").orEmpty()
                 .takeIf { item.string("obfs").orEmpty().equals("salamander", ignoreCase = true) }.orEmpty(),
         )

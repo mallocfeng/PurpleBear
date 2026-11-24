@@ -551,6 +551,10 @@ object MihomoNodes {
                 val tls = stream.optJSONObject("tlsSettings") ?: stream.optJSONObject("xtlsSettings") ?: JSONObject()
                 if (protocol != "trojan") map["tls"] = true
                 tls.optString("serverName").takeIf { it.isNotBlank() }?.let { map[sniKey] = it }
+                // Mihomo checks one name; several can't be carried over.
+                val certNames = tls.optString("verifyPeerCertByName").split(",").map(String::trim).filter(String::isNotBlank)
+                if (certNames.size > 1) return null
+                certNames.firstOrNull()?.let { map["name-cert-verify"] = it }
                 tls.optString("fingerprint").takeIf { it.isNotBlank() }?.let { map["client-fingerprint"] = it }
                 tls.optJSONArray("alpn")?.let { alpn -> map["alpn"] = List(alpn.length()) { alpn.optString(it) } }
                 val pin = tls.optString("pinnedPeerCertSha256").replace(":", "").takeIf { it.isNotBlank() }

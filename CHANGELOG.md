@@ -44,7 +44,9 @@ PurpleBear 各版本的完整更新记录。安装包见 [GitHub Releases](https
 
 20. 订阅提供者的 `override` 不再清空 VLESS / VMess 节点的 XHTTP、HTTP/2 路径和 Host：Clash 配置里的 `xhttp-opts`、`h2-opts` 现在会被读取，`ws-opts` 带 `v2ray-http-upgrade` 的按 HTTPUpgrade 导入；URI / Base64 提供者的节点只有在转换前后连接参数完全一致时才应用覆盖项，否则保持原设置。`dialer-proxy: DIRECT` 表示不使用前置代理，节点按原样保留，不再被丢弃。多个 HTTP 订阅提供者使用同一个链接时只下载一次，并各自保留名称、过滤和覆盖配置，不再只剩第一个。前置代理组自身的 `filter`（只作用于 `use:` 引入的节点）、`exclude-filter` 和 `exclude-type` 也会生效；筛选后没有节点时，主节点列为不支持并说明原因。
 
-21. 更新版本号到 `0.9.2.2`，`versionCode` 更新为 `322`。
+21. 订阅节点被选为前置节点时，保留单独指定的证书校验名（分享链接的 `vcn`）：经兼容内核运行时写成 mihomo 的 `name-cert-verify`，不再只剩 SNI；Clash 配置里的 `name-cert-verify` 也会导入。前置节点的连接参数无法完整转换时，主节点列为不支持并说明原因，不会换一个参数不同的前置运行。前置代理组设置了 `default-selected` 时，优先使用这个节点（被筛选掉或不在组内时才用第一个节点），不再因为组里第一个是 `DIRECT` 而绕过指定的前置。
+
+22. 更新版本号到 `0.9.2.2`，`versionCode` 更新为 `322`。
 
 ## 0.9.2.1
 
