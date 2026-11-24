@@ -114,10 +114,10 @@ object AppController {
     /**
      * Removes nodes ([transform] is StateOps.removeNode / removeSubscriptionGroup)
      * and, when the running VPN used a removed node, reconnects or disconnects
-     * it (see StateOps.removalEffect). Returns the new state, or null when
-     * nothing was removed.
+     * it (see StateOps.removalEffect). Returns the new state and what the
+     * removal cleared (StateOps.removalNotice), or null when nothing was removed.
      */
-    fun removeNodes(transform: (PersistedAppState) -> PersistedAppState?): PersistedAppState? {
+    fun removeNodes(transform: (PersistedAppState) -> PersistedAppState?): NodeRemoval? {
         val connected = connectedServerId()
         var before: PersistedAppState? = null
         val next = edit { state ->
@@ -134,8 +134,11 @@ object AppController {
                 }
             }
         } ?: return null
-        val effect = StateOps.removalEffect(before ?: return next, next, connected)
-        if (effect == StateOps.RemovalEffect.None) return next
+        val base = before ?: return NodeRemoval(next, null)
+        val notice = StateOps.removalNotice(base, next)
+        notice?.let { AppLogManager.append(appContext, "NODES", it.replace("\n\n", " ")) }
+        val effect = StateOps.removalEffect(base, next, connected)
+        if (effect == StateOps.RemovalEffect.None) return NodeRemoval(next, notice)
         saveScope.launch {
             val host = uiHost
             when (effect) {
@@ -155,8 +158,10 @@ object AppController {
                 StateOps.RemovalEffect.None -> Unit
             }
         }
-        return next
+        return NodeRemoval(next, notice)
     }
+
+    data class NodeRemoval(val state: PersistedAppState, val notice: String?)
 
     /** [edit] that also shows [message] in the open UI. */
     suspend fun update(

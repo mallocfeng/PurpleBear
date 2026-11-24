@@ -183,7 +183,7 @@ Tailnet 模式下，`:tailscale` 进程里的 tsnet 节点在 Tailnet 地址上�
 |---|---|---|
 | `import_nodes` | 修改 | 参数为链接文本、订阅 URL 或配置内容。先返回解析预览（节点数、跳过原因），手机确认后才写入 |
 | `refresh_subscription` | 控制 | 刷新指定订阅 |
-| `delete_node` / `delete_group` | 危险 | |
+| `delete_node` / `delete_group` | 危险 | 结果中的 `cleared_settings` 列出因删除而被清除的设置（其他节点的前置代理、备用节点，分应用和流媒体的指定节点），没有则为 `null` |
 | `set_pre_proxy` / `set_fallback` | 修改 | 沿用 App 里同样的校验 |
 | `set_proxy_mode` | 修改 | 规则分流 / 全局代理 |
 | `set_dns` | 修改 | 系统 / 远端（Cloudflare 1.1.1.1，经代理）/ 自定义；自定义可填 IP 地址（端口只能是 53），或加密 DNS：`https://`（DoH）、`tls://`（DoT）、`quic://`（DoQ），VPN 开着时自动重连 |

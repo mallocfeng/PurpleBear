@@ -188,6 +188,8 @@ fun MallocGfwApp(
     var pendingImport by remember { mutableStateOf<ImportPreview?>(null) }
     var importError by remember { mutableStateOf<String?>(null) }
     var importInFlight by remember { mutableStateOf(false) }
+    /** Settings a node removal cleared (pre-proxy, app pins …), shown once. */
+    var removalNotice by rememberSaveable { mutableStateOf<String?>(null) }
     var startupHiddenUnsupportedNodeCount by rememberSaveable {
         mutableIntStateOf(initialLoad.newlyHiddenUnsupportedNodeCount)
     }
@@ -1004,7 +1006,8 @@ fun MallocGfwApp(
     }
 
     fun removeServerNode(nodeId: String) {
-        AppController.removeNodes { StateOps.removeNode(it, nodeId) } ?: return
+        val removal = AppController.removeNodes { StateOps.removeNode(it, nodeId) } ?: return
+        removalNotice = removal.notice
         warmServerSections()
         if (screen == AppScreen.NodeDetail) {
             goToMain(MainTab.Servers)
@@ -1012,7 +1015,8 @@ fun MallocGfwApp(
     }
 
     fun removeSubscriptionGroup(groupId: String) {
-        AppController.removeNodes { StateOps.removeSubscriptionGroup(it, groupId) } ?: return
+        val removal = AppController.removeNodes { StateOps.removeSubscriptionGroup(it, groupId) } ?: return
+        removalNotice = removal.notice
         warmServerSections()
         expandedGroups.remove(groupId)
         if (screen == AppScreen.Subscriptions || screen == AppScreen.NodeDetail) {
@@ -1908,6 +1912,19 @@ fun MallocGfwApp(
 
     // App-level dialogs: give them the app language, not the system one.
     CompositionLocalProvider(LocalAppLanguage provides appSettings.language.resolveAppLanguage()) {
+        removalNotice?.let { notice ->
+            AlertDialog(
+                onDismissRequest = { removalNotice = null },
+                title = { Text(uiText("相关设置已调整", "Related settings changed", "Связанные настройки изменены")) },
+                text = { Text(notice) },
+                confirmButton = {
+                    TextButton(onClick = { removalNotice = null }) {
+                        Text(uiText("知道了"))
+                    }
+                },
+            )
+        }
+
         if (startupHiddenUnsupportedNodeCount > 0 && screen != AppScreen.Launch) {
             AlertDialog(
                 onDismissRequest = { startupHiddenUnsupportedNodeCount = 0 },

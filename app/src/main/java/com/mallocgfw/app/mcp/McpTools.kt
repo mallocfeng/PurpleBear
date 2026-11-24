@@ -944,8 +944,12 @@ object McpTools {
             val id = args.reqStr("node_id")
             val node = state().servers.firstOrNull { it.id == id } ?: throw ToolError("Node $id not found.")
             PreparedCall(tr("删除节点 ${Redactor.name(node.name)}", "Delete node ${Redactor.name(node.name)} ($id)", "Удалить узел ${Redactor.name(node.name)}")) {
-                AppController.removeNodes { s -> StateOps.removeNode(s, id) ?: throw ToolError("Node $id not found.") }
-                ToolResult(JSONObject().put("deleted", id), "Deleted ${Redactor.name(node.name)}.")
+                val removal = AppController.removeNodes { s -> StateOps.removeNode(s, id) ?: throw ToolError("Node $id not found.") }
+                val cleared = removal?.notice?.let(Redactor::text)
+                ToolResult(
+                    JSONObject().put("deleted", id).put("cleared_settings", cleared ?: JSONObject.NULL),
+                    "Deleted ${Redactor.name(node.name)}." + (cleared?.let { " $it" } ?: ""),
+                )
             }
         }
 
@@ -959,8 +963,12 @@ object McpTools {
             if (group.type != ServerGroupType.Subscription) throw ToolError("Only subscription groups can be deleted; delete local nodes one by one.")
             val count = state().servers.count { it.groupId == id }
             PreparedCall(tr("删除订阅组 ${Redactor.name(group.name)} 及其 $count 个节点", "Delete group ${Redactor.name(group.name)} and its $count nodes", "Удалить группу ${Redactor.name(group.name)} и её узлы ($count)")) {
-                AppController.removeNodes { s -> StateOps.removeSubscriptionGroup(s, id) ?: throw ToolError("Group $id not found.") }
-                ToolResult(JSONObject().put("deleted", id).put("nodes_deleted", count), "Deleted ${Redactor.name(group.name)} ($count nodes).")
+                val removal = AppController.removeNodes { s -> StateOps.removeSubscriptionGroup(s, id) ?: throw ToolError("Group $id not found.") }
+                val cleared = removal?.notice?.let(Redactor::text)
+                ToolResult(
+                    JSONObject().put("deleted", id).put("nodes_deleted", count).put("cleared_settings", cleared ?: JSONObject.NULL),
+                    "Deleted ${Redactor.name(group.name)} ($count nodes)." + (cleared?.let { " $it" } ?: ""),
+                )
             }
         }
 

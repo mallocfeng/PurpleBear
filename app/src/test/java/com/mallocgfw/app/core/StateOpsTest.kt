@@ -210,6 +210,34 @@ class StateOpsTest {
     }
 
     @Test
+    fun removalNoticeListsEverySettingItCleared() {
+        val s = state(
+            node("a", "local", name = "HK 01").copy(preProxyNodeId = "p", fallbackNodeId = "p"),
+            node("b", "local", name = "JP 01").copy(preProxyNodeId = "p"),
+            node("p", "local", name = "Relay"),
+            node("u", "local", name = "Unused"),
+            selected = "a",
+        ).let {
+            StateOps.setStreamingRoute(it, "netflix", "p").copy(
+                protectedApps = listOf(
+                    com.mallocgfw.app.model.ProtectedApp("org.telegram", "Telegram", "x", enabled = true, serverId = "p"),
+                    com.mallocgfw.app.model.ProtectedApp("p.other", "Other", "x", enabled = true, serverId = "a"),
+                ),
+            )
+        }
+        val after = StateOps.removeNode(s, "p")!!
+        val notice = StateOps.removalNotice(s, after)!!
+        listOf("Relay", "HK 01", "JP 01", "Telegram", "Netflix").forEach { assertTrue(it, it in notice) }
+        assertTrue("an app on a kept node isn't listed", "Other" !in notice)
+        // The pre-proxy line tells what changes for the node.
+        assertTrue(notice, "前置代理" in notice || "pre-proxy" in notice)
+        // Nothing pointed at the removed node: no notice.
+        assertNull(StateOps.removalNotice(s, StateOps.removeNode(s, "u")!!))
+        // A removed node's own links aren't reported.
+        assertNull(StateOps.removalNotice(after, StateOps.removeNode(after, "b")!!))
+    }
+
+    @Test
     fun localImportGivesClashingIdsAFreshOne() {
         val s = state(node("local_1", "local", host = "old.example.com"))
         val preview = ImportPreview(

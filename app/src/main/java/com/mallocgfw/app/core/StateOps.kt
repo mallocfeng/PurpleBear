@@ -359,6 +359,67 @@ object StateOps {
         )
     }
 
+    /**
+     * What a removal cleared in the settings of what is left, for the user
+     * (null: nothing). Pre-proxies matter most: the node then dials its server
+     * directly, which may not work where the pre-proxy was needed.
+     */
+    fun removalNotice(before: PersistedAppState, after: PersistedAppState): String? {
+        val remaining = after.servers.associateBy { it.id }
+        val removedIds = before.servers.map { it.id }.filterNot { it in remaining }.toSet()
+        if (removedIds.isEmpty()) return null
+        val nameOf = before.servers.associate { it.id to it.name }
+        fun list(names: List<String>): String {
+            val shown = names.distinct()
+            return if (shown.size <= 3) {
+                shown.joinToString(tr("、", ", ", ", "))
+            } else {
+                shown.take(3).joinToString(tr("、", ", ", ", ")) + tr(" 等 ${shown.size} 个", " and ${shown.size - 3} more", " и ещё ${shown.size - 3}")
+            }
+        }
+        val lines = mutableListOf<String>()
+        // Only nodes still there; a removed node's own links went with it.
+        val lostPreProxy = before.servers.filter { it.id in remaining && it.preProxyNodeId in removedIds }
+        if (lostPreProxy.isNotEmpty()) {
+            val names = list(lostPreProxy.map { it.name })
+            lines += tr(
+                "$names 的前置代理已删除，已清除这项设置；重新连接后将直接连接自己的服务器，如果原来必须经前置代理才能连通，请重新设置。",
+                "The pre-proxy of $names was deleted and the setting was cleared. After reconnecting it dials its own server directly; if it needed the pre-proxy to get through, set a new one.",
+                "Предварительный прокси для $names удалён, настройка сброшена. После переподключения узел будет подключаться к своему серверу напрямую; если без прокси он недоступен, задайте новый.",
+            )
+        }
+        val lostFallback = before.servers.filter { it.id in remaining && it.fallbackNodeId in removedIds }
+        if (lostFallback.isNotEmpty()) {
+            val names = list(lostFallback.map { it.name })
+            lines += tr(
+                "$names 的备用节点已删除，检测失败时不会再自动切换。",
+                "The fallback node of $names was deleted; it won't switch automatically when checks fail.",
+                "Резервный узел для $names удалён; автоматического переключения при сбое не будет.",
+            )
+        }
+        val lostApps = before.protectedApps.filter { it.serverId in removedIds }
+        if (lostApps.isNotEmpty()) {
+            val names = list(lostApps.map { it.name })
+            lines += tr(
+                "分应用代理：$names 指定的节点已删除，改用当前节点。",
+                "Per-app proxy: the node chosen for $names was deleted; they now use the current node.",
+                "Прокси по приложениям: узел для $names удалён, теперь используется текущий узел.",
+            )
+        }
+        val lostMedia = before.settings.streamingSelections.filter { it.serverId in removedIds }
+        if (lostMedia.isNotEmpty()) {
+            val names = list(lostMedia.map { StreamingMediaManager.serviceById(it.serviceId)?.name ?: it.serviceId })
+            lines += tr(
+                "流媒体分流：$names 指定的节点已删除，改走默认线路。",
+                "Media routing: the node chosen for $names was deleted; they now use the default route.",
+                "Медиа: узел для $names удалён, теперь используется маршрут по умолчанию.",
+            )
+        }
+        if (lines.isEmpty()) return null
+        val removedNames = list(removedIds.mapNotNull { nameOf[it] })
+        return tr("已删除 $removedNames。", "Deleted $removedNames.", "Удалено: $removedNames.") + "\n\n" + lines.joinToString("\n\n")
+    }
+
     /** Nodes the tunnel running on [activeId] was built with (see XrayVpnService.connect). */
     private fun nodesInRunningConfig(state: PersistedAppState, activeId: String): Set<String> {
         val roots = mutableListOf(activeId)
