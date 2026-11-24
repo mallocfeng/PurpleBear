@@ -20,6 +20,7 @@ import com.mallocgfw.app.model.ServerNode
 import com.mallocgfw.app.model.StreamingRouteSelection
 import com.mallocgfw.app.model.isSameImportedNode
 import com.mallocgfw.app.model.mergedSubscriptionGroupNodes
+import com.mallocgfw.app.xray.XrayConfigFactory
 import com.mallocgfw.app.model.subscriptionNameKey
 import com.mallocgfw.app.model.tr
 import com.mallocgfw.app.xray.NodeLatencyTester
@@ -604,7 +605,25 @@ object StateOps {
     }
 
     fun isValidPreProxy(servers: List<ServerNode>, owner: ServerNode, candidateId: String): Boolean =
-        ManualNodeFactory.supportsPreProxy(owner) && isRunnableOtherNode(servers, owner, candidateId)
+        ManualNodeFactory.supportsPreProxy(owner) && isRunnableOtherNode(servers, owner, candidateId) &&
+            preProxyProblem(servers, owner, candidateId) == null
+
+    /**
+     * Why [owner] going through [candidateId] would make a chain that can't
+     * run (a loop, too long), or null. Every chain through [owner] counts:
+     * giving the last front of an eight-node chain a front makes the chain of
+     * the node at its start too long.
+     */
+    fun preProxyProblem(servers: List<ServerNode>, owner: ServerNode, candidateId: String): String? {
+        val linked = owner.copy(preProxyNodeId = candidateId)
+        val updated = servers.map { if (it.id == owner.id) linked else it }
+        return (listOf(linked) + updated.filter { it.id != owner.id && it.preProxyNodeId.isNotBlank() })
+            .firstNotNullOfOrNull { start ->
+                val chain = XrayConfigFactory.preProxyChain(start, updated)
+                chain.problem?.takeIf { start.id == owner.id || chain.fronts.any { it.id == owner.id } }
+                    ?.let { if (start.id == owner.id) it else "${start.name}：$it" }
+            }
+    }
 
     fun isValidFallback(servers: List<ServerNode>, owner: ServerNode, candidateId: String): Boolean =
         ManualNodeFactory.isRunnable(owner) &&
@@ -623,7 +642,8 @@ object StateOps {
                 error = if (!ManualNodeFactory.supportsPreProxy(node)) {
                     tr("${node.name} 不支持前置代理。", "${node.name} doesn't support a pre-proxy.", "${node.name} не поддерживает предварительный прокси.")
                 } else {
-                    tr("$wanted 不是可用的前置代理节点。", "$wanted isn't a usable pre-proxy node.", "$wanted нельзя использовать как предварительный прокси.")
+                    preProxyProblem(state.servers, node, wanted)?.let { "$it。" }
+                        ?: tr("$wanted 不是可用的前置代理节点。", "$wanted isn't a usable pre-proxy node.", "$wanted нельзя использовать как предварительный прокси.")
                 },
             )
         }

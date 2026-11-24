@@ -162,16 +162,8 @@ object XrayCoreManager {
     ): List<PinCandidate> {
         val servers = runCatching { AppController.load(context).servers }.getOrDefault(emptyList())
         return (listOf(server) + additionalOutbounds.map { it.node }).flatMap { root ->
-            val chain = mutableListOf<PinCandidate>()
-            var current = root
-            val visited = mutableSetOf(root.id)
-            while (chain.size < 8) {
-                val front = XrayConfigFactory.resolvePreProxyNode(current, servers, visited)
-                chain += PinCandidate(current, front)
-                current = front ?: break
-                visited += current.id
-            }
-            chain.asReversed()
+            val nodes = listOf(root) + XrayConfigFactory.preProxyChain(root, servers).fronts
+            nodes.mapIndexed { index, node -> PinCandidate(node, nodes.getOrNull(index + 1)) }.asReversed()
         }.distinctBy { it.node.id to it.front?.id }
     }
 

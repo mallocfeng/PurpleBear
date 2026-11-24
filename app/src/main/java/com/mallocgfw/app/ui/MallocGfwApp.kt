@@ -951,7 +951,8 @@ fun MallocGfwApp(
     }
 
     fun isValidLinkedNodeCandidate(owner: ServerNode, candidateId: String): Boolean {
-        return ManualNodeFactory.supportsPreProxy(owner) && isRunnableOtherNode(owner, candidateId)
+        // The picker leaves out nodes that would close a loop or make the chain too long.
+        return StateOps.isValidPreProxy(servers, owner, candidateId)
     }
 
     fun isValidFallbackNodeCandidate(owner: ServerNode, candidateId: String): Boolean {

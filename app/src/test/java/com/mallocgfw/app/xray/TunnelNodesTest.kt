@@ -26,7 +26,7 @@ class TunnelNodesTest {
             listOf(XrayNamedOutbound("stream_netflix", byId.getValue("m")), XrayNamedOutbound("app_0", byId.getValue("x"))),
             servers,
         )
-        // A hidden front isn't built into the config (resolvePreProxyNode), so it isn't recorded.
+        // A hidden front isn't built into the config (XrayConfigFactory.preProxyChain), so it isn't recorded.
         assertEquals(setOf("a", "p1", "p2", "m", "q", "x"), ids)
     }
 }

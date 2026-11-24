@@ -9,6 +9,7 @@ import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.mallocgfw.app.xray.ResourceFetchClient
+import com.mallocgfw.app.xray.XrayConfigFactory
 import org.json.JSONArray
 import org.json.JSONObject
 import org.yaml.snakeyaml.Yaml
@@ -449,6 +450,7 @@ object ImportParser {
         )
         skippedTypes.get().clear()
         skippedProviders.get().clear()
+        refusedChains.get().clear()
         // A downloaded provider's proxies may dial through the main config's proxies.
         val (mainProxies, mainGroups) = if (providerContents.isEmpty()) emptyList<Map<*, *>>() to emptyList() else clashNamesOf(content)
         // Groups that use a downloaded provider pick their front from it.
@@ -477,11 +479,15 @@ object ImportParser {
         val uniqueNodes = withUniqueIds(parsedNodes)
         val skipped = skippedTypes.get().toList()
         val unreadableProviders = skippedProviders.get().toList()
+        val brokenChains = refusedChains.get().toList()
         val nodes = uniqueNodes.filterNot(::isDecorativeNode).map(::markHiddenIfUnsupported)
         val visibleNodeCount = nodes.count { !it.hiddenUnsupported }
         val hiddenUnsupportedNodeCount = nodes.count { it.hiddenUnsupported }
 
         require(nodes.isNotEmpty()) {
+            if (brokenChains.isNotEmpty()) {
+                return@require "没有可用节点：${brokenChains.size} 个节点的前置代理链无法使用（${brokenChains.distinct().take(2).joinToString("；")}）。"
+            }
             if (skipped.isNotEmpty()) {
                 return@require "没有可用节点：${skipped.size} 个节点的协议暂不支持（${skipped.distinct().take(3).joinToString("、")}）。"
             }
@@ -528,7 +534,7 @@ object ImportParser {
                 sourceValue = sourceValue,
                 hiddenUnsupportedNodeCount = hiddenUnsupportedNodeCount,
                 hiddenReason = firstHiddenReason(nodes),
-            ) + skippedSummary(skipped) + providerSummary(unreadableProviders),
+            ) + skippedSummary(skipped) + providerSummary(unreadableProviders) + chainSummary(brokenChains),
             hiddenUnsupportedNodeCount = hiddenUnsupportedNodeCount,
         )
     }
@@ -537,6 +543,14 @@ object ImportParser {
     private val skippedTypes: ThreadLocal<MutableList<String>> = ThreadLocal.withInitial { mutableListOf() }
 
     private val skippedProviders: ThreadLocal<MutableList<String>> = ThreadLocal.withInitial { mutableListOf() }
+
+    /** Nodes left out because their pre-proxy chain can't run (a loop, too long). */
+    private val refusedChains: ThreadLocal<MutableList<String>> = ThreadLocal.withInitial { mutableListOf() }
+
+    private fun chainSummary(reasons: List<String>): String {
+        if (reasons.isEmpty()) return ""
+        return " 另有 ${reasons.size} 个节点的前置代理链无法使用，未导入（${reasons.distinct().take(2).joinToString("；")}）。"
+    }
 
     private fun providerSummary(names: List<String>): String {
         if (names.isEmpty()) return ""
@@ -813,7 +827,14 @@ object ImportParser {
                 val index = nodes.indexOfFirst { it.id == node.id }
                 if (index >= 0 && front.id != node.id) nodes[index] = nodes[index].copy(preProxyNodeId = front.id)
             }
-            return nodes
+            // A chain that loops (A → B → A) or is too long can't run as the
+            // config says: those nodes are left out, with the reason.
+            val chained = nodes.toList()
+            return nodes.filter { node ->
+                val problem = XrayConfigFactory.preProxyChain(node, chained).problem ?: return@filter true
+                refusedChains.get().add("${node.name}：$problem")
+                false
+            }
         }
         root.optJSONArray("outbounds")?.let { nodes += parseSingBoxOutboundArray(it, groupId, sourceLabel) }
         // sing-box 1.11+ keeps WireGuard under "endpoints".

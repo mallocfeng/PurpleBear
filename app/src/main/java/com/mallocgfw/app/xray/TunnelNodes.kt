@@ -33,22 +33,13 @@ object TunnelNodes {
         installed = null
     }
 
-    /** Same pre-proxy resolution the config uses (XrayConfigFactory.buildOutboundChain). */
+    /** Same pre-proxy chains the config uses (XrayConfigFactory.preProxyChain). */
     fun collect(server: ServerNode, additionalOutbounds: List<XrayNamedOutbound>, servers: List<ServerNode>): Set<String> {
         val result = linkedSetOf<String>()
         (listOf(server) + additionalOutbounds.map { it.node }).forEach { root ->
-            var current = root
-            val visited = mutableSetOf(root.id)
             result += root.id
-            repeat(MAX_CHAIN) {
-                val front = XrayConfigFactory.resolvePreProxyNode(current, servers, visited) ?: return@forEach
-                result += front.id
-                visited += front.id
-                current = front
-            }
+            XrayConfigFactory.preProxyChain(root, servers).fronts.forEach { result += it.id }
         }
         return result
     }
-
-    private const val MAX_CHAIN = 8
 }

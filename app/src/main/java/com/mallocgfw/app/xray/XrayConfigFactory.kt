@@ -805,18 +805,9 @@ object XrayConfigFactory {
         additional: List<ServerNode>,
         availableServers: List<ServerNode>,
     ): List<ServerNode> {
-        val fronts = (listOf(node) + additional).flatMap { root ->
-            buildList {
-                var current = root
-                val visited = mutableSetOf(root.id)
-                while (size < MAX_CHAIN_LENGTH) {
-                    val front = resolvePreProxyNode(current, availableServers, visited) ?: break
-                    add(front)
-                    visited += front.id
-                    current = front
-                }
-            }
-        }
+        // The same chains buildOutboundChain builds, so every front that
+        // runs in the sidecar gets a listener.
+        val fronts = (listOf(node) + additional).flatMap { root -> preProxyChain(root, availableServers).fronts }
         return SsrMihomoConfigFactory.sidecarNodes(node, additional + fronts)
     }
 
@@ -873,35 +864,59 @@ object XrayConfigFactory {
         availableServers: List<ServerNode>,
         localProxy: LocalProxyAllocation,
         sidecarNodes: List<ServerNode>,
-        visitedNodeIds: Set<String> = emptySet(),
     ): List<JSONObject> {
-        val outbound = proxyOutbound(node, tag, localProxy, sidecarNodes)
-        val nextVisited = visitedNodeIds + node.id
-        val preProxyNode = resolvePreProxyNode(
-            node = node,
-            availableServers = availableServers,
-            visitedNodeIds = nextVisited,
-        ) ?: return listOf(outbound)
-        val preProxyTag = "${tag}_pre_${preProxyNode.id.takeLast(6)}"
-        attachDialerProxy(outbound, preProxyTag)
+        val chain = preProxyChain(node, availableServers)
+        // A loop or an over-long chain never runs with a hop left out.
+        chain.problem?.let { error("${node.name}：$it") }
         return buildList {
+            var outbound = proxyOutbound(node, tag, localProxy, sidecarNodes)
+            var outboundTag = tag
             add(outbound)
-            addAll(buildOutboundChain(preProxyNode, preProxyTag, availableServers, localProxy, sidecarNodes, nextVisited))
+            chain.fronts.forEach { front ->
+                val frontTag = "${outboundTag}_pre_${front.id.takeLast(6)}"
+                attachDialerProxy(outbound, frontTag)
+                outbound = proxyOutbound(front, frontTag, localProxy, sidecarNodes)
+                outboundTag = frontTag
+                add(outbound)
+            }
         }
     }
 
-    /** The node [node] dials through, or null; same rules the config builder applies. */
-    internal fun resolvePreProxyNode(
-        node: ServerNode,
-        availableServers: List<ServerNode>,
-        visitedNodeIds: Set<String>,
-    ): ServerNode? {
+    /**
+     * A node's pre-proxy chain: its fronts in dial order (nearest the node
+     * first), or why it can't run ([problem]: a loop, or more than
+     * [MAX_CHAIN_LENGTH] fronts). The one reading of the chain for the
+     * outbounds, the sidecar listeners, the tunnel's node set and the checks
+     * when a pre-proxy is set or imported.
+     */
+    data class PreProxyChain(val fronts: List<ServerNode>, val problem: String? = null)
+
+    fun preProxyChain(node: ServerNode, availableServers: List<ServerNode>): PreProxyChain {
+        val fronts = mutableListOf<ServerNode>()
+        val path = mutableListOf(node)
+        var current = node
+        while (true) {
+            val front = nextPreProxy(current, availableServers) ?: return PreProxyChain(fronts)
+            if (path.any { it.id == front.id }) {
+                val loop = (path.dropWhile { it.id != front.id } + front).joinToString(" → ") { it.name }
+                return PreProxyChain(fronts, tr("前置代理循环引用（$loop），无法连接", "The pre-proxy chain loops ($loop) and can't connect", "Цепочка предварительных прокси зациклена ($loop), подключение невозможно"))
+            }
+            if (fronts.size >= MAX_CHAIN_LENGTH) {
+                return PreProxyChain(fronts, tr("前置代理链超过 $MAX_CHAIN_LENGTH 个节点，无法连接", "The pre-proxy chain has more than $MAX_CHAIN_LENGTH nodes and can't connect", "В цепочке предварительных прокси больше $MAX_CHAIN_LENGTH узлов, подключение невозможно"))
+            }
+            fronts += front
+            path += front
+            current = front
+        }
+    }
+
+    /** The node [node] dials through, or null when it has none it can use. */
+    private fun nextPreProxy(node: ServerNode, availableServers: List<ServerNode>): ServerNode? {
         val targetId = node.preProxyNodeId.trim()
         if (targetId.isBlank()) return null
         val target = availableServers.firstOrNull { candidate ->
             candidate.id == targetId && !candidate.hiddenUnsupported
         } ?: return null
-        if (target.id == node.id || target.id in visitedNodeIds) return null
         // The node itself must be an Xray node (it dials through the front with
         // dialerProxy); the front may run anywhere, including the mihomo sidecar,
         // whose loopback listener is an ordinary SOCKS outbound here.
