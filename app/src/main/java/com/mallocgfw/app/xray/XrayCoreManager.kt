@@ -162,7 +162,11 @@ object XrayCoreManager {
     ): List<PinCandidate> {
         val servers = runCatching { AppController.load(context).servers }.getOrDefault(emptyList())
         return (listOf(server) + additionalOutbounds.map { it.node }).flatMap { root ->
-            val nodes = listOf(root) + XrayConfigFactory.preProxyChain(root, servers).fronts
+            // A chain that can't run is refused before anything is dialed:
+            // its partial fronts never get a handshake of their own.
+            val chain = XrayConfigFactory.preProxyChain(root, servers)
+            if (chain.problem != null) return@flatMap emptyList()
+            val nodes = listOf(root) + chain.fronts
             nodes.mapIndexed { index, node -> PinCandidate(node, nodes.getOrNull(index + 1)) }.asReversed()
         }.distinctBy { it.node.id to it.front?.id }
     }
@@ -216,6 +220,12 @@ object XrayCoreManager {
         return withContext(Dispatchers.IO) {
             try {
                 XrayNativeLoader.ensureLoaded()
+                // A chain that can't run fails here, before any handshake (pin
+                // fetch included) reaches one of its nodes.
+                val chainServers = runCatching { AppController.load(context).servers }.getOrDefault(emptyList())
+                (listOf(server) + additionalOutbounds.map { it.node }).forEach { root ->
+                    XrayConfigFactory.preProxyChain(root, chainServers).problem?.let { error("${root.name}：$it") }
+                }
                 // Nodes that skip certificate verification need a pinned
                 // certificate before the config is built (Xray rejects allowInsecure).
                 val pinCandidates = pinCandidates(context, server, additionalOutbounds)

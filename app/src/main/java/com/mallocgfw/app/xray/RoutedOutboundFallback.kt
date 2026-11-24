@@ -27,6 +27,15 @@ object RoutedOutboundFallback {
         }
     }
 
+    /**
+     * Routed outbounds whose pre-proxy chain can't run (a loop or an
+     * over-long chain saved by an older version), with the reason. Left out
+     * before the start: one of them would fail the whole config and keep the
+     * main node off too.
+     */
+    fun brokenChains(extras: List<XrayNamedOutbound>, servers: List<ServerNode>): List<Pair<XrayNamedOutbound, String>> =
+        extras.mapNotNull { extra -> XrayConfigFactory.preProxyChain(extra.node, servers).problem?.let { extra to it } }
+
     /** [rules] with the dropped outbounds' rules sent to their policy target instead (main node, direct, block). */
     fun withoutOutbounds(rules: List<XrayRoutingRule>, dropped: List<XrayNamedOutbound>): List<XrayRoutingRule> {
         val tags = dropped.map { it.tag }.toSet()

@@ -825,7 +825,8 @@ object ImportParser {
             dialers.forEach { (node, tag) ->
                 val front = byTag[tag] ?: return@forEach
                 val index = nodes.indexOfFirst { it.id == node.id }
-                if (index >= 0 && front.id != node.id) nodes[index] = nodes[index].copy(preProxyNodeId = front.id)
+                // Itself as its front (A → A) is a loop like any other: checked below.
+                if (index >= 0) nodes[index] = nodes[index].copy(preProxyNodeId = front.id)
             }
             // A chain that loops (A → B → A) or is too long can't run as the
             // config says: those nodes are left out, with the reason.

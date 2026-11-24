@@ -8,7 +8,10 @@ import com.mallocgfw.app.model.NodeCompatibility
 import com.mallocgfw.app.model.AppStateStore
 import com.mallocgfw.app.model.PersistedAppState
 import com.mallocgfw.app.model.ProxyMode
+import com.mallocgfw.app.model.RuleTargetPolicy
 import com.mallocgfw.app.model.ServerNode
+import com.mallocgfw.app.model.XrayNamedOutbound
+import com.mallocgfw.app.model.XrayRoutingRule
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -36,9 +39,9 @@ class PreProxyChainLimitsTest {
         return if (last == null) nodes else nodes.dropLast(1) + last.copy(id = "f$fronts", name = "f$fronts")
     }
 
-    private fun buildFails(node: ServerNode, servers: List<ServerNode>): String {
+    private fun buildFails(node: ServerNode, servers: List<ServerNode>, extras: List<XrayNamedOutbound> = emptyList()): String {
         try {
-            XrayConfigFactory.build(node, servers)
+            XrayConfigFactory.build(node, servers, additionalOutbounds = extras)
         } catch (e: IllegalStateException) {
             return e.message.orEmpty()
         }
@@ -94,6 +97,35 @@ class PreProxyChainLimitsTest {
         assertTrue(StateOps.isValidPreProxy(chain(7) + node("f8"), chain(7).last(), "f8"))
     }
 
+    private fun rule(tag: String, suffix: String) = XrayRoutingRule(
+        target = RuleTargetPolicy.Proxy, domainSuffixes = listOf(suffix), fullDomains = emptyList(),
+        domainKeywords = emptyList(), ipCidrs = emptyList(), ipCidrs6 = emptyList(), outboundTag = tag,
+    )
+
+    @Test
+    fun aRoutedNodeWithABrokenChainNeverKeepsTheMainNodeOff() {
+        // Saved by an older version: a media route through a looped node.
+        val servers = listOf(node("main"), node("a", preProxy = "b"), node("b", preProxy = "a"), node("ok"))
+        val looped = XrayNamedOutbound("stream_netflix", servers[1])
+        val fine = XrayNamedOutbound("app_0", servers[3])
+        val rules = listOf(
+            rule("stream_netflix", "netflix.com"),
+            rule("app_0", "example.org"),
+        )
+        assertTrue(buildFails(servers[0], servers, listOf(looped, fine)).contains("a → b → a"))
+        val broken = RoutedOutboundFallback.brokenChains(listOf(looped, fine), servers)
+        assertEquals(listOf(looped), broken.map { it.first })
+        assertTrue(broken.single().second.contains("a → b → a"))
+        // Without it the main node starts; the media rule goes by its policy, the other route stays.
+        val kept = RoutedOutboundFallback.withoutOutbounds(rules, broken.map { it.first })
+        assertNull(kept[0].outboundTag)
+        assertEquals("app_0", kept[1].outboundTag)
+        val outbounds = JSONObject(XrayConfigFactory.build(servers[0], servers, routingRules = kept, additionalOutbounds = listOf(fine)))
+            .getJSONArray("outbounds")
+        val tags = (0 until outbounds.length()).map { outbounds.getJSONObject(it).optString("tag") }
+        assertTrue(tags.contains("proxy") && tags.contains("app_0") && !tags.contains("stream_netflix"))
+    }
+
     @Test
     fun anImportedLoopIsLeftOutWithTheReason() {
         fun outbound(tag: String, dialer: String?) = JSONObject()
@@ -117,11 +149,14 @@ class PreProxyChainLimitsTest {
             )
         val config = JSONObject().put(
             "outbounds",
-            JSONArray().put(outbound("A", "B")).put(outbound("B", "A")).put(outbound("C", null)).put(outbound("D", "C")),
+            JSONArray().put(outbound("A", "B")).put(outbound("B", "A")).put(outbound("C", null)).put(outbound("D", "C"))
+                .put(outbound("E", "E")),
         )
         val preview = ImportParser.buildFilePreview("x.json", config.toString())
         assertEquals(setOf("C", "D"), preview.nodes.map { it.name }.toSet())
         assertTrue(preview.summary, preview.summary.contains("前置代理链") && preview.summary.contains("A → B → A"))
+        // Its own front (E → E) is a loop too, not a direct node: left out as well (A, B, E).
+        assertTrue(preview.summary, preview.summary.contains("3 个节点的前置代理链"))
         assertEquals(preview.nodes.single { it.name == "C" }.id, preview.nodes.single { it.name == "D" }.preProxyNodeId)
     }
 }

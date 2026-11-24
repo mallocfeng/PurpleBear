@@ -544,24 +544,47 @@ class XrayVpnService : VpnService() {
                 encryptedDns = encryptedDnsOf(settings),
             )
         routedFallbackNotice = null
-        var installed = extras
-        val first = start(rules, extras)
+        // Routed nodes whose pre-proxy chain can't run (a loop or an over-long
+        // chain saved by an older version) are left out up front: one of them
+        // would fail the whole config, the main node with it.
+        val broken = RoutedOutboundFallback.brokenChains(extras, servers)
+        val brokenOutbounds = broken.map { it.first }
+        val notices = mutableListOf<String>()
+        if (broken.isNotEmpty()) {
+            val kinds = buildList {
+                if (perAppRouting.outbounds.any { it in brokenOutbounds }) add(tr("分应用", "per-app", "по приложениям"))
+                if (streamingRouting.outbounds.any { it in brokenOutbounds }) add(tr("流媒体", "media", "медиа"))
+                if (ruleRouting.outbounds.any { it in brokenOutbounds }) add(tr("规则", "rule", "правила"))
+            }.joinToString("、")
+            val reasons = broken.map { (outbound, problem) -> "${outbound.node.name}：$problem" }.distinct().joinToString("；")
+            notices += tr(
+                "分流节点的前置代理链无法使用（$reasons），使用它的${kinds}分流暂时改走当前节点，请在节点设置中修改前置代理。",
+                "A routed node's pre-proxy chain can't run ($reasons); its $kinds routes go through the current node for now. Change the pre-proxy in the node's settings.",
+                "Цепочка предварительных прокси узла маршрутизации не работает ($reasons); маршруты ($kinds) пока идут через текущий узел. Измените предварительный прокси в настройках узла.",
+            )
+            AppLogManager.append(applicationContext, TAG, notices.last())
+        }
+        val usable = extras - brokenOutbounds.toSet()
+        val usableRules = RoutedOutboundFallback.withoutOutbounds(rules, brokenOutbounds)
+        var installed = usable
+        val first = start(usableRules, usable)
         if (first.isFailure) {
             val error = first.exceptionOrNull() ?: IllegalStateException()
-            val dropped = RoutedOutboundFallback.sidecarOutbounds(server, extras, servers)
+            val dropped = RoutedOutboundFallback.sidecarOutbounds(server, usable, servers)
             if (dropped.isEmpty()) throw error
             val names = dropped.map { it.node.name }.distinct().joinToString("、")
             AppLogManager.append(applicationContext, TAG, "分流节点启动失败（${error.message.orEmpty()}），去掉 $names 后重试", error)
-            installed = extras - dropped.toSet()
+            installed = usable - dropped.toSet()
             // Still failing: the main node itself is the problem; report the first error.
-            start(RoutedOutboundFallback.withoutOutbounds(rules, dropped), installed).getOrElse { throw error }
-            routedFallbackNotice = tr(
+            start(RoutedOutboundFallback.withoutOutbounds(usableRules, dropped), installed).getOrElse { throw error }
+            notices += tr(
                 "VPN 已连接，但分流节点 $names 无法启动，相关应用、流媒体和规则暂时改走当前节点。",
                 "VPN connected, but the routed node $names couldn't start; the apps, media and rules using it go through the current node for now.",
                 "VPN подключён, но узел маршрутизации $names не запустился; связанные приложения, медиа и правила пока идут через текущий узел.",
             )
-            AppLogManager.append(applicationContext, TAG, routedFallbackNotice.orEmpty())
+            AppLogManager.append(applicationContext, TAG, notices.last())
         }
+        routedFallbackNotice = notices.takeIf { it.isNotEmpty() }?.joinToString(" ")
         val droppedIds = (extras - installed.toSet()).map { it.node.id }.toSet()
         StreamingMediaManager.markInstalled(
             streamingRouting.copy(appliedRoutes = streamingRouting.appliedRoutes.filterValues { it !in droppedIds }),
