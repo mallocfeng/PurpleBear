@@ -46,7 +46,9 @@ PurpleBear 各版本的完整更新记录。安装包见 [GitHub Releases](https
 
 21. 订阅节点被选为前置节点时，保留单独指定的证书校验名（分享链接的 `vcn`）：经兼容内核运行时写成 mihomo 的 `name-cert-verify`，不再只剩 SNI；Clash 配置里的 `name-cert-verify` 也会导入。前置节点的连接参数无法完整转换时，主节点列为不支持并说明原因，不会换一个参数不同的前置运行。前置代理组设置了 `default-selected` 时，优先使用这个节点（被筛选掉或不在组内时才用第一个节点），不再因为组里第一个是 `DIRECT` 而绕过指定的前置。
 
-22. 更新版本号到 `0.9.2.2`，`versionCode` 更新为 `322`。
+22. Clash 配置中带 `tls: true` 的 SOCKS5 节点按 SOCKS5 over TLS 导入，并保留 `skip-cert-verify`、证书指纹和 `name-cert-verify`，不再被当成明文 SOCKS5（要求 TLS 的服务端会拒绝连接）；HTTP 节点读取 `sni` 指定的 SNI。用 `exclude-type` 排除的协议（提供者或前置代理组上设置的都算）不会再被选作前置节点：以前无法转换的节点会绕过协议过滤被选中，让主节点被标为不支持，即使后面还有可用的前置节点。
+
+23. 更新版本号到 `0.9.2.2`，`versionCode` 更新为 `322`。
 
 ## 0.9.2.1
 

@@ -381,6 +381,46 @@ $provider
     }
 
     @Test
+    fun clashSocksAndHttpKeepTheirTls() {
+        fun tlsOf(yaml: String) = ManualNodeFactory.inspectOutbound(ImportParser.buildFilePreview("t.yaml", "proxies:\n  - $yaml\n").nodes.single())!!
+            .optJSONObject("streamSettings")
+        val socks = tlsOf("{name: S, type: socks5, server: s.example.com, port: 443, username: u, password: p, tls: true, name-cert-verify: cert.example.com}")!!
+        assertEquals("tls", socks.getString("security"))
+        assertEquals("cert.example.com", socks.getJSONObject("tlsSettings").getString("verifyPeerCertByName"))
+        assertNull(tlsOf("{name: S, type: socks5, server: s.example.com, port: 1080}"))
+        val http = tlsOf("{name: H, type: http, server: h.example.com, port: 443, tls: true, sni: custom.example.com}")!!
+        assertEquals("custom.example.com", http.getJSONObject("tlsSettings").getString("serverName"))
+    }
+
+    @Test
+    fun excludedProtocolsNeverBecomeTheFront() {
+        // The Hysteria2 node can't be a sidecar front; excluded, it must not
+        // stand in for the Trojan node after it either.
+        val list = "hysteria2://pw@hy.example.com:443?sni=hy.example.com#HY\ntrojan://pw@tr.example.com:443?sni=tr.example.com#TR\n"
+        fun front(provider: ImportParser.ProviderFilter, group: String): ServerNode {
+            val config = """
+                proxies:
+                  - {name: MyVPS, type: ss, server: vps.example.com, port: 8388, cipher: aes-128-gcm, password: pw, dialer-proxy: Relay}
+                proxy-groups:
+                  - $group
+                proxy-providers:
+                  sub: {type: http, url: https://sub.example.com/list.txt}
+            """.trimIndent()
+            return ImportParser.buildFilePreview("x.yaml", config, listOf(ImportParser.ProviderContent(list, provider, name = "sub")))
+                .nodes.single { it.name == "MyVPS" }
+        }
+        val byProvider = front(ImportParser.ProviderFilter(excludeTypes = setOf("hysteria2")), "{name: Relay, type: select, use: [sub]}")
+        assertFalse(byProvider.hiddenUnsupported)
+        assertEquals("tr.example.com", frontOf(byProvider)!!.getString("server"))
+        val byGroup = front(ImportParser.ProviderFilter(), "{name: Relay, type: select, use: [sub], exclude-type: hysteria2}")
+        assertEquals("tr.example.com", frontOf(byGroup)!!.getString("server"))
+        // Not excluded: the Hysteria2 node is the front and can't be one.
+        val kept = front(ImportParser.ProviderFilter(), "{name: Relay, type: select, use: [sub]}")
+        assertTrue(kept.hiddenUnsupported)
+        assertTrue(NodeCompatibility.coreIncompatibility(kept)!!.contains("HY"))
+    }
+
+    @Test
     fun providersSharingALinkAreAllKept() {
         val list = "proxies:\n" +
             "  - {name: HK1, type: trojan, server: hk.example.com, port: 443, password: pw, sni: hk.example.com}\n" +

@@ -220,11 +220,13 @@ object ImportParser {
                     } else {
                         parseSubscriptionNodes(part.content, groupId = groupId, sourceLabel = sourceLabel).mapIndexed { index, node ->
                             // As a front it runs in the sidecar: only if its Clash form is the same node.
+                            // Otherwise it keeps its type (filters and exclude-type still see it)
+                            // and, if chosen, lists the main node as unsupported with the reason.
                             clashMapOf(node)?.takeIf { faithful(it, node, groupId, sourceLabel, index + 1) }
                                 ?: mapOf(
                                     "name" to node.name,
-                                    "type" to MihomoNodes.MISSING_FRONT_TYPE,
-                                    "reason" to "前置节点 ${node.name} 的连接参数无法完整转换给兼容内核",
+                                    "type" to ProviderFilter.clashType(node),
+                                    UNCONVERTIBLE_FRONT to "前置节点 ${node.name} 的连接参数无法完整转换给兼容内核",
                                 )
                         }
                     }
@@ -264,7 +266,8 @@ object ImportParser {
             private fun regexes(raw: Any?): List<Regex> = raw?.toString().orEmpty().split('`')
                 .filter(String::isNotBlank).mapNotNull { runCatching { Regex(it) }.getOrNull() }
 
-            private fun clashType(node: ServerNode): String {
+            /** The Clash type name of [node] (ss, vless, hysteria2 …), as exclude-type spells it. */
+            fun clashType(node: ServerNode): String {
                 node.mihomoProxyJson.takeIf { it.isNotBlank() }?.let { raw ->
                     runCatching { JSONObject(raw).optString("type") }.getOrNull()?.takeIf { it.isNotBlank() }?.let { return it }
                 }
@@ -1107,6 +1110,9 @@ object ImportParser {
 
     private val PROXY_GROUP_TYPES = setOf("select", "url-test", "fallback", "load-balance", "relay")
 
+    /** Key of a provider node's Clash map that couldn't be converted faithfully; its value is the reason. */
+    private const val UNCONVERTIBLE_FRONT = "pb-unconvertible"
+
     /** A group member whose name is nowhere in the config. */
     private val NO_MEMBER: Map<*, *> = mapOf("type" to MihomoNodes.MISSING_FRONT_TYPE)
 
@@ -1209,8 +1215,8 @@ object ImportParser {
                 )
         }
         // A provider node that can't be written for the sidecar as it is.
-        if (target.string("type") == MihomoNodes.MISSING_FRONT_TYPE) {
-            return markMissingFront(config, target.string("name") ?: frontName, reason = target.string("reason"))
+        target.string(UNCONVERTIBLE_FRONT)?.let { reason ->
+            return markMissingFront(config, target.string("name") ?: frontName, reason = reason)
         }
         if (target["server"] == null && target.string("type")?.lowercase(Locale.ROOT) in PROXY_GROUP_TYPES) {
             val groupName = target.string("name") ?: frontName
@@ -1476,6 +1482,7 @@ object ImportParser {
         )
     }
 
+    /** Mihomo's socks5 takes no SNI key: with TLS on, the SNI is the server. */
     private fun buildClashSocksDraft(item: Map<*, *>): LocalNodeDraft? {
         return ManualNodeFactory.applyProtocolDefaults(LocalNodeDraft(), LocalNodeProtocol.SOCKS).copy(
             nodeName = item.string("name").orEmpty(),
@@ -1483,6 +1490,10 @@ object ImportParser {
             port = item.intLike("port")?.toString().orEmpty(),
             username = item.string("username").orEmpty(),
             password = item.string("password").orEmpty(),
+            security = if (item.boolLike("tls") == true) LocalNodeSecurity.TLS else LocalNodeSecurity.NONE,
+            allowInsecure = item.boolLike("skip-cert-verify") == true,
+            pinnedPeerCertSha256 = item.clashCertificatePin(),
+            verifyPeerCertByName = item.string("name-cert-verify").orEmpty(),
         )
     }
 
@@ -1494,7 +1505,7 @@ object ImportParser {
             username = item.string("username").orEmpty(),
             password = item.string("password").orEmpty(),
             security = if (tls || item.boolLike("tls") == true) LocalNodeSecurity.TLS else LocalNodeSecurity.NONE,
-            serverName = item.string("servername").orEmpty(),
+            serverName = item.string("sni").orEmpty().ifBlank { item.string("servername").orEmpty() },
             allowInsecure = item.boolLike("skip-cert-verify") == true,
             pinnedPeerCertSha256 = item.clashCertificatePin(),
             verifyPeerCertByName = item.string("name-cert-verify").orEmpty(),
