@@ -204,6 +204,7 @@ class XrayVpnService : VpnService() {
                         cleanupCompleted = false
                         runCatching { connect(serverId, keepFailover) }
                             .onSuccess {
+                                if (recheckInstalledNodes(serverId)) return@onSuccess
                                 val connectedAtMs = System.currentTimeMillis()
                                 AppLogManager.append(applicationContext, TAG, "VPN 已连接，serverId=$serverId")
                                 VpnRuntimeStore.updateConnection(
@@ -255,6 +256,7 @@ class XrayVpnService : VpnService() {
                         val previousServerId = VpnRuntimeStore.snapshot.value.activeServerId
                         runCatching { switchActiveServer(serverId) }
                             .onSuccess {
+                                if (recheckInstalledNodes(serverId)) return@onSuccess
                                 val server = AppController.load(applicationContext).servers.firstOrNull { it.id == serverId }
                                 val message = server?.let { tr("已切换到 ${it.name}", "Switched to ${it.name}", "Переключено на ${it.name}") } ?: tr("已切换线路", "Node switched", "Узел переключён")
                                 AppLogManager.append(applicationContext, TAG, message)
@@ -654,6 +656,31 @@ class XrayVpnService : VpnService() {
                         AppLogManager.append(applicationContext, TAG, "流媒体规则已下载，但线路已变更，不再重连（下次连接时生效）")
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * The core is up; before announcing it, check that every node it was built
+     * with still exists. A node removed while the tunnel was being set up (the
+     * service had already read the old settings) would otherwise keep carrying
+     * traffic. True when a reconnect or a disconnect was started instead; the
+     * new request is queued behind this one (operationMutex).
+     */
+    private fun recheckInstalledNodes(serverId: String): Boolean {
+        val installed = TunnelNodes.current() ?: return false
+        val state = AppController.load(applicationContext)
+        return when (val effect = com.mallocgfw.app.core.StateOps.staleTunnelEffect(state, serverId, installed)) {
+            com.mallocgfw.app.core.StateOps.RemovalEffect.None -> false
+            is com.mallocgfw.app.core.StateOps.RemovalEffect.Reconnect -> {
+                AppLogManager.append(applicationContext, TAG, "连接期间节点已删除：${effect.message}")
+                startService(connectIntent(applicationContext, effect.server.id).putExtra(EXTRA_KEEP_FAILOVER, true))
+                true
+            }
+            is com.mallocgfw.app.core.StateOps.RemovalEffect.Disconnect -> {
+                AppLogManager.append(applicationContext, TAG, "连接期间节点已删除：${effect.message}")
+                startService(disconnectIntent(applicationContext))
+                true
             }
         }
     }

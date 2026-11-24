@@ -1,5 +1,7 @@
 package com.mallocgfw.app.sync
 
+import com.mallocgfw.app.model.RuleSourceManager
+
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.Constraints
@@ -25,7 +27,9 @@ class DailySyncWorker(
             val report = BackgroundSyncManager.syncAll(applicationContext, state)
             // Merged into the current state, so changes made during the sync stay;
             // a dropped node the VPN uses makes it reconnect (see editNodes).
-            val removal = AppController.editNodes(reconnect = true) { report.applyTo(it) }
+            val removal = AppController.editNodes(reconnect = true) { current ->
+                report.applyTo(current) { source, compiled -> RuleSourceManager.commitCompiled(applicationContext, source, compiled) }
+            }
             if (state.settings.showUpdateNotifications) {
                 // Nodes the refresh dropped may have cleared pre-proxies, app pins …
                 val cleared = removal?.notice

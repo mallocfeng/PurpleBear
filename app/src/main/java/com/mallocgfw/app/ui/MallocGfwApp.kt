@@ -835,11 +835,8 @@ fun MallocGfwApp(
     }
 
     fun applyImport(preview: ImportPreview): ImportApplyResult {
-        val connectedServerId = if (connectionStatus == ConnectionStatus.Connected) {
-            vpnSnapshot.activeServerId?.takeIf { it.isNotBlank() } ?: appSettings.lastConnectedServerId
-        } else {
-            null
-        }
+        // Also while connecting: the service may already be building this node's tunnel.
+        val connectedServerId = AppController.tunnelServerId()
         var applied: StateOps.ImportOutcome? = null
         // editNodes posts what the refresh cleared (dropped nodes) for the dialog;
         // outcome.reconnectServer below covers the reconnect.
@@ -851,6 +848,31 @@ fun MallocGfwApp(
         // The import dropped the connected node and left nothing usable.
         outcome.disconnectMessage?.let { AppController.uiHost?.disconnect() }
         expandedGroups[preview.group.id] = true
+        return ImportApplyResult(
+            selectedServerChanged = outcome.selectedServerChanged,
+            message = outcome.message,
+            reconnectServer = outcome.reconnectServer,
+        )
+    }
+
+    /** A subscription refresh: null when it no longer applies (StateOps.applySubscriptionRefresh). */
+    fun applySubscriptionRefresh(
+        subscriptionId: String,
+        sourceUrl: String?,
+        preview: ImportPreview,
+        fetchStartedAtMs: Long,
+    ): ImportApplyResult? {
+        var applied: StateOps.ImportOutcome? = null
+        AppController.editNodes(reconnect = false) { state ->
+            StateOps.applySubscriptionRefresh(
+                state, subscriptionId, sourceUrl, preview, fetchStartedAtMs,
+                AppController.tunnelServerId(), AppController.runningNodeIds(),
+            )?.also { applied = it }?.state
+        }
+        val outcome = applied ?: return null
+        warmServerSections()
+        expandedGroups[preview.group.id] = true
+        outcome.disconnectMessage?.let { AppController.uiHost?.disconnect() }
         return ImportApplyResult(
             selectedServerChanged = outcome.selectedServerChanged,
             message = outcome.message,
@@ -1090,7 +1112,9 @@ fun MallocGfwApp(
                 // sync are kept). Reconnects (or disconnects) when the refresh
                 // dropped the connected node or one the tunnel uses, and posts
                 // what it cleared.
-                AppController.editNodes(reconnect = true) { report.applyTo(it) }
+                AppController.editNodes(reconnect = true) { state ->
+                    report.applyTo(state) { source, compiled -> RuleSourceManager.commitCompiled(context, source, compiled) }
+                }
                 warmServerSections()
                 geoDataSnapshot = report.geoDataSnapshot
                 settingsMessage = report.summary
@@ -2292,12 +2316,18 @@ fun MallocGfwApp(
                             }
                             subscriptionRefreshInFlight[subscriptionId] = true
                             AppController.edit { StateOps.setSubscriptionStatus(it, subscriptionId, "刷新中") }
+                            val sourceUrl = subscription.sourceUrl
+                            val fetchStartedAtMs = System.currentTimeMillis()
                             scope.launch {
                                 runCatching {
-                                    ImportParser.buildPreview(subscription.sourceUrl)
+                                    ImportParser.buildPreview(sourceUrl)
                                 }.onSuccess { preview ->
-                                    val applyResult = applyImport(preview)
-                                    AppController.edit { StateOps.setSubscriptionStatus(it, subscriptionId, "已同步", System.currentTimeMillis()) }
+                                    val applyResult = applySubscriptionRefresh(subscriptionId, sourceUrl, preview, fetchStartedAtMs)
+                                    if (applyResult == null) {
+                                        // Deleted, re-pointed or refreshed again while downloading.
+                                        subscriptionRefreshInFlight.remove(subscriptionId)
+                                        return@launch
+                                    }
                                     subscriptionMessage = applyResult.message
                                         ?: tr("${preview.group.name} 刷新完成，共同步 ${preview.nodes.count { !it.hiddenUnsupported }} 个节点。", "${preview.group.name} refreshed: ${preview.nodes.count { !it.hiddenUnsupported }} nodes synced.", "${preview.group.name}: обновлено, синхронизировано узлов: ${preview.nodes.count { !it.hiddenUnsupported }}.")
                                     if (applyResult.selectedServerChanged) {
@@ -2310,7 +2340,7 @@ fun MallocGfwApp(
                                         )
                                     }
                                 }.onFailure { error ->
-                                    AppController.edit { StateOps.setSubscriptionStatus(it, subscriptionId, "刷新失败") }
+                                    AppController.edit { StateOps.markSubscriptionRefreshFailed(it, subscriptionId, sourceUrl, fetchStartedAtMs) }
                                     subscriptionMessage = error.message ?: "订阅刷新失败。"
                                 }
                                 subscriptionRefreshInFlight.remove(subscriptionId)

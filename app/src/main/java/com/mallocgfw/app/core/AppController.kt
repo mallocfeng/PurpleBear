@@ -144,7 +144,7 @@ object AppController {
      * Returns the new state and the notice, or null when [transform] returned null.
      */
     fun editNodes(reconnect: Boolean, transform: (PersistedAppState) -> PersistedAppState?): NodeRemoval? {
-        val connected = connectedServerId()
+        val connected = tunnelServerId()
         var before: PersistedAppState? = null
         val next = edit { state ->
             before = state
@@ -157,7 +157,19 @@ object AppController {
     data class NodeRemoval(val state: PersistedAppState, val notice: String?)
 
     /** What the running tunnel was built with (null: not recorded; see TunnelNodes). */
-    fun runningNodeIds(): Set<String>? = connectedServerId()?.let { com.mallocgfw.app.xray.TunnelNodes.current() }
+    fun runningNodeIds(): Set<String>? = tunnelServerId()?.let { com.mallocgfw.app.xray.TunnelNodes.current() }
+
+    /**
+     * The node the VPN runs on or is being set up on (Connected or Connecting).
+     * Removals check this, not just Connected: while connecting the service
+     * may already have read the node's settings; it checks again when the core
+     * is up (XrayVpnService.recheckInstalledNodes).
+     */
+    fun tunnelServerId(): String? {
+        val snapshot = VpnRuntimeStore.snapshot.value
+        val running = snapshot.status == ConnectionStatus.Connected || snapshot.status == ConnectionStatus.Connecting
+        return snapshot.activeServerId?.takeIf { running && it.isNotBlank() }
+    }
 
     private fun keepConnectedSelected(before: PersistedAppState, after: PersistedAppState, connected: String?): PersistedAppState {
         val selectedGone = before.selectedServerId.isNotBlank() && after.servers.none { it.id == before.selectedServerId }

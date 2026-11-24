@@ -273,6 +273,54 @@ object StateOps {
         )
     }
 
+    /**
+     * Commits a subscription refresh whose download started at [fetchStartedAtMs].
+     * Every refresh (the subscription screen, MCP, sync) goes through here.
+     * Null, and nothing changes, when the result no longer applies:
+     * - the subscription was deleted, or its link changed, meanwhile;
+     * - a refresh that started later already committed (its updatedAtMs is
+     *   newer), so this older list would roll it back.
+     * The subscription's updatedAtMs becomes [fetchStartedAtMs]: the time the
+     * list was asked for, which orders refreshes.
+     */
+    fun applySubscriptionRefresh(
+        state: PersistedAppState,
+        subscriptionId: String,
+        sourceUrl: String?,
+        preview: ImportPreview,
+        fetchStartedAtMs: Long,
+        connectedServerId: String?,
+        runningNodeIds: Set<String>? = null,
+    ): ImportOutcome? {
+        if (!refreshStillApplies(state, subscriptionId, sourceUrl, fetchStartedAtMs)) return null
+        val outcome = applyImport(state, preview, connectedServerId, runningNodeIds)
+        // A refresh isn't an import the user made: keep their recent-imports list.
+        val refreshed = setSubscriptionStatus(
+            outcome.state.copy(recentImports = state.recentImports),
+            subscriptionId,
+            "已同步",
+            fetchStartedAtMs,
+        )
+        return outcome.copy(state = refreshed)
+    }
+
+    /** Marks a failed refresh, unless the subscription is gone or a later refresh already committed. */
+    fun markSubscriptionRefreshFailed(
+        state: PersistedAppState,
+        subscriptionId: String,
+        sourceUrl: String?,
+        fetchStartedAtMs: Long,
+    ): PersistedAppState? {
+        if (!refreshStillApplies(state, subscriptionId, sourceUrl, fetchStartedAtMs)) return null
+        return setSubscriptionStatus(state, subscriptionId, "刷新失败")
+    }
+
+    private fun refreshStillApplies(state: PersistedAppState, subscriptionId: String, sourceUrl: String?, fetchStartedAtMs: Long): Boolean {
+        val current = state.subscriptions.firstOrNull { it.id == subscriptionId } ?: return false
+        if (current.sourceUrl != sourceUrl) return false
+        return (current.updatedAtMs ?: 0L) <= fetchStartedAtMs
+    }
+
     /** Drops pre-proxy / fallback links that point at missing, hidden or unrunnable nodes. */
     fun normalizeNodeLinks(servers: List<ServerNode>): List<ServerNode> {
         val visibleServerMap = servers.filterNot { it.hiddenUnsupported }.associateBy { it.id }
@@ -356,41 +404,57 @@ object StateOps {
         val removed = before.servers.map { it.id }.filterNot { it in remaining }.toSet()
         if (removed.isEmpty()) return RemovalEffect.None
         val activeNode = before.servers.firstOrNull { it.id == activeId }
-        if (activeId in removed) {
-            fun usable(node: ServerNode) = !node.hiddenUnsupported && ManualNodeFactory.isRunnable(node)
-            val target = after.servers.firstOrNull { it.id == after.selectedServerId && usable(it) }
-                ?: after.servers.firstOrNull(::usable)
-            val name = activeNode?.name ?: activeId
-            return if (target != null) {
-                RemovalEffect.Reconnect(
-                    target,
-                    tr(
-                        "当前连接的节点 $name 已删除，正在切换到 ${target.name}…",
-                        "The connected node $name was deleted; switching to ${target.name}…",
-                        "Подключённый узел $name удалён, переключение на ${target.name}…",
-                    ),
-                )
-            } else {
-                RemovalEffect.Disconnect(
-                    tr(
-                        "当前连接的节点 $name 已删除，没有可用节点，VPN 已断开。",
-                        "The connected node $name was deleted and no usable node is left, so the VPN was disconnected.",
-                        "Подключённый узел $name удалён, других узлов нет, VPN отключён.",
-                    ),
-                )
-            }
-        }
+        if (activeId in removed) return moveOffRemovedNode(after, activeNode?.name ?: activeId)
         val active = after.servers.firstOrNull { it.id == activeId } ?: return RemovalEffect.None
         val used = runningNodeIds ?: nodesInRunningConfig(before, activeId)
         if (used.none { it in removed }) return RemovalEffect.None
-        return RemovalEffect.Reconnect(
-            active,
-            tr(
-                "已删除的节点仍在当前连接的分流中使用，正在重连以移除…",
-                "A deleted node was still used by the running VPN's routes; reconnecting to drop it…",
-                "Удалённый узел ещё использовался в маршрутах VPN, переподключение…",
-            ),
-        )
+        return reconnectToDropRemoved(active)
+    }
+
+    /**
+     * A tunnel that just came up, checked against [state]: a node it was built
+     * with ([installedNodeIds]) may have been removed while it was connecting
+     * (the service read the settings before the removal).
+     */
+    fun staleTunnelEffect(state: PersistedAppState, activeId: String, installedNodeIds: Set<String>): RemovalEffect {
+        val ids = state.servers.map { it.id }.toSet()
+        if (installedNodeIds.all { it in ids }) return RemovalEffect.None
+        if (activeId !in ids) return moveOffRemovedNode(state, activeId)
+        return reconnectToDropRemoved(state.servers.first { it.id == activeId })
+    }
+
+    private fun reconnectToDropRemoved(active: ServerNode) = RemovalEffect.Reconnect(
+        active,
+        tr(
+            "已删除的节点仍在当前连接的分流中使用，正在重连以移除…",
+            "A deleted node was still used by the running VPN's routes; reconnecting to drop it…",
+            "Удалённый узел ещё использовался в маршрутах VPN, переподключение…",
+        ),
+    )
+
+    /** The connected node is gone: the selection if usable, else any usable node, else disconnect. */
+    private fun moveOffRemovedNode(after: PersistedAppState, name: String): RemovalEffect {
+        fun usable(node: ServerNode) = !node.hiddenUnsupported && ManualNodeFactory.isRunnable(node)
+        val target = after.servers.firstOrNull { it.id == after.selectedServerId && usable(it) }
+            ?: after.servers.firstOrNull(::usable)
+        return if (target != null) {
+            RemovalEffect.Reconnect(
+                target,
+                tr(
+                    "当前连接的节点 $name 已删除，正在切换到 ${target.name}…",
+                    "The connected node $name was deleted; switching to ${target.name}…",
+                    "Подключённый узел $name удалён, переключение на ${target.name}…",
+                ),
+            )
+        } else {
+            RemovalEffect.Disconnect(
+                tr(
+                    "当前连接的节点 $name 已删除，没有可用节点，VPN 已断开。",
+                    "The connected node $name was deleted and no usable node is left, so the VPN was disconnected.",
+                    "Подключённый узел $name удалён, других узлов нет, VPN отключён.",
+                ),
+            )
+        }
     }
 
     /**

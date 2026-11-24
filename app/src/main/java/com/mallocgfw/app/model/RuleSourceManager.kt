@@ -302,9 +302,17 @@ object RuleSourceManager {
         )
     }
 
+    /**
+     * Fetches (remote) and compiles [source]. With [commit] (the default) the
+     * compiled list is written to its cache at once; a sync passes false and
+     * calls [commitCompiled] only if the source is still as it was fetched, so
+     * a sync that finishes after the user edited the source can't put the old
+     * list back.
+     */
     suspend fun refreshSource(
         context: Context,
         source: RuleSourceItem,
+        commit: Boolean = true,
     ): RuleRefreshResult {
         return withContext(Dispatchers.IO) {
             val text = when (source.sourceKind) {
@@ -317,7 +325,7 @@ object RuleSourceManager {
                 requestedType = source.type,
                 fallbackPolicy = source.policy,
             )
-            saveCompiledRules(context, compiled)
+            if (commit) saveCompiledRules(context, compiled, definitionKey(source))
             val updatedSource = source.copy(
                 type = if (source.type == RuleSourceType.Auto) compiled.detectedType else source.type,
                 updatedAt = "刚刚",
@@ -329,6 +337,22 @@ object RuleSourceManager {
             )
             RuleRefreshResult(updatedSource, compiled)
         }
+    }
+
+    /** Writes a list compiled from [source] (as it was fetched) to its cache. */
+    fun commitCompiled(context: Context, source: RuleSourceItem, compiled: CompiledRuleSet) {
+        saveCompiledRules(context, compiled, definitionKey(source))
+    }
+
+    /**
+     * What a cached list was compiled from: the kind, link, text and default
+     * policy (not the detected type, which a refresh fills in). A cache whose
+     * key differs from the source's is from another version of it.
+     */
+    fun definitionKey(source: RuleSourceItem): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+            .digest("${source.sourceKind}\n${source.url}\n${source.policy}\n${source.content}".toByteArray(StandardCharsets.UTF_8))
+        return digest.joinToString("") { "%02x".format(it) }
     }
 
     fun buildFailureState(source: RuleSourceItem, error: Throwable): RuleSourceItem {
@@ -348,7 +372,7 @@ object RuleSourceManager {
     }
 
     fun loadDetailSummary(context: Context, source: RuleSourceItem): RuleSourceDetailSummary {
-        val compiled = loadCompiledRules(context, source.id)
+        val compiled = loadCurrentRules(context, source)
         return RuleSourceDetailSummary(
             metadata = source,
             fullUrl = source.url,
@@ -380,7 +404,7 @@ object RuleSourceManager {
             // never downloaded have no file and are skipped below.
             .filter { it.enabled && !usesGeoData(it, region) }
             .flatMap { source ->
-                val compiled = loadCompiledRules(context, source.id) ?: return@flatMap emptyList()
+                val compiled = loadCurrentRules(context, source) ?: return@flatMap emptyList()
                 compiled.toRoutingRules(
                     fallbackPolicy = source.policy,
                     priority = if (source.systemDefault) SYSTEM_RULE_PRIORITY else USER_RULE_PRIORITY,
@@ -636,9 +660,28 @@ object RuleSourceManager {
         }
     }
 
-    private fun saveCompiledRules(context: Context, compiled: CompiledRuleSet) {
+    /**
+     * The cached list of [source], if it was compiled from this version of it.
+     * A list from another version (left by a sync that raced an edit) isn't
+     * used: a local text is compiled again from the saved text, a remote list
+     * waits for the next download. Caches written before keys existed are used.
+     */
+    private fun loadCurrentRules(context: Context, source: RuleSourceItem): CompiledRuleSet? {
+        val file = compiledRuleFile(context, source.id)
+        if (!file.exists()) return null
+        val key = runCatching { JSONObject(file.readText()).optString("definition") }.getOrDefault("")
+        if (key.isEmpty() || key == definitionKey(source)) return loadCompiledRules(context, source.id)
+        if (source.sourceKind != RuleSourceKind.LocalText) return null
+        return runCatching {
+            compileText(sourceId = source.id, rawText = source.content, requestedType = source.type, fallbackPolicy = source.policy)
+                .also { saveCompiledRules(context, it, definitionKey(source)) }
+        }.getOrNull()
+    }
+
+    private fun saveCompiledRules(context: Context, compiled: CompiledRuleSet, definition: String) {
         val payload = JSONObject().apply {
             put("sourceId", compiled.sourceId)
+            put("definition", definition)
             put("detectedType", compiled.detectedType.name)
             put("totalRules", compiled.totalRules)
             put("convertedRules", compiled.convertedRules)

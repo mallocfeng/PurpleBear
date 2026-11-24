@@ -3,6 +3,7 @@ package com.mallocgfw.app.sync
 import android.content.Context
 import com.mallocgfw.app.core.StateOps
 import com.mallocgfw.app.model.ImportParser
+import com.mallocgfw.app.model.CompiledRuleSet
 import com.mallocgfw.app.model.ImportPreview
 import com.mallocgfw.app.model.PersistedAppState
 import com.mallocgfw.app.model.RuleSourceItem
@@ -31,32 +32,40 @@ class SyncReport(
     val summary: String,
 ) {
     /** A subscription as it was fetched: the parsed preview, or null when the fetch failed. */
-    class SubscriptionFetch(val subscription: SubscriptionItem, val preview: ImportPreview?, val syncedAtMs: Long)
+    class SubscriptionFetch(val subscription: SubscriptionItem, val preview: ImportPreview?, val fetchStartedAtMs: Long)
 
-    /** A rule source as it was when fetched, and the refreshed (or failed) result. */
-    class RuleSourceFetch(val original: RuleSourceItem, val result: RuleSourceItem)
+    /**
+     * A rule source as it was when fetched, the refreshed (or failed) result,
+     * and the compiled list, not yet written to the cache.
+     */
+    class RuleSourceFetch(val original: RuleSourceItem, val result: RuleSourceItem, val compiled: CompiledRuleSet?)
 
-    fun applyTo(state: PersistedAppState): PersistedAppState {
+    /**
+     * [commitRules] writes the compiled list of each rule source that is merged
+     * (RuleSourceManager.commitCompiled). It runs inside the state edit, so a
+     * source edited meanwhile neither gets the old metadata nor the old list.
+     */
+    fun applyTo(
+        state: PersistedAppState,
+        commitRules: (RuleSourceItem, CompiledRuleSet) -> Unit = { _, _ -> },
+    ): PersistedAppState {
         var next = state
         subscriptions.forEach { fetch ->
-            // Deleted, or its link changed, during the sync: leave it alone.
-            val current = next.subscriptions.firstOrNull { it.id == fetch.subscription.id } ?: return@forEach
-            if (current.sourceUrl != fetch.subscription.sourceUrl) return@forEach
             val preview = fetch.preview
             next = if (preview == null) {
-                replaceSubscription(next, current.id) { it.copy(status = "刷新失败") }
+                StateOps.markSubscriptionRefreshFailed(next, fetch.subscription.id, fetch.subscription.sourceUrl, fetch.fetchStartedAtMs)
             } else {
-                // A sync isn't an import the user made: keep their recent-imports list.
-                val imported = StateOps.applyImport(next, preview, connectedServerId = null).state.copy(recentImports = next.recentImports)
-                replaceSubscription(imported, current.id) {
-                    it.copy(status = "已同步", updatedAt = "刚刚", updatedAtMs = fetch.syncedAtMs)
-                }
-            }
+                // Deleted, re-pointed or refreshed again meanwhile: skipped.
+                StateOps.applySubscriptionRefresh(
+                    next, fetch.subscription.id, fetch.subscription.sourceUrl, preview, fetch.fetchStartedAtMs, connectedServerId = null,
+                )?.state
+            } ?: next
         }
         ruleSources.forEach { fetch ->
             val current = next.ruleSources.firstOrNull { it.id == fetch.original.id } ?: return@forEach
             // Edited during the sync: the user's edit wins.
             if (!current.sameDefinitionAs(fetch.original)) return@forEach
+            fetch.compiled?.let { commitRules(fetch.original, it) }
             next = next.copy(
                 ruleSources = next.ruleSources.map { if (it.id == current.id) fetch.result.copy(enabled = it.enabled) else it },
             )
@@ -67,14 +76,6 @@ class SyncReport(
     private fun RuleSourceItem.sameDefinitionAs(other: RuleSourceItem): Boolean =
         url == other.url && content == other.content && type == other.type &&
             policy == other.policy && sourceKind == other.sourceKind && name == other.name
-
-    private fun replaceSubscription(
-        state: PersistedAppState,
-        subscriptionId: String,
-        transform: (SubscriptionItem) -> SubscriptionItem,
-    ): PersistedAppState = state.copy(
-        subscriptions = state.subscriptions.map { if (it.id == subscriptionId) transform(it) else it },
-    )
 }
 
 object BackgroundSyncManager {
@@ -91,6 +92,7 @@ object BackgroundSyncManager {
         val subscriptionFetches = state.subscriptions
             .filter { it.autoUpdate && !it.sourceUrl.isNullOrBlank() }
             .map { subscription ->
+                val startedAtMs = System.currentTimeMillis()
                 val preview = runCatching { ImportParser.buildPreview(subscription.sourceUrl.orEmpty()) }
                     .onSuccess {
                         refreshedSubscriptions += 1
@@ -101,23 +103,26 @@ object BackgroundSyncManager {
                         AppLogManager.append(context, "SYNC", "订阅同步失败：${subscription.name}", error)
                     }
                     .getOrNull()
-                SyncReport.SubscriptionFetch(subscription, preview, System.currentTimeMillis())
+                SyncReport.SubscriptionFetch(subscription, preview, startedAtMs)
             }
 
         val ruleFetches = state.ruleSources
             .filter { it.enabled }
             .map { source ->
-                val result = runCatching { RuleSourceManager.refreshSource(context, source).source }
+                // Not written to the cache yet: SyncReport.applyTo decides.
+                runCatching { RuleSourceManager.refreshSource(context, source, commit = false) }
                     .onSuccess {
                         refreshedRuleSources += 1
                         AppLogManager.append(context, "SYNC", "规则已同步：${source.name}")
                     }
-                    .getOrElse { error ->
-                        failedItems += 1
-                        AppLogManager.append(context, "SYNC", "规则同步失败：${source.name}", error)
-                        RuleSourceManager.buildFailureState(source, error)
-                    }
-                SyncReport.RuleSourceFetch(source, result)
+                    .fold(
+                        onSuccess = { SyncReport.RuleSourceFetch(source, it.source, it.compiled) },
+                        onFailure = { error ->
+                            failedItems += 1
+                            AppLogManager.append(context, "SYNC", "规则同步失败：${source.name}", error)
+                            SyncReport.RuleSourceFetch(source, RuleSourceManager.buildFailureState(source, error), compiled = null)
+                        },
+                    )
             }
 
         val geoSnapshot = runCatching {

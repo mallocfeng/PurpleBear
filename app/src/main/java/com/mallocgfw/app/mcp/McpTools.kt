@@ -374,11 +374,14 @@ object McpTools {
             if (url.isNullOrBlank()) throw ToolError("This group was imported from a file and has no URL to refresh.")
             if (!sub.autoUpdate) throw ToolError("This subscription link is a time-limited snapshot and can't be refreshed.")
             PreparedCall(tr("刷新订阅 ${Redactor.name(sub.name)}", "Refresh subscription ${Redactor.name(sub.name)}", "Обновить подписку ${Redactor.name(sub.name)}")) {
+                val fetchStartedAtMs = System.currentTimeMillis()
                 val preview = runCatching { ImportParser.buildPreview(url) }.getOrElse { error ->
-                    AppController.update { s -> StateOps.setSubscriptionStatus(s, id, "刷新失败") }
+                    AppController.update { s -> StateOps.markSubscriptionRefreshFailed(s, id, url, fetchStartedAtMs) }
                     throw ToolError(Redactor.text(error.message ?: "Refresh failed."))
                 }
-                val applied = applyImport(preview) { s -> StateOps.setSubscriptionStatus(s, id, "已同步", System.currentTimeMillis()) }
+                // Deleted, re-pointed or refreshed again while downloading: not applied.
+                val applied = applyRefresh(id, url, preview, fetchStartedAtMs)
+                    ?: throw ToolError("Subscription $id was deleted or refreshed again while downloading; this result was dropped.")
                 val count = preview.nodes.count { !it.hiddenUnsupported }
                 ToolResult(
                     JSONObject().put("group_id", id).put("nodes", count).put("hidden_unsupported", preview.hiddenUnsupportedNodeCount)
@@ -1063,13 +1066,28 @@ object McpTools {
 
         // ---- helpers -----------------------------------------------------------------
 
+        /** applyImport for a refresh (StateOps.applySubscriptionRefresh); null when it no longer applies. */
+        private suspend fun applyRefresh(id: String, url: String, preview: ImportPreview, fetchStartedAtMs: Long): AppliedImport? {
+            var outcome: StateOps.ImportOutcome? = null
+            val removal = AppController.editNodes(reconnect = false) { s ->
+                StateOps.applySubscriptionRefresh(s, id, url, preview, fetchStartedAtMs, AppController.tunnelServerId(), AppController.runningNodeIds())
+                    ?.also { outcome = it }?.state
+            }
+            val result = outcome ?: return null
+            when {
+                result.disconnectMessage != null -> AppController.disconnect()
+                result.reconnectServer != null -> AppController.reconnectIfRunning("订阅已更新，正在重新连接当前线路…")
+            }
+            return AppliedImport(result, removal?.notice?.let(Redactor::text))
+        }
+
         /** The import's outcome and what dropped nodes cleared (StateOps.removalNotice). */
         private class AppliedImport(val outcome: StateOps.ImportOutcome, val cleared: String?)
 
         private suspend fun applyImport(preview: ImportPreview, also: (PersistedAppState) -> PersistedAppState = { it }): AppliedImport {
             var outcome: StateOps.ImportOutcome? = null
             val removal = AppController.editNodes(reconnect = false) { s ->
-                StateOps.applyImport(s, preview, AppController.connectedServerId(), AppController.runningNodeIds())
+                StateOps.applyImport(s, preview, AppController.tunnelServerId(), AppController.runningNodeIds())
                     .also { outcome = it }.state.let(also)
             }
             val result = checkNotNull(outcome)

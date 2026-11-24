@@ -330,6 +330,48 @@ class StateOpsTest {
     }
 
     @Test
+    fun aRefreshOnlyCommitsWhileTheSubscriptionIsStillThereAndNotNewer() {
+        val base = state(node("a", "local"), node("s1", "sub1", name = "HK 01"), selected = "a")
+        val preview = ImportPreview(
+            input = "https://sub.example.com/x", group = sub,
+            nodes = listOf(node("n1", "sub1", name = "JP 01")), subscription = base.subscriptions.single(), summary = "",
+        )
+        val url = sub.sourceUrl
+        // Deleted while downloading: nothing comes back.
+        val deleted = StateOps.removeSubscriptionGroup(base, "sub1")!!
+        assertNull(StateOps.applySubscriptionRefresh(deleted, "sub1", url, preview, 100L, null))
+        assertNull(StateOps.markSubscriptionRefreshFailed(deleted, "sub1", url, 100L))
+        // Link changed meanwhile.
+        val repointed = base.copy(subscriptions = base.subscriptions.map { it.copy(sourceUrl = "https://other.example.com/y") })
+        assertNull(StateOps.applySubscriptionRefresh(repointed, "sub1", url, preview, 100L, null))
+        // Applies, and records when the download started.
+        val first = StateOps.applySubscriptionRefresh(base, "sub1", url, preview, 100L, null)!!.state
+        assertEquals(100L, first.subscriptions.single().updatedAtMs)
+        assertEquals("已同步", first.subscriptions.single().status)
+        assertTrue(first.servers.any { it.name == "JP 01" })
+        assertEquals(base.recentImports, first.recentImports)
+        // An older download finishing later is dropped; a newer one applies.
+        assertNull(StateOps.applySubscriptionRefresh(first, "sub1", url, preview, 50L, null))
+        assertNull(StateOps.markSubscriptionRefreshFailed(first, "sub1", url, 50L))
+        assertNotNull(StateOps.applySubscriptionRefresh(first, "sub1", url, preview, 150L, null))
+    }
+
+    @Test
+    fun aTunnelThatCameUpAfterARemovalIsFixedBeforeItIsAnnounced() {
+        val s = state(node("a", "local"), node("b", "local"), node("m", "local"), selected = "a")
+        // Everything still there.
+        assertEquals(StateOps.RemovalEffect.None, StateOps.staleTunnelEffect(s, "a", setOf("a", "m")))
+        // A routed node went away while connecting: reconnect on the same node.
+        val noM = StateOps.removeNode(s, "m")!!
+        assertEquals("a", (StateOps.staleTunnelEffect(noM, "a", setOf("a", "m")) as StateOps.RemovalEffect.Reconnect).server.id)
+        // The node itself went away: move to a usable one, or disconnect.
+        val noA = StateOps.removeNode(s, "a")!!
+        assertEquals("b", (StateOps.staleTunnelEffect(noA, "a", setOf("a")) as StateOps.RemovalEffect.Reconnect).server.id)
+        val empty = s.copy(servers = emptyList(), selectedServerId = "")
+        assertTrue(StateOps.staleTunnelEffect(empty, "a", setOf("a")) is StateOps.RemovalEffect.Disconnect)
+    }
+
+    @Test
     fun localImportGivesClashingIdsAFreshOne() {
         val s = state(node("local_1", "local", host = "old.example.com"))
         val preview = ImportPreview(
