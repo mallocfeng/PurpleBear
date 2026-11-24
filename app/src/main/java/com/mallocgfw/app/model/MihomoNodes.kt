@@ -535,6 +535,20 @@ object MihomoNodes {
                 map["type"] = "trojan"
                 map["password"] = user.optString("password")
             }
+            "socks" -> {
+                map["type"] = "socks5"
+                user.optString("user").takeIf { it.isNotBlank() }?.let { map["username"] = it }
+                user.optString("pass").takeIf { it.isNotBlank() }?.let { map["password"] = it }
+            }
+            "http" -> {
+                map["type"] = "http"
+                map.remove("udp")
+                user.optString("user").takeIf { it.isNotBlank() }?.let { map["username"] = it }
+                user.optString("pass").takeIf { it.isNotBlank() }?.let { map["password"] = it }
+                settings.optJSONObject("headers")?.takeIf { it.length() > 0 }?.let { headers ->
+                    map["headers"] = linkedMapOf<String, Any?>().apply { headers.keys().forEach { put(it, headers.optString(it)) } }
+                }
+            }
             "shadowsocks" -> {
                 map["type"] = "ss"
                 map["cipher"] = user.optString("method").ifBlank { settings.optString("method") }
@@ -545,12 +559,19 @@ object MihomoNodes {
         }
         val stream = outbound.optJSONObject("streamSettings") ?: JSONObject()
         val security = stream.optString("security").lowercase(Locale.ROOT)
-        val sniKey = if (protocol == "trojan") "sni" else "servername"
+        val sniKey = if (protocol == "trojan" || protocol == "http") "sni" else "servername"
         when (security) {
             "tls", "xtls" -> {
                 val tls = stream.optJSONObject("tlsSettings") ?: stream.optJSONObject("xtlsSettings") ?: JSONObject()
                 if (protocol != "trojan") map["tls"] = true
-                tls.optString("serverName").takeIf { it.isNotBlank() }?.let { map[sniKey] = it }
+                tls.optString("serverName").takeIf { it.isNotBlank() }?.let { sni ->
+                    // Mihomo's socks5 has no SNI key: it always sends the server.
+                    if (protocol == "socks") {
+                        if (!sni.equals(map["server"]?.toString(), ignoreCase = true)) return null
+                    } else {
+                        map[sniKey] = sni
+                    }
+                }
                 // Mihomo checks one name; several can't be carried over.
                 val certNames = tls.optString("verifyPeerCertByName").split(",").map(String::trim).filter(String::isNotBlank)
                 if (certNames.size > 1) return null
@@ -576,7 +597,10 @@ object MihomoNodes {
             "", "none" -> if (protocol == "trojan") return null
             else -> return null
         }
-        when (val network = stream.optString("network").lowercase(Locale.ROOT).ifBlank { "tcp" }) {
+        val network = stream.optString("network").lowercase(Locale.ROOT).ifBlank { "tcp" }
+        // SOCKS5 and HTTP proxies run over plain TCP (or TLS) only.
+        if (protocol in setOf("socks", "http") && network !in setOf("tcp", "raw")) return null
+        when (network) {
             "tcp", "raw" -> {
                 val header = (stream.optJSONObject("tcpSettings") ?: stream.optJSONObject("rawSettings"))
                     ?.optJSONObject("header")?.optString("type").orEmpty()

@@ -421,6 +421,58 @@ $provider
     }
 
     @Test
+    fun socksAndHttpLinksCanBeFronts() {
+        val config = useGroupConfig("            type: http\n            url: https://sub.example.com/list.txt")
+        listOf(
+            "socks://dTpw@sk.example.com:1080#SubNode" to "socks5",
+            "http://u:p@hp.example.com:8080#SubNode" to "http",
+        ).forEach { (link, type) ->
+            val nodes = ImportParser.buildFilePreview("u.yaml", config, listOf(ImportParser.ProviderContent(link + "\n", name = "sub"))).nodes
+            assertFalse(type, nodes.single { it.name == "SubNode" }.hiddenUnsupported)
+            val vps = nodes.single { it.name == "MyVPS" }
+            assertFalse(type, vps.hiddenUnsupported)
+            val front = frontOf(vps)!!
+            assertEquals(type, type, front.getString("type"))
+            assertEquals(type, "u", front.getString("username"))
+            assertEquals(type, "p", front.getString("password"))
+        }
+    }
+
+    @Test
+    fun aFrontChainIsNeverCutShort() {
+        fun chain(fronts: Int): ServerNode {
+            val lines = (1..fronts).joinToString("\n") { i ->
+                val next = if (i < fronts) ", dialer-proxy: F${i + 1}" else ""
+                "  - {name: F$i, type: trojan, server: f$i.example.com, port: 443, password: pw, sni: f$i.example.com$next}"
+            }
+            val yaml = "proxies:\n  - {name: Main, type: ss, server: m.example.com, port: 8388, cipher: aes-128-gcm, password: pw, dialer-proxy: F1}\n$lines\n"
+            return ImportParser.buildFilePreview("c.yaml", yaml).nodes.single { it.name == "Main" }
+        }
+        fun hops(node: ServerNode): Int {
+            var hop = NodeCompatibility.mihomoProxy(node)!!.config.optJSONObject(MihomoProxy.DIALER_KEY)
+            var count = 0
+            while (hop != null) { count++; hop = hop.optJSONObject(MihomoProxy.DIALER_KEY) }
+            return count
+        }
+        listOf(5, 8).forEach { n ->
+            val node = chain(n)
+            assertFalse("$n", node.hiddenUnsupported)
+            assertEquals(n, hops(node))
+        }
+        val tooLong = chain(9)
+        assertTrue(tooLong.hiddenUnsupported)
+        assertTrue(NodeCompatibility.coreIncompatibility(tooLong)!!.contains("前置链"))
+        // A loop never runs either.
+        val loop = """
+            proxies:
+              - {name: Main, type: ss, server: m.example.com, port: 8388, cipher: aes-128-gcm, password: pw, dialer-proxy: A}
+              - {name: A, type: trojan, server: a.example.com, port: 443, password: pw, sni: a.example.com, dialer-proxy: B}
+              - {name: B, type: trojan, server: b.example.com, port: 443, password: pw, sni: b.example.com, dialer-proxy: A}
+        """.trimIndent()
+        assertTrue(ImportParser.buildFilePreview("l.yaml", loop).nodes.single { it.name == "Main" }.hiddenUnsupported)
+    }
+
+    @Test
     fun providersSharingALinkAreAllKept() {
         val list = "proxies:\n" +
             "  - {name: HK1, type: trojan, server: hk.example.com, port: 443, password: pw, sni: hk.example.com}\n" +

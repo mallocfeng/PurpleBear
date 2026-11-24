@@ -48,7 +48,9 @@ PurpleBear 各版本的完整更新记录。安装包见 [GitHub Releases](https
 
 22. Clash 配置中带 `tls: true` 的 SOCKS5 节点按 SOCKS5 over TLS 导入，并保留 `skip-cert-verify`、证书指纹和 `name-cert-verify`，不再被当成明文 SOCKS5（要求 TLS 的服务端会拒绝连接）；HTTP 节点读取 `sni` 指定的 SNI。用 `exclude-type` 排除的协议（提供者或前置代理组上设置的都算）不会再被选作前置节点：以前无法转换的节点会绕过协议过滤被选中，让主节点被标为不支持，即使后面还有可用的前置节点。
 
-23. 更新版本号到 `0.9.2.2`，`versionCode` 更新为 `322`。
+23. 订阅链接（URI / Base64）里的 SOCKS5 和 HTTP 节点也能作为前置节点，和 Clash 配置里的同一节点一样，不再让引用它的主节点被标为不支持；Clash HTTP 节点的 `headers` 也会导入。链式代理最多支持 8 个前置节点（以前超过 4 个时会被静默截断，实际连接跳过后面的前置）；更长的链或循环引用会把主节点标为不支持并说明原因。
+
+24. 更新版本号到 `0.9.2.2`，`versionCode` 更新为 `322`。
 
 ## 0.9.2.1
 

@@ -1113,6 +1113,8 @@ object ImportParser {
     /** Key of a provider node's Clash map that couldn't be converted faithfully; its value is the reason. */
     private const val UNCONVERTIBLE_FRONT = "pb-unconvertible"
 
+    private const val MAX_FRONT_HOPS = 8
+
     /** A group member whose name is nowhere in the config. */
     private val NO_MEMBER: Map<*, *> = mapOf("type" to MihomoNodes.MISSING_FRONT_TYPE)
 
@@ -1170,7 +1172,11 @@ object ImportParser {
      * unsupported too ([markMissingFront]); DIRECT means no front.
      */
     private fun attachDialer(config: JSONObject, frontName: String, depth: Int): Boolean {
-        if (depth > 3) return true
+        // Mihomo has no limit, but a chain this long is almost surely a loop
+        // (A → B → A); never run it cut short, which would skip hops.
+        if (depth >= MAX_FRONT_HOPS) {
+            return markMissingFront(config, frontName, reason = "前置链超过 $MAX_FRONT_HOPS 个前置节点（或循环引用），无法使用")
+        }
         if (frontName.equals("DIRECT", ignoreCase = true)) return true
         var target = clashContext.get()?.get(frontName) ?: return markMissingFront(config, frontName)
         var hops = 0
@@ -1506,6 +1512,9 @@ object ImportParser {
             password = item.string("password").orEmpty(),
             security = if (tls || item.boolLike("tls") == true) LocalNodeSecurity.TLS else LocalNodeSecurity.NONE,
             serverName = item.string("sni").orEmpty().ifBlank { item.string("servername").orEmpty() },
+            httpHeaders = item.map("headers").orEmpty().entries
+                .mapNotNull { (key, value) -> value?.toString()?.takeIf { key != null && it.isNotBlank() }?.let { "$key: $it" } }
+                .joinToString("\n"),
             allowInsecure = item.boolLike("skip-cert-verify") == true,
             pinnedPeerCertSha256 = item.clashCertificatePin(),
             verifyPeerCertByName = item.string("name-cert-verify").orEmpty(),
