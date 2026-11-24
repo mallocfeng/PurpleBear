@@ -527,16 +527,23 @@ class XrayVpnService : VpnService() {
         streamingRouting: StreamingRoutingSetup,
         ruleRouting: RuleRoutingSetup,
     ) {
+        // One reading of the nodes for this start: the routed-outbound checks,
+        // the core (chain check, pin fetch, sidecar listeners, config) and the
+        // tunnel record all use it, with the nodes as it has them.
         val servers = AppController.load(applicationContext).servers
-        val extras = perAppRouting.outbounds + streamingRouting.outbounds + ruleRouting.outbounds
+        val byId = servers.associateBy { it.id }
+        val runServer = byId[server.id] ?: server
+        val extras = (perAppRouting.outbounds + streamingRouting.outbounds + ruleRouting.outbounds)
+            .map { it.copy(node = byId[it.node.id] ?: it.node) }
         val rules = perAppRouting.routingRules + streamingRouting.routingRules + ruleRouting.routingRules
         suspend fun start(routingRules: List<com.mallocgfw.app.model.XrayRoutingRule>, outbounds: List<com.mallocgfw.app.model.XrayNamedOutbound>) =
             XrayCoreManager.startVpn(
                 context = applicationContext,
-                server = server,
+                server = runServer,
                 tunFd = tunFd,
                 routingRules = routingRules,
                 additionalOutbounds = outbounds,
+                servers = servers,
                 vpnMtu = vpnMtu,
                 magicDnsUpstream = activeMagicDnsUpstream,
                 dnsServer = dnsServer,
@@ -549,12 +556,13 @@ class XrayVpnService : VpnService() {
         // would fail the whole config, the main node with it.
         val broken = RoutedOutboundFallback.brokenChains(extras, servers)
         val brokenOutbounds = broken.map { it.first }
+        val brokenTags = brokenOutbounds.map { it.tag }.toSet()
         val notices = mutableListOf<String>()
         if (broken.isNotEmpty()) {
             val kinds = buildList {
-                if (perAppRouting.outbounds.any { it in brokenOutbounds }) add(tr("分应用", "per-app", "по приложениям"))
-                if (streamingRouting.outbounds.any { it in brokenOutbounds }) add(tr("流媒体", "media", "медиа"))
-                if (ruleRouting.outbounds.any { it in brokenOutbounds }) add(tr("规则", "rule", "правила"))
+                if (perAppRouting.outbounds.any { it.tag in brokenTags }) add(tr("分应用", "per-app", "по приложениям"))
+                if (streamingRouting.outbounds.any { it.tag in brokenTags }) add(tr("流媒体", "media", "медиа"))
+                if (ruleRouting.outbounds.any { it.tag in brokenTags }) add(tr("规则", "rule", "правила"))
             }.joinToString("、")
             val reasons = broken.map { (outbound, problem) -> "${outbound.node.name}：$problem" }.distinct().joinToString("；")
             notices += tr(
@@ -570,7 +578,7 @@ class XrayVpnService : VpnService() {
         val first = start(usableRules, usable)
         if (first.isFailure) {
             val error = first.exceptionOrNull() ?: IllegalStateException()
-            val dropped = RoutedOutboundFallback.sidecarOutbounds(server, usable, servers)
+            val dropped = RoutedOutboundFallback.sidecarOutbounds(runServer, usable, servers)
             if (dropped.isEmpty()) throw error
             val names = dropped.map { it.node.name }.distinct().joinToString("、")
             AppLogManager.append(applicationContext, TAG, "分流节点启动失败（${error.message.orEmpty()}），去掉 $names 后重试", error)
@@ -589,7 +597,7 @@ class XrayVpnService : VpnService() {
         StreamingMediaManager.markInstalled(
             streamingRouting.copy(appliedRoutes = streamingRouting.appliedRoutes.filterValues { it !in droppedIds }),
         )
-        TunnelNodes.record(server, installed, servers)
+        TunnelNodes.record(runServer, installed, servers)
     }
 
     private suspend fun disconnect(

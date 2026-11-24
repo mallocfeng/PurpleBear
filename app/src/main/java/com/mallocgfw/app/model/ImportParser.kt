@@ -822,14 +822,41 @@ object ImportParser {
                     ?.takeIf { it.isNotBlank() }?.let { dialers += node to it }
             }
             // sockopt.dialerProxy between two proxy outbounds → the app's pre-proxy chain.
+            val protocolByTag = (0 until outbounds.length()).mapNotNull { outbounds.optJSONObject(it) }
+                .filter { it.optString("tag").isNotBlank() }
+                .associate { it.optString("tag") to it.optString("protocol").lowercase(Locale.ROOT) }
+            val unreachable = mutableSetOf<String>()
             dialers.forEach { (node, tag) ->
-                val front = byTag[tag] ?: return@forEach
+                val front = byTag[tag] ?: run {
+                    // A plain freedom outbound is going direct, as without a front.
+                    val protocol = protocolByTag[tag]
+                    if (protocol == "freedom") return@forEach
+                    val reason = when (protocol) {
+                        null -> "找不到前置出站 $tag"
+                        in setOf("blackhole", "dns", "loopback") -> "前置出站 $tag 是 $protocol 出站，不能作为前置"
+                        else -> "前置出站 $tag 无法导入"
+                    }
+                    // Never run without the front it asks for.
+                    refusedChains.get().add("${node.name}：$reason")
+                    unreachable += node.id
+                    return@forEach
+                }
                 val index = nodes.indexOfFirst { it.id == node.id }
                 // Itself as its front (A → A) is a loop like any other: checked below.
                 if (index >= 0) nodes[index] = nodes[index].copy(preProxyNodeId = front.id)
             }
             // A chain that loops (A → B → A) or is too long can't run as the
             // config says: those nodes are left out, with the reason.
+            nodes.removeAll { it.id in unreachable }
+            // A node whose front was left out would dial directly: left out too, and so on up the chain.
+            while (true) {
+                val ids = nodes.map { it.id }.toSet()
+                val orphans = nodes.filter { it.preProxyNodeId.isNotBlank() && it.preProxyNodeId !in ids }
+                if (orphans.isEmpty()) break
+                orphans.forEach { refusedChains.get().add("${it.name}：前置节点未导入") }
+                val orphanIds = orphans.map { it.id }.toSet()
+                nodes.removeAll { it.id in orphanIds }
+            }
             val chained = nodes.toList()
             return nodes.filter { node ->
                 val problem = XrayConfigFactory.preProxyChain(node, chained).problem ?: return@filter true

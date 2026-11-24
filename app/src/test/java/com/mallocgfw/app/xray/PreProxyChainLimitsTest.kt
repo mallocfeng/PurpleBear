@@ -127,6 +127,54 @@ class PreProxyChainLimitsTest {
     }
 
     @Test
+    fun anImportedFrontThatIsntThereLeavesTheNodeOut() {
+        val config = JSONObject().put(
+            "outbounds",
+            JSONArray()
+                .put(xrayOutbound("A", "missing-front"))
+                .put(xrayOutbound("B", "block"))
+                .put(xrayOutbound("C", "A")) // its front is left out: so is it
+                .put(xrayOutbound("D", "direct")) // plain freedom: direct, as without a front
+                .put(xrayOutbound("E", null))
+                .put(JSONObject().put("tag", "block").put("protocol", "blackhole"))
+                .put(JSONObject().put("tag", "direct").put("protocol", "freedom")),
+        )
+        val preview = ImportParser.buildFilePreview("x.json", config.toString())
+        assertEquals(setOf("D", "E"), preview.nodes.map { it.name }.toSet())
+        assertTrue(preview.summary, preview.summary.contains("missing-front"))
+        assertTrue(preview.summary, preview.summary.contains("3 个节点的前置代理链"))
+        assertEquals("", preview.nodes.single { it.name == "D" }.preProxyNodeId)
+        // Only a missing front: nothing to import, and the message says why.
+        val only = JSONObject().put("outbounds", JSONArray().put(xrayOutbound("A", "missing-front")))
+        try {
+            ImportParser.buildFilePreview("y.json", only.toString())
+            fail("imported a node without its front")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message.orEmpty(), e.message.orEmpty().contains("missing-front"))
+        }
+    }
+
+    private fun xrayOutbound(tag: String, dialer: String?) = JSONObject()
+        .put("tag", tag)
+        .put("protocol", "vless")
+        .put(
+            "settings",
+            JSONObject().put(
+                "vnext",
+                JSONArray().put(
+                    JSONObject().put("address", "${tag.lowercase()}.example.com").put("port", 443)
+                        .put("users", JSONArray().put(JSONObject().put("id", uuid).put("encryption", "none"))),
+                ),
+            ),
+        )
+        .put(
+            "streamSettings",
+            JSONObject().put("network", "tcp").put("security", "tls")
+                .put("tlsSettings", JSONObject().put("serverName", "${tag.lowercase()}.example.com"))
+                .apply { dialer?.let { put("sockopt", JSONObject().put("dialerProxy", it)) } },
+        )
+
+    @Test
     fun anImportedLoopIsLeftOutWithTheReason() {
         fun outbound(tag: String, dialer: String?) = JSONObject()
             .put("tag", tag)

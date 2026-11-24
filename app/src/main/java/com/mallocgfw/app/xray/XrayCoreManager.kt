@@ -83,14 +83,14 @@ object XrayCoreManager {
             message = tr("正在启动 Xray 内核…", "Starting the Xray core…", "Запуск ядра Xray…"),
             tunFd = null,
             additionalOutbounds = additionalOutbounds,
-        ) { localProxy ->
-            val state = AppController.load(context)
+        ) { run, localProxy ->
+            val state = run.state
             val settings = state.settings
             XrayConfigFactory.build(
-                node = server,
-                availableServers = state.servers,
+                node = run.server,
+                availableServers = run.servers,
                 routingRules = routingRules,
-                additionalOutbounds = additionalOutbounds,
+                additionalOutbounds = run.outbounds,
                 logLevel = settings.logLevel.wireValue,
                 errorLogPath = AppLogManager.xrayErrorLogFile(context).absolutePath,
                 accessLogPath = AppLogManager.xrayAccessLogFile(context).absolutePath,
@@ -114,6 +114,8 @@ object XrayCoreManager {
         dnsServer: String? = null,
         dnsOverProxy: Boolean = false,
         encryptedDns: com.mallocgfw.app.model.DnsInput.EncryptedDns? = null,
+        /** The node list the caller decided with (routed outbounds, chain checks); read here if null. */
+        servers: List<ServerNode>? = null,
     ): Result<XrayCoreSnapshot> {
         return startWithConfig(
             context = context,
@@ -121,14 +123,15 @@ object XrayCoreManager {
             message = tr("正在建立系统 VPN 隧道…", "Setting up the system VPN tunnel…", "Создание системного VPN-туннеля…"),
             tunFd = tunFd,
             additionalOutbounds = additionalOutbounds,
-        ) { localProxy ->
-            val state = AppController.load(context)
+            servers = servers,
+        ) { run, localProxy ->
+            val state = run.state
             val settings = state.settings
             XrayConfigFactory.buildVpn(
-                node = server,
-                availableServers = state.servers,
+                node = run.server,
+                availableServers = run.servers,
                 routingRules = routingRules,
-                additionalOutbounds = additionalOutbounds,
+                additionalOutbounds = run.outbounds,
                 logLevel = settings.logLevel.wireValue,
                 errorLogPath = AppLogManager.xrayErrorLogFile(context).absolutePath,
                 accessLogPath = AppLogManager.xrayAccessLogFile(context).absolutePath,
@@ -156,11 +159,10 @@ object XrayCoreManager {
      * behind it can be reached through it).
      */
     private fun pinCandidates(
-        context: Context,
         server: ServerNode,
         additionalOutbounds: List<XrayNamedOutbound>,
+        servers: List<ServerNode>,
     ): List<PinCandidate> {
-        val servers = runCatching { AppController.load(context).servers }.getOrDefault(emptyList())
         return (listOf(server) + additionalOutbounds.map { it.node }).flatMap { root ->
             // A chain that can't run is refused before anything is dialed:
             // its partial fronts never get a handshake of their own.
@@ -181,9 +183,9 @@ object XrayCoreManager {
         localProxy: LocalProxyAllocation,
         datDir: String,
         sidecarNodes: List<ServerNode>,
+        servers: List<ServerNode>,
     ) {
         if (chained.isEmpty() || !InsecureTlsPinner.hasPending(context, chained.map { it.node })) return
-        val servers = runCatching { AppController.load(context).servers }.getOrDefault(emptyList())
         for (candidate in chained) {
             val front = candidate.front ?: continue
             if (!InsecureTlsPinner.hasPending(context, listOf(candidate.node))) continue
@@ -209,39 +211,61 @@ object XrayCoreManager {
         }
     }
 
+    /**
+     * What one start runs on, read once: the saved state, and the node and
+     * routed outbounds as that state has them. The chain check, pin fetch,
+     * sidecar listeners and the Xray config all use it, so a pre-proxy changed
+     * mid-start can't leave a sidecar listener bound to one front while the
+     * Xray outbound expects another.
+     */
+    class StartRun(
+        val state: com.mallocgfw.app.model.PersistedAppState,
+        val servers: List<ServerNode>,
+        val server: ServerNode,
+        val outbounds: List<XrayNamedOutbound>,
+    )
+
     private suspend fun startWithConfig(
         context: Context,
         server: ServerNode,
         message: String,
         tunFd: Int?,
         additionalOutbounds: List<XrayNamedOutbound> = emptyList(),
-        buildConfigJson: (LocalProxyAllocation) -> String,
+        servers: List<ServerNode>? = null,
+        buildConfigJson: (StartRun, LocalProxyAllocation) -> String,
     ): Result<XrayCoreSnapshot> {
         return withContext(Dispatchers.IO) {
             try {
                 XrayNativeLoader.ensureLoaded()
+                val state = AppController.load(context)
+                val nodes = servers ?: state.servers
+                val byId = nodes.associateBy { it.id }
+                val run = StartRun(
+                    state = state,
+                    servers = nodes,
+                    server = byId[server.id] ?: server,
+                    outbounds = additionalOutbounds.map { it.copy(node = byId[it.node.id] ?: it.node) },
+                )
                 // A chain that can't run fails here, before any handshake (pin
                 // fetch included) reaches one of its nodes.
-                val chainServers = runCatching { AppController.load(context).servers }.getOrDefault(emptyList())
-                (listOf(server) + additionalOutbounds.map { it.node }).forEach { root ->
-                    XrayConfigFactory.preProxyChain(root, chainServers).problem?.let { error("${root.name}：$it") }
+                (listOf(run.server) + run.outbounds.map { it.node }).forEach { root ->
+                    XrayConfigFactory.preProxyChain(root, run.servers).problem?.let { error("${root.name}：$it") }
                 }
                 // Nodes that skip certificate verification need a pinned
                 // certificate before the config is built (Xray rejects allowInsecure).
-                val pinCandidates = pinCandidates(context, server, additionalOutbounds)
+                val pinCandidates = pinCandidates(run.server, run.outbounds, run.servers)
                 InsecureTlsPinner.refresh(context, pinCandidates.filter { it.front == null }.map { it.node })
                 val prepared = prepareRuntime(context)
                 val datDir = prepared.runtimeDir.absolutePath
                 // Fresh random ports and credentials for every run; see LocalProxyRuntime.
                 val localProxy = LocalProxyRuntime.allocate(::freePortsFromCore)
-                val servers = runCatching { AppController.load(context).servers }.getOrDefault(emptyList())
                 // Includes pre-proxy fronts run by the sidecar; same list and order
                 // as the config builder uses, so listener slots match.
-                val sidecarNodes = XrayConfigFactory.sidecarNodesFor(server, additionalOutbounds.map { it.node }, servers)
+                val sidecarNodes = XrayConfigFactory.sidecarNodesFor(run.server, run.outbounds.map { it.node }, run.servers)
                 // Started before the pin fetch: a chain may go through a sidecar front.
                 SsrRuntimeManager.startIfNeeded(context, sidecarNodes, localProxy).getOrElse { throw it }
-                fetchChainedPins(context, pinCandidates.filter { it.front != null }, localProxy, datDir, sidecarNodes)
-                val configJson = buildConfigJson(localProxy)
+                fetchChainedPins(context, pinCandidates.filter { it.front != null }, localProxy, datDir, sidecarNodes, run.servers)
+                val configJson = buildConfigJson(run, localProxy)
                 _snapshot.value = _snapshot.value.copy(
                     status = XrayCoreStatus.Starting,
                     message = message,
