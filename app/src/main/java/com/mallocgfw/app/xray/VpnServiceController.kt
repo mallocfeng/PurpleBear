@@ -55,7 +55,9 @@ object VpnServiceController {
 
     fun lockdownDisconnectMessage(): String = XrayVpnService.lockdownDisconnectMessage()
 
+    /** Measures the speed again in the running VPN; does nothing when it isn't running. */
+    @Suppress("UNUSED_PARAMETER")
     fun refreshSpeedMeasurement(context: Context) {
-        context.startService(XrayVpnService.refreshSpeedIntent(context))
+        XrayVpnService.requestSpeedRefresh()
     }
 }

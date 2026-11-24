@@ -298,10 +298,13 @@ class XrayVpnService : VpnService() {
                 }
             }
 
+            // Sent by older versions only (see refreshSpeedMeasurement): measure
+            // if connected, and don't keep a service alive that has no tunnel.
             ACTION_REFRESH_SPEED -> {
-                AppLogManager.append(applicationContext, TAG, "收到速度刷新请求")
                 if (VpnRuntimeStore.snapshot.value.status == ConnectionStatus.Connected) {
                     startSpeedMeasurement()
+                } else if (vpnInterface == null) {
+                    stopSelfResult(startId)
                 }
             }
         }
@@ -1580,9 +1583,19 @@ class XrayVpnService : VpnService() {
             }
         }
 
-        fun refreshSpeedIntent(context: Context): Intent {
-            return Intent(context, XrayVpnService::class.java).apply {
-                action = ACTION_REFRESH_SPEED
+        /**
+         * Measures the speed again in the running service. A direct call, not a
+         * start request: a start would take a new start id, and a disconnect's
+         * stopSelfResult(startId) would then refuse to stop the service, leaving
+         * it (and the UI, which waits for onDestroy) on "Disconnecting".
+         */
+        fun requestSpeedRefresh() {
+            val service = runningInstance ?: return
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                if (runningInstance === service && VpnRuntimeStore.snapshot.value.status == ConnectionStatus.Connected) {
+                    AppLogManager.append(service.applicationContext, TAG, "收到速度刷新请求")
+                    service.startSpeedMeasurement()
+                }
             }
         }
     }

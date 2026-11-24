@@ -84,6 +84,53 @@ object ImportParser {
         }
     }
 
+    /** A Clash document with a `proxies:` list ([overriddenContent] can apply an override to it). */
+    private fun isClashProxyDocument(content: String): Boolean =
+        runCatching { (Yaml().load<Any?>(content) as? Map<*, *>)?.get("proxies") is List<*> }.getOrDefault(false)
+
+    /**
+     * [override] fields for nodes from a URI or Base64 provider (Mihomo allows
+     * both). Each node becomes its Clash map (a sidecar node's own map, or one
+     * made from its Xray outbound), gets the fields, and is built again like a
+     * YAML provider's proxy, so a dialer-proxy front is attached (or the node
+     * listed as unsupported) the same way. A node that can't be converted keeps
+     * its settings, unless the override asks for a front: running it without
+     * one could fail to connect, so it is skipped with the reason.
+     */
+    private fun applyProviderOverride(
+        nodes: List<ServerNode>,
+        override: ProviderOverride,
+        groupId: String,
+        sourceLabel: String,
+    ): List<ServerNode> = nodes.mapIndexedNotNull { index, node ->
+        val rebuilt = clashMapOf(node)?.let { parseClashProxyMap(override.apply(it), groupId, sourceLabel, index + 1) }
+        when {
+            rebuilt != null -> rebuilt
+            "dialer-proxy" in override.fields -> {
+                skipType("${node.protocol}（无法加上提供者指定的前置代理）")
+                null
+            }
+            else -> node
+        }
+    }
+
+    private fun clashMapOf(node: ServerNode): Map<String, Any?>? {
+        node.mihomoProxyJson.takeIf { it.isNotBlank() }?.let { raw ->
+            val json = runCatching { JSONObject(raw) }.getOrNull() ?: return null
+            @Suppress("UNCHECKED_CAST")
+            return (jsonToKotlin(json) as Map<String, Any?>).toMutableMap().apply { this["name"] = node.name }
+        }
+        val outbound = runCatching { ManualNodeFactory.inspectOutbound(node) }.getOrNull() ?: return null
+        return MihomoNodes.fromXrayOutbound(outbound, node.name)
+    }
+
+    private fun jsonToKotlin(value: Any?): Any? = when (value) {
+        is JSONObject -> linkedMapOf<String, Any?>().apply { value.keys().forEach { key -> put(key, jsonToKotlin(value.opt(key))) } }
+        is JSONArray -> List(value.length()) { jsonToKotlin(value.opt(it)) }
+        JSONObject.NULL -> null
+        else -> value
+    }
+
     /** Provider content with [override] fields applied to its Clash proxies (re-emitted as JSON). */
     private fun overriddenContent(content: String, override: ProviderOverride): String {
         if (override.fields.isEmpty()) return content
@@ -305,7 +352,17 @@ object ImportParser {
         val parsedNodes = (listOf(ProviderContent(content)) + providerContents).flatMap { part ->
             runCatching {
                 withClashContext(mainProxies, mainGroups) {
-                    parseSubscriptionNodes(overriddenContent(part.content, part.override), groupId = sourceId, sourceLabel = groupName)
+                    if (part.override.fields.isNotEmpty() && !isClashProxyDocument(part.content)) {
+                        // URI / Base64 providers: the same override as a YAML provider gets.
+                        applyProviderOverride(
+                            parseSubscriptionNodes(part.content, groupId = sourceId, sourceLabel = groupName),
+                            part.override,
+                            groupId = sourceId,
+                            sourceLabel = groupName,
+                        )
+                    } else {
+                        parseSubscriptionNodes(overriddenContent(part.content, part.override), groupId = sourceId, sourceLabel = groupName)
+                    }
                 }
             }
                 .getOrElse { if (part.content === content) throw it else emptyList() }
@@ -694,6 +751,24 @@ object ImportParser {
         groupId: String,
         sourceLabel: String,
     ): List<ServerNode> {
+        val previousProviders = clashProviders.get()
+        val inlineProviders = (root["proxy-providers"] as? Map<*, *>).orEmpty().mapNotNull { (name, provider) ->
+            val payload = (provider as? Map<*, *>)?.get("payload") as? List<*> ?: return@mapNotNull null
+            name.toString() to payload.filterIsInstance<Map<*, *>>().map { ProviderOverride.from(provider).apply(it) }
+        }.toMap()
+        clashProviders.set(previousProviders.orEmpty() + inlineProviders)
+        try {
+            return parseYamlRootWithProviders(root, groupId, sourceLabel)
+        } finally {
+            clashProviders.set(previousProviders)
+        }
+    }
+
+    private fun parseYamlRootWithProviders(
+        root: Map<*, *>,
+        groupId: String,
+        sourceLabel: String,
+    ): List<ServerNode> {
         val nodes = mutableListOf<ServerNode>()
         (root["servers"] as? List<*>)?.let { nodes += parseSip008List(it, groupId, sourceLabel) }
         val topProxies = (root["proxies"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>()
@@ -915,6 +990,11 @@ object ImportParser {
     /** Clash proxies and proxy-groups of the config being parsed, for dialer-proxy lookups. */
     private val clashContext = ThreadLocal<Map<String, Map<*, *>>?>()
 
+    private val PROXY_GROUP_TYPES = setOf("select", "url-test", "fallback", "load-balance", "relay")
+
+    /** Inline proxy-provider payloads by provider name, for groups that pick from them (`use:`). */
+    private val clashProviders = ThreadLocal<Map<String, List<Map<*, *>>>?>()
+
     /**
      * Runs [block] with [proxies] and [groups] added to the names dialer-proxy
      * can point at. Adds to an outer context instead of replacing it: a
@@ -945,8 +1025,11 @@ object ImportParser {
      * node is listed as unsupported (MihomoNodes.sidecarRejection) instead of
      * running without the front it needs.
      */
-    private fun markMissingFront(config: JSONObject, name: String): Boolean {
-        config.put(MihomoProxy.DIALER_KEY, JSONObject().put("type", MihomoNodes.MISSING_FRONT_TYPE).put("name", name))
+    private fun markMissingFront(config: JSONObject, name: String, reason: String? = null): Boolean {
+        config.put(
+            MihomoProxy.DIALER_KEY,
+            JSONObject().put("type", MihomoNodes.MISSING_FRONT_TYPE).put("name", name).apply { reason?.let { put("reason", it) } },
+        )
         return true
     }
 
@@ -956,8 +1039,9 @@ object ImportParser {
      * - a front the sidecar refuses (MihomoNodes.sidecarRejection) is kept as
      *   it is, which lists the node as unsupported with the reason, now and
      *   on every later load;
-     * - a front that isn't a proxy at all returns false and the caller drops
-     *   the node.
+     * - a front that can't be determined (a group whose members come from an
+     *   unreadable provider, a type the sidecar doesn't know) is marked the
+     *   same way, with the reason, so the main node stays in the list.
      * A name that isn't in the config (main config or provider) marks the node
      * unsupported too ([markMissingFront]); DIRECT means no front.
      */
@@ -966,12 +1050,30 @@ object ImportParser {
         if (frontName.equals("DIRECT", ignoreCase = true)) return true
         var target = clashContext.get()?.get(frontName) ?: return markMissingFront(config, frontName)
         var hops = 0
-        while (target["proxies"] is List<*> && target["server"] == null && hops++ < 4) {
-            val first = (target["proxies"] as List<*>).firstOrNull()?.toString() ?: return markMissingFront(config, frontName)
-            if (first.equals("DIRECT", ignoreCase = true)) return true
-            target = clashContext.get()?.get(first) ?: return markMissingFront(config, first)
+        // A proxy group: its first member, from `proxies:` or else from the
+        // providers it uses (`use:`), like the group's default selection.
+        while (target["server"] == null && (target["proxies"] is List<*> || target["use"] is List<*>) && hops++ < 4) {
+            val groupName = target.string("name") ?: frontName
+            val first = (target["proxies"] as? List<*>)?.firstOrNull()?.toString()
+            if (first != null) {
+                if (first.equals("DIRECT", ignoreCase = true)) return true
+                target = clashContext.get()?.get(first) ?: return markMissingFront(config, first)
+                continue
+            }
+            val used = (target["use"] as? List<*>).orEmpty().map { it.toString() }
+            target = used.firstNotNullOfOrNull { clashProviders.get()?.get(it)?.firstOrNull() }
+                ?: return markMissingFront(
+                    config,
+                    groupName,
+                    reason = "前置代理组 $groupName 的节点来自订阅提供者（${used.joinToString("、")}），无法确定前置节点",
+                )
         }
-        val raw = MihomoNodes.sanitizeUnchecked(target, "front") ?: return false
+        if (target["server"] == null && target.string("type")?.lowercase(Locale.ROOT) in PROXY_GROUP_TYPES) {
+            val groupName = target.string("name") ?: frontName
+            return markMissingFront(config, groupName, reason = "无法从前置代理组 $groupName 确定前置节点")
+        }
+        val raw = MihomoNodes.sanitizeUnchecked(target, "front")
+            ?: return markMissingFront(config, frontName, reason = "前置节点 $frontName 的类型无法识别")
         val front = MihomoNodes.fitForSidecar(JSONObject(raw.toString())) ?: run {
             config.put(MihomoProxy.DIALER_KEY, raw)
             return true

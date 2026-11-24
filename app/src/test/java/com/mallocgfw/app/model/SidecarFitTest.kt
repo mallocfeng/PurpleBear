@@ -142,6 +142,68 @@ class SidecarFitTest {
         assertFalse(plain.hiddenUnsupported)
     }
 
+    private val ssUri = "ss://YWVzLTEyOC1nY206cHc@sub.example.com:8388#Sub\n"
+
+    @Test
+    fun uriAndBase64ProvidersGetTheOverrideFrontToo() {
+        val override = ImportParser.ProviderOverride(fields = mapOf("dialer-proxy" to "Front"))
+        val b64 = java.util.Base64.getEncoder().encodeToString(ssUri.toByteArray())
+        listOf("URI" to ssUri, "Base64" to b64).forEach { (label, content) ->
+            val sub = ImportParser.buildFilePreview("c.yaml", mainWithFront, listOf(ImportParser.ProviderContent(content, override = override)))
+                .nodes.single { it.name == "Sub" }
+            assertFalse(label, sub.hiddenUnsupported)
+            assertEquals(label, "front.example.com", frontOf(sub)?.getString("server"))
+        }
+        // Other override fields keep the node (rebuilt from its Clash map).
+        val other = ImportParser.ProviderOverride(fields = mapOf("udp" to true))
+        val kept = ImportParser.buildFilePreview("c.yaml", mainWithFront, listOf(ImportParser.ProviderContent(ssUri, override = other)))
+            .nodes.single { it.name == "Sub" }
+        assertFalse(kept.hiddenUnsupported)
+        assertEquals("sub.example.com", kept.address)
+    }
+
+    private fun useGroupConfig(provider: String) = """
+        proxies:
+          - {name: MyVPS, type: ss, server: vps.example.com, port: 8388, cipher: aes-128-gcm, password: pw, dialer-proxy: Relay}
+        proxy-groups:
+          - {name: Relay, type: select, use: [sub]}
+        proxy-providers:
+          sub:
+$provider
+    """.trimIndent()
+
+    @Test
+    fun aFrontGroupThatUsesAProviderTakesItsFirstNode() {
+        val config = useGroupConfig(
+            "            type: inline\n            payload:\n              - {name: SubNode, type: trojan, server: subnode.example.com, port: 443, password: pw, sni: subnode.example.com}",
+        )
+        val nodes = ImportParser.buildFilePreview("u.yaml", config).nodes
+        val vps = nodes.single { it.name == "MyVPS" }
+        assertFalse(vps.hiddenUnsupported)
+        assertEquals("subnode.example.com", frontOf(vps)!!.getString("server"))
+        assertTrue(nodes.any { it.name == "SubNode" })
+    }
+
+    @Test
+    fun aFrontGroupWithoutReadableNodesKeepsTheMainNodeWithAReason() {
+        // The provider is downloaded separately; its nodes aren't known while
+        // the main config is parsed.
+        val config = useGroupConfig("            type: http\n            url: https://sub.example.com/list.yaml")
+        val vps = ImportParser.buildFilePreview("u.yaml", config).nodes.single { it.name == "MyVPS" }
+        assertTrue(vps.hiddenUnsupported)
+        assertTrue(NodeCompatibility.coreIncompatibility(vps)!!.contains("订阅提供者"))
+        // A group that lists nothing (include-all and the like): kept too.
+        val includeAll = """
+            proxies:
+              - {name: MyVPS, type: ss, server: vps.example.com, port: 8388, cipher: aes-128-gcm, password: pw, dialer-proxy: Relay}
+            proxy-groups:
+              - {name: Relay, type: select, include-all: true}
+        """.trimIndent()
+        val kept = ImportParser.buildFilePreview("i.yaml", includeAll).nodes.single { it.name == "MyVPS" }
+        assertTrue(kept.hiddenUnsupported)
+        assertTrue(NodeCompatibility.coreIncompatibility(kept)!!.contains("Relay"))
+    }
+
     @Test
     fun onlyRoutedNodesThatAddToTheSidecarAreDroppedOnRetry() {
         val uuid = "0b4f8e8c-4c8a-4c34-9d36-0d2a5c1d7a11"

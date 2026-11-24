@@ -78,7 +78,7 @@ object MihomoNodes {
      */
     fun sidecarRejection(config: JSONObject): String? {
         val own = when (config.optString("type")) {
-            MISSING_FRONT_TYPE -> "找不到 ${config.optString("name")}"
+            MISSING_FRONT_TYPE -> config.optString("reason").ifBlank { "找不到 ${config.optString("name")}" }
             "snell" -> {
                 val version = snellVersion(config)
                 if (version == null || version !in 1..5) "兼容内核不支持 Snell 版本 ${config.opt("version")}" else null
