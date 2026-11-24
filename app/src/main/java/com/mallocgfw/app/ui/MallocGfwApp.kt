@@ -1004,16 +1004,16 @@ fun MallocGfwApp(
     }
 
     fun removeServerNode(nodeId: String) {
-        val next = StateOps.removeNode(currentPersistedState(), nodeId) ?: return
-        applyPersistedState(next)
+        AppController.removeNodes { StateOps.removeNode(it, nodeId) } ?: return
+        warmServerSections()
         if (screen == AppScreen.NodeDetail) {
             goToMain(MainTab.Servers)
         }
     }
 
     fun removeSubscriptionGroup(groupId: String) {
-        val next = StateOps.removeSubscriptionGroup(currentPersistedState(), groupId) ?: return
-        applyPersistedState(next)
+        AppController.removeNodes { StateOps.removeSubscriptionGroup(it, groupId) } ?: return
+        warmServerSections()
         expandedGroups.remove(groupId)
         if (screen == AppScreen.Subscriptions || screen == AppScreen.NodeDetail) {
             goToMain(MainTab.Servers)
@@ -1249,7 +1249,7 @@ fun MallocGfwApp(
         dnsMode: AppDnsMode,
         customDnsValue: String,
     ) {
-        val normalizedCustomValue = customDnsValue.trim()
+        val normalizedCustomValue = com.mallocgfw.app.model.DnsInput.normalize(customDnsValue)
         if (AppController.edit { StateOps.setDns(it, dnsMode, normalizedCustomValue) } == null) {
             settingsMessage = "请输入自定义 DNS 地址。"
             return

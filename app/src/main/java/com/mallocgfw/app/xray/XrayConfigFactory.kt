@@ -196,7 +196,10 @@ object XrayConfigFactory {
                     if (dnsServer != null && dnsOverProxy) {
                         put(remoteDnsOutbound(dnsServer, if (tailscale?.routeAllTraffic == true) "tailscale" else "proxy"))
                     }
-                    encryptedDns?.let { encryptedDnsOutbounds(it).forEach(::put) }
+                    encryptedDns?.let { dns ->
+                        val magicDnsHosts = tailscale?.takeIf { magicDnsUpstream != null && it.resolvesMagicDns }
+                        encryptedDnsOutbounds(dns, magicDnsHosts).forEach(::put)
+                    }
                     put(JSONObject().apply {
                         put("tag", "direct")
                         put("protocol", "freedom")
@@ -595,15 +598,50 @@ object XrayConfigFactory {
         }
 
     /**
-     * The dns outbound answers A/AAAA from the DNS module (other query types
-     * get an empty answer: they can't be sent encrypted). DoT adds a TLS
-     * outbound that dials through a loopback back into routing.
+     * The dns outbound answers A/AAAA from the DNS module. Xray's DNS module
+     * only resolves addresses, so other query types (HTTPS, SVCB, TXT, SRV, MX …)
+     * can't go through it:
+     * - DoT: they are forwarded as they are, as DNS-over-TCP through the same
+     *   TLS outbound the module uses, so every type gets a real, encrypted answer;
+     * - DoH / DoQ: Xray has no transport to forward a raw query over them, so
+     *   they get an empty answer (the settings screen says so).
+     * DoT adds a TLS outbound that dials through a loopback back into routing.
      */
-    private fun encryptedDnsOutbounds(dns: DnsInput.EncryptedDns): List<JSONObject> = buildList {
+    fun encryptedDnsForwardsAllQueryTypes(dns: DnsInput.EncryptedDns): Boolean =
+        dns.kind == DnsInput.EncryptedDns.Kind.DoT
+
+    private fun encryptedDnsOutbounds(dns: DnsInput.EncryptedDns, magicDns: TailscaleRouting?): List<JSONObject> = buildList {
         add(
             JSONObject().apply {
                 put("tag", ENCRYPTED_DNS_OUTBOUND_TAG)
                 put("protocol", "dns")
+                if (encryptedDnsForwardsAllQueryTypes(dns)) {
+                    put(
+                        "settings",
+                        JSONObject().apply {
+                            put("network", "tcp")
+                            put("address", dns.host)
+                            put("port", dns.port)
+                            put(
+                                "rules",
+                                JSONArray().apply {
+                                    // A / AAAA: the DNS module (caching, MagicDNS hosts).
+                                    put(JSONObject().put("action", "hijack").put("qType", "1,28"))
+                                    // Tailnet names stay inside: no other records, no leak to the server.
+                                    magicDns?.let { config ->
+                                        put(
+                                            JSONObject()
+                                                .put("action", "return")
+                                                .put("domain", JSONArray().put("domain:${config.magicDnsSuffix}")),
+                                        )
+                                    }
+                                    put(JSONObject().put("action", "direct"))
+                                },
+                            )
+                        },
+                    )
+                    put("streamSettings", JSONObject().put("sockopt", JSONObject().put("dialerProxy", DOT_OUTBOUND_TAG)))
+                }
             },
         )
         if (dns.kind == DnsInput.EncryptedDns.Kind.DoT) {

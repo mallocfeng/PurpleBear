@@ -270,6 +270,40 @@ class XrayConfigFactoryTest {
         assertTrue(List(dohOutbounds.length()) { dohOutbounds.getJSONObject(it).optString("tag") }.none { it == "dot-out" })
     }
 
+    @Test
+    fun dotForwardsEveryOtherQueryTypeOverTls() {
+        val dot = com.mallocgfw.app.model.DnsInput.encryptedOf("tls://dns.google")!!
+        assertTrue(XrayConfigFactory.encryptedDnsForwardsAllQueryTypes(dot))
+        val config = JSONObject(
+            XrayConfigFactory.buildVpn(node = testNode(), dnsServer = XrayConfigFactory.ENCRYPTED_DNS_ADDRESS, encryptedDns = dot),
+        )
+        val outbounds = config.getJSONArray("outbounds")
+        val out = List(outbounds.length()) { outbounds.getJSONObject(it) }.single { it.optString("tag") == "encrypted-dns-out" }
+        val settings = out.getJSONObject("settings")
+        assertEquals("tcp", settings.getString("network"))
+        assertEquals("dns.google", settings.getString("address"))
+        assertEquals(853, settings.getInt("port"))
+        // Forwarded queries take the same TLS outbound as the DNS module's.
+        assertEquals("dot-out", out.getJSONObject("streamSettings").getJSONObject("sockopt").getString("dialerProxy"))
+        val rules = settings.getJSONArray("rules")
+        val actions = List(rules.length()) { rules.getJSONObject(it) }
+        // A / AAAA first to the DNS module, everything else (HTTPS, TXT, SRV …) forwarded.
+        assertEquals("hijack", actions.first().getString("action"))
+        assertEquals("1,28", actions.first().getString("qType"))
+        assertEquals("direct", actions.last().getString("action"))
+        assertTrue(!actions.last().has("qType") && !actions.last().has("domain"))
+
+        // DoH / DoQ can't forward raw queries: the outbound keeps Xray's defaults.
+        listOf("https://dns.alidns.com/dns-query", "quic://dns.adguard-dns.com").forEach { raw ->
+            val dns = com.mallocgfw.app.model.DnsInput.encryptedOf(raw)!!
+            assertTrue(raw, !XrayConfigFactory.encryptedDnsForwardsAllQueryTypes(dns))
+            val c = JSONObject(XrayConfigFactory.buildVpn(node = testNode(), dnsServer = XrayConfigFactory.ENCRYPTED_DNS_ADDRESS, encryptedDns = dns))
+            val obs = c.getJSONArray("outbounds")
+            val o = List(obs.length()) { obs.getJSONObject(it) }.single { it.optString("tag") == "encrypted-dns-out" }
+            assertTrue(raw, !o.has("settings"))
+        }
+    }
+
     private fun JSONArray.indexOfFirstRule(predicate: (JSONObject) -> Boolean): Int {
         for (index in 0 until length()) {
             if (predicate(getJSONObject(index))) return index

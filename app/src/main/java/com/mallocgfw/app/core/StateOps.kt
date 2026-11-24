@@ -57,7 +57,10 @@ object StateOps {
      * latency, pre-proxy, fallback). Parsed ids carry the line number, so
      * without this a reordered subscription would drop every app route, media
      * route and chain pointing at its nodes. A node matches by share link, else
-     * by protocol, address, port and name. Ids of removed nodes are not reused.
+     * by protocol, address, port and name. Ids of removed nodes are not reused:
+     * a new node gets a freshly generated id, since its parsed id (group, line,
+     * link prefix) can equal that of a node removed earlier, which rule
+     * sources (NODE: targets) or other settings may still name.
      */
     fun refreshSubscriptionNodes(
         servers: List<ServerNode>,
@@ -79,7 +82,7 @@ object StateOps {
         }
         refreshedNodes.forEach { node ->
             if (node.id in finalIds) return@forEach
-            val id = ImportParser.uniqueNodeId(node.id, takenIds)
+            val id = ImportParser.freshNodeId(node.id, takenIds)
             takenIds += id
             finalIds[node.id] = id
         }
@@ -137,8 +140,9 @@ object StateOps {
             servers.addAll(refreshed)
         } else {
             // Local ids restart at 1 on every import, so a new node can carry the
-            // id of an unrelated existing one. Settle each node's final id first
-            // (existing match, or a free id), then remap links inside the batch.
+            // id of an unrelated existing or deleted one. Settle each node's final
+            // id first (existing match, or a never-used id), then remap links
+            // inside the batch.
             val takenIds = servers.map { it.id }.toMutableSet()
             val existingIndexes = mutableMapOf<String, Int>()
             val finalIds = mutableMapOf<String, String>()
@@ -148,7 +152,7 @@ object StateOps {
                     existingIndexes[normalizedNode.id] = existingNodeIndex
                     finalIds[normalizedNode.id] = servers[existingNodeIndex].id
                 } else {
-                    val id = ImportParser.uniqueNodeId(normalizedNode.id, takenIds)
+                    val id = ImportParser.freshNodeId(normalizedNode.id, takenIds)
                     takenIds += id
                     finalIds[normalizedNode.id] = id
                 }
@@ -219,7 +223,7 @@ object StateOps {
         recentImports.add(0, recentTitle)
         while (recentImports.size > 5) recentImports.removeAt(recentImports.lastIndex)
 
-        val nextState = normalizeStreamingSelections(
+        val nextState = normalizeNodeReferences(
             state.copy(
                 serverGroups = serverGroups,
                 servers = mergedServers,
@@ -269,6 +273,129 @@ object StateOps {
                 server
             }
         }
+    }
+
+    /**
+     * Drops media routes, per-app nodes and the last-connected node when they
+     * point at nodes that no longer exist, and moves a dangling selection to a
+     * usable node.
+     */
+    fun normalizeNodeReferences(state: PersistedAppState): PersistedAppState {
+        val next = normalizeProtectedAppRoutes(normalizeStreamingSelections(state))
+        val ids = next.servers.map { it.id }.toSet()
+        val selected = next.selectedServerId.takeIf { it.isBlank() || it in ids } ?: fallbackSelection(next.servers)
+        val lastConnected = next.settings.lastConnectedServerId.takeIf { it.isBlank() || it in ids }.orEmpty()
+        if (selected == next.selectedServerId && lastConnected == next.settings.lastConnectedServerId) return next
+        return next.copy(
+            selectedServerId = selected,
+            settings = next.settings.copy(lastConnectedServerId = lastConnected),
+        )
+    }
+
+    /** The node to select when the selected one is gone: a visible, runnable one when there is one. */
+    fun fallbackSelection(servers: List<ServerNode>): String =
+        (
+            servers.firstOrNull { !it.hiddenUnsupported && ManualNodeFactory.isRunnable(it) }
+                ?: servers.firstOrNull { !it.hiddenUnsupported }
+                ?: servers.firstOrNull()
+            )?.id.orEmpty()
+
+    /** What the running VPN must do after nodes were removed from the state. */
+    sealed interface RemovalEffect {
+        data object None : RemovalEffect
+        data class Reconnect(val server: ServerNode, val message: String) : RemovalEffect
+        data class Disconnect(val message: String) : RemovalEffect
+    }
+
+    /**
+     * [before] → [after] removed nodes while the VPN ran on [connectedServerId]
+     * (null: not connected). The tunnel keeps using the nodes it was built
+     * with, so a removed node it uses would keep carrying traffic:
+     * - the connected node itself: reconnect to the new selection, or
+     *   disconnect when no usable node is left;
+     * - a node in its pre-proxy chain, a per-app node or a media route node:
+     *   reconnect on the same node, which drops it.
+     * Removing a node the tunnel doesn't use changes nothing.
+     */
+    fun removalEffect(before: PersistedAppState, after: PersistedAppState, connectedServerId: String?): RemovalEffect {
+        val activeId = connectedServerId?.takeIf { it.isNotBlank() } ?: return RemovalEffect.None
+        val remaining = after.servers.map { it.id }.toSet()
+        val removed = before.servers.map { it.id }.filterNot { it in remaining }.toSet()
+        if (removed.isEmpty()) return RemovalEffect.None
+        val activeNode = before.servers.firstOrNull { it.id == activeId }
+        if (activeId in removed) {
+            fun usable(node: ServerNode) = !node.hiddenUnsupported && ManualNodeFactory.isRunnable(node)
+            val target = after.servers.firstOrNull { it.id == after.selectedServerId && usable(it) }
+                ?: after.servers.firstOrNull(::usable)
+            val name = activeNode?.name ?: activeId
+            return if (target != null) {
+                RemovalEffect.Reconnect(
+                    target,
+                    tr(
+                        "当前连接的节点 $name 已删除，正在切换到 ${target.name}…",
+                        "The connected node $name was deleted; switching to ${target.name}…",
+                        "Подключённый узел $name удалён, переключение на ${target.name}…",
+                    ),
+                )
+            } else {
+                RemovalEffect.Disconnect(
+                    tr(
+                        "当前连接的节点 $name 已删除，没有可用节点，VPN 已断开。",
+                        "The connected node $name was deleted and no usable node is left, so the VPN was disconnected.",
+                        "Подключённый узел $name удалён, других узлов нет, VPN отключён.",
+                    ),
+                )
+            }
+        }
+        val active = after.servers.firstOrNull { it.id == activeId } ?: return RemovalEffect.None
+        if (nodesInRunningConfig(before, activeId).none { it in removed }) return RemovalEffect.None
+        return RemovalEffect.Reconnect(
+            active,
+            tr(
+                "已删除的节点仍在当前连接的分流中使用，正在重连以移除…",
+                "A deleted node was still used by the running VPN's routes; reconnecting to drop it…",
+                "Удалённый узел ещё использовался в маршрутах VPN, переподключение…",
+            ),
+        )
+    }
+
+    /** Nodes the tunnel running on [activeId] was built with (see XrayVpnService.connect). */
+    private fun nodesInRunningConfig(state: PersistedAppState, activeId: String): Set<String> {
+        val roots = mutableListOf(activeId)
+        if (state.proxyMode == ProxyMode.PerApp) {
+            state.protectedApps.filter { it.enabled && it.serverId.isNotBlank() }.mapTo(roots) { it.serverId }
+        }
+        if (!state.settings.globalProxyEnabled && state.settings.streamingRoutingEnabled) {
+            state.settings.streamingSelections
+                .map { it.serverId }
+                .filter { it.isNotBlank() && it != StreamingMediaManager.DIRECT }
+                .let(roots::addAll)
+        }
+        // Each of them brings its pre-proxy chain.
+        val byId = state.servers.associateBy { it.id }
+        val result = mutableSetOf<String>()
+        val queue = ArrayDeque(roots)
+        while (queue.isNotEmpty()) {
+            val id = queue.removeFirst()
+            if (!result.add(id)) continue
+            byId[id]?.preProxyNodeId?.takeIf { it.isNotBlank() }?.let(queue::addLast)
+        }
+        return result
+    }
+
+    /**
+     * Clears per-app nodes that no longer exist (the app then uses the selected
+     * node, as it already did at run time). Left in place, a later node that
+     * happens to get the same id would silently take over the app's traffic.
+     */
+    fun normalizeProtectedAppRoutes(state: PersistedAppState): PersistedAppState {
+        val validServerIds = state.servers.map { it.id }.toSet()
+        if (state.protectedApps.none { it.serverId.isNotBlank() && it.serverId !in validServerIds }) return state
+        return state.copy(
+            protectedApps = state.protectedApps.map { app ->
+                if (app.serverId.isNotBlank() && app.serverId !in validServerIds) app.copy(serverId = "") else app
+            },
+        )
     }
 
     /** Drops streaming routes that point at nodes that no longer exist. */
@@ -359,11 +486,11 @@ object StateOps {
     fun removeNode(state: PersistedAppState, nodeId: String): PersistedAppState? {
         val node = state.servers.firstOrNull { it.id == nodeId } ?: return null
         val servers = normalizeNodeLinks(state.servers.filterNot { it.id == nodeId })
-        return normalizeStreamingSelections(
+        return normalizeNodeReferences(
             state.copy(
                 servers = servers,
                 recentImports = state.recentImports.filterNot { it.contains(node.name) },
-                selectedServerId = if (state.selectedServerId == nodeId) servers.firstOrNull()?.id.orEmpty() else state.selectedServerId,
+                selectedServerId = if (state.selectedServerId == nodeId) fallbackSelection(servers) else state.selectedServerId,
             ),
         )
     }
@@ -374,13 +501,13 @@ object StateOps {
         if (group.type != ServerGroupType.Subscription) return null
         val removedNodeIds = state.servers.filter { it.groupId == groupId }.map { it.id }.toSet()
         val servers = normalizeNodeLinks(state.servers.filterNot { it.groupId == groupId })
-        return normalizeStreamingSelections(
+        return normalizeNodeReferences(
             state.copy(
                 serverGroups = state.serverGroups.filterNot { it.id == groupId },
                 subscriptions = state.subscriptions.filterNot { it.id == groupId },
                 servers = servers,
                 recentImports = state.recentImports.filterNot { it.contains(group.name) },
-                selectedServerId = if (state.selectedServerId in removedNodeIds) servers.firstOrNull()?.id.orEmpty() else state.selectedServerId,
+                selectedServerId = if (state.selectedServerId in removedNodeIds) fallbackSelection(servers) else state.selectedServerId,
             ),
         )
     }
@@ -489,7 +616,8 @@ object StateOps {
 
     /** Null when [mode] is custom and [customValue] is blank. */
     fun setDns(state: PersistedAppState, mode: AppDnsMode, customValue: String): PersistedAppState? {
-        val custom = customValue.trim()
+        // Saved in ASCII: "8。8。8。8" typed with a Chinese input method is kept as "8.8.8.8".
+        val custom = com.mallocgfw.app.model.DnsInput.normalize(customValue)
         if (mode == AppDnsMode.Custom && custom.isBlank()) return null
         return state.copy(settings = state.settings.copy(dnsMode = mode, customDnsValue = if (mode == AppDnsMode.Custom) custom else state.settings.customDnsValue))
     }

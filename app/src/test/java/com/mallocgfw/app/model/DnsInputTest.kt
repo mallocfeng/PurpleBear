@@ -9,7 +9,7 @@ import org.junit.Test
 class DnsInputTest {
     @Test
     fun acceptsIpsWithOptionalPort() {
-        listOf("8.8.8.8", " 223.5.5.5 ", "1.1.1.1:53", "2001:4860:4860::8888", "[2001:4860:4860::8888]:53", "::1", "[::1]")
+        listOf("8.8.8.8", " 223.5.5.5 ", "1.1.1.1:53", "2001:4860:4860::8888", "[2001:4860:4860::8888]:53", "192.168.1.1", "[fd00::1]")
             .forEach { assertTrue(it, DnsInput.isValid(it)) }
     }
 
@@ -36,10 +36,39 @@ class DnsInputTest {
         // Values saved by older versions with another port keep their IP.
         assertEquals("8.8.8.8", DnsInput.hostOf("8.8.8.8:5353"))
         // Every accepted address parses as a real IP literal.
-        listOf("2001:4860:4860::8888", "::1", "1:2:3:4:5:6:7::", "::", "1:2:3:4:5:6:7:8").forEach {
+        listOf("2001:4860:4860::8888", "1:2:3:4:5:6:7::", "1:2:3:4:5:6:7:8").forEach {
             assertTrue(it, DnsInput.isValid(it))
             java.net.InetAddress.getByName(it)
         }
+    }
+
+    @Test
+    fun addressesAndroidRefusesAreRejected() {
+        // VpnService.Builder.addDnsServer throws for loopback and unspecified addresses.
+        listOf("127.0.0.1", "127.1.2.3", "127.0.0.1:53", "0.0.0.0", "::1", "[::1]", "[::1]:53", "::", "[::]", "::ffff:7f00:1", "::ffff:0:0")
+            .forEach {
+                assertFalse(it, DnsInput.isValid(it))
+                assertTrue(it, DnsInput.isRefusedByAndroid(it))
+                // A value saved by an older version falls back to the system DNS.
+                assertNull(it, DnsInput.hostOf(it))
+            }
+    }
+
+    @Test
+    fun fullWidthPunctuationFromChineseInputMethodsBecomesAscii() {
+        assertEquals("127.0.0.1", DnsInput.toHalfWidth("127。0。0。1"))
+        assertEquals("tls://dns.google", DnsInput.toHalfWidth("tls：／／dns．google"))
+        assertEquals("8.8.8.8", DnsInput.normalize("\u3000８。８。８。８ "))
+        assertEquals("abc", DnsInput.toHalfWidth("abc"))
+        assertEquals("223.5.5.5", DnsInput.hostOf("223。5。5。5"))
+        assertTrue(DnsInput.isValid("223。5。5。5"))
+        assertTrue(DnsInput.isRefusedByAndroid("127。0。0。1"))
+        assertEquals("dns.google", DnsInput.encryptedOf("tls：//dns。google")!!.host)
+    }
+
+    @Test
+    fun onlyRealIpsCountAsRefused() {
+        listOf("8.8.8.8", "dns.google", "tls://127.0.0.1", "8.8.8", "").forEach { assertFalse(it, DnsInput.isRefusedByAndroid(it)) }
     }
 
     @Test

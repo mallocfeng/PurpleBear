@@ -171,7 +171,7 @@ internal fun DnsSettingsDialog(
         note = uiText("连接中保存会自动重连 VPN 生效。", "Saving while connected reconnects the VPN to apply it.", "При сохранении во время подключения VPN переподключится."),
         canSave = canSave,
         onDismiss = onDismiss,
-        onSave = { onConfirm(mode, if (mode == AppDnsMode.Custom) custom.trim() else custom) },
+        onSave = { onConfirm(mode, if (mode == AppDnsMode.Custom) DnsInput.normalize(custom) else custom) },
     ) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     ChoiceOptionCard(
@@ -206,7 +206,8 @@ internal fun DnsSettingsDialog(
                     Spacer(modifier = Modifier.height(14.dp))
                     OutlinedTextField(
                         value = custom,
-                        onValueChange = { custom = it },
+                        // A Chinese input method types 。 and ： for . and :; show and keep ASCII.
+                        onValueChange = { custom = DnsInput.toHalfWidth(it) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         textStyle = compactInputTextStyle(),
@@ -230,20 +231,30 @@ internal fun DnsSettingsDialog(
                     val encrypted = DnsInput.encryptedOf(custom)
                     Text(
                         text = when {
+                            custom.isNotBlank() && DnsInput.isRefusedByAndroid(custom) -> uiText(
+                                "本机回环（127.x、::1）和未指定地址（0.0.0.0、::）不能用作 VPN 的 DNS，Android 会拒绝。请填写真实的 DNS 服务器地址。",
+                                "Loopback (127.x, ::1) and unspecified (0.0.0.0, ::) addresses can't be the VPN's DNS: Android refuses them. Enter a real DNS server.",
+                                "Адреса loopback (127.x, ::1) и неуказанные (0.0.0.0, ::) нельзя использовать как DNS для VPN: Android их отклоняет. Укажите настоящий DNS-сервер.",
+                            )
                             custom.isNotBlank() && !customValid -> uiText(
                                 "请填 IP 地址（端口固定 53），或加密 DNS 地址：https://…（DoH）、tls://…（DoT）、quic://…（DoQ）。",
                                 "Enter an IP (port 53), or an encrypted DNS address: https://… (DoH), tls://… (DoT), quic://… (DoQ).",
                                 "Введите IP (порт 53) или адрес зашифрованного DNS: https://… (DoH), tls://… (DoT), quic://… (DoQ).",
                             )
                             encrypted?.kind == DnsInput.EncryptedDns.Kind.DoQ -> uiText(
-                                "加密 DNS（DoQ）：查询加密发送，DoQ 始终直连服务器，不经代理。",
-                                "Encrypted DNS (DoQ): queries are encrypted; DoQ always connects directly, not through the proxy.",
-                                "Зашифрованный DNS (DoQ): запросы шифруются; DoQ всегда подключается напрямую, без прокси.",
+                                "加密 DNS（DoQ）：查询加密发送，DoQ 始终直连服务器，不经代理。" + ADDRESS_ONLY_DNS_NOTE_ZH,
+                                "Encrypted DNS (DoQ): queries are encrypted; DoQ always connects directly, not through the proxy." + ADDRESS_ONLY_DNS_NOTE_EN,
+                                "Зашифрованный DNS (DoQ): запросы шифруются; DoQ всегда подключается напрямую, без прокси." + ADDRESS_ONLY_DNS_NOTE_RU,
+                            )
+                            encrypted?.kind == DnsInput.EncryptedDns.Kind.DoH -> uiText(
+                                "加密 DNS（DoH）：查询加密发送，按分流规则直连或经代理连接服务器。" + ADDRESS_ONLY_DNS_NOTE_ZH,
+                                "Encrypted DNS (DoH): queries are encrypted and reach the server direct or through the proxy, following your rules." + ADDRESS_ONLY_DNS_NOTE_EN,
+                                "Зашифрованный DNS (DoH): запросы шифруются и идут к серверу напрямую или через прокси по правилам." + ADDRESS_ONLY_DNS_NOTE_RU,
                             )
                             encrypted != null -> uiText(
-                                "加密 DNS（${encrypted.label}）：查询加密发送，按分流规则直连或经代理连接服务器。",
-                                "Encrypted DNS (${encrypted.label}): queries are encrypted and reach the server direct or through the proxy, following your rules.",
-                                "Зашифрованный DNS (${encrypted.label}): запросы шифруются и идут к серверу напрямую или через прокси по правилам.",
+                                "加密 DNS（${encrypted.label}）：查询加密发送，按分流规则直连或经代理连接服务器，支持所有记录类型。",
+                                "Encrypted DNS (${encrypted.label}): queries are encrypted and reach the server direct or through the proxy, following your rules. All record types are supported.",
+                                "Зашифрованный DNS (${encrypted.label}): запросы шифруются и идут к серверу напрямую или через прокси по правилам. Поддерживаются все типы записей.",
                             )
                             else -> uiText("也可以直接点下面的常用服务器：", "Or pick a common server:", "Или выберите популярный сервер:")
                         },
@@ -266,6 +277,15 @@ internal fun DnsSettingsDialog(
 
     }
 }
+
+// DoH / DoQ go through Xray's DNS module, which only resolves addresses
+// (see XrayConfigFactory.encryptedDnsForwardsAllQueryTypes).
+private const val ADDRESS_ONLY_DNS_NOTE_ZH =
+    "仅解析 IPv4 / IPv6 地址（A / AAAA）；HTTPS、SVCB、TXT、SRV 等其他记录会得到空结果，依赖它们的应用可能无法正常工作。需要完整支持请改用 DoT（tls://…）。"
+private const val ADDRESS_ONLY_DNS_NOTE_EN =
+    " Only IPv4 / IPv6 addresses (A / AAAA) are resolved; HTTPS, SVCB, TXT, SRV and other records get an empty answer, so apps that rely on them may not work. Use DoT (tls://…) for full support."
+private const val ADDRESS_ONLY_DNS_NOTE_RU =
+    " Разрешаются только адреса IPv4 / IPv6 (A / AAAA); на HTTPS, SVCB, TXT, SRV и другие записи приходит пустой ответ, поэтому зависящие от них приложения могут не работать. Для полной поддержки используйте DoT (tls://…)."
 
 /** A scrollable row of DNS servers; tapping one fills the address box. */
 @Composable

@@ -507,8 +507,11 @@ object McpTools {
                 "custom" -> AppDnsMode.Custom
                 else -> throw ToolError("mode must be system, remote or custom.")
             }
-            val custom = args.optStr("custom_value")?.trim().orEmpty()
+            val custom = DnsInput.normalize(args.optStr("custom_value").orEmpty())
             if (mode == AppDnsMode.Custom && custom.isBlank()) throw ToolError("custom_value is required for custom mode.")
+            if (mode == AppDnsMode.Custom && DnsInput.isRefusedByAndroid(custom)) {
+                throw ToolError("custom_value can't be a loopback (127.x, ::1) or unspecified (0.0.0.0, ::) address: Android refuses them as the VPN's DNS.")
+            }
             if (mode == AppDnsMode.Custom && !DnsInput.isValid(custom)) {
                 throw ToolError("custom_value must be a plain IP such as 223.5.5.5 (port 53 only) or an encrypted DNS URL: https://host/path (DoH), tls://host[:port] (DoT) or quic://host[:port] (DoQ).")
             }
@@ -769,23 +772,30 @@ object McpTools {
                 "and the countries each is mainly used in (us, japan, hongkong, taiwan, singapore, uk, global). " +
                 "Only services with a chosen node get their own route; the rest follow the normal rules. " +
                 "direct: true means the service skips the proxy (node_id \"direct\"). " +
-                "applied: false means its rules couldn't be downloaded when the VPN connected, so it isn't in effect yet " +
-                "(retried once after connecting; reconnecting also retries).",
+                "routed is the saved choice; applied says whether the running VPN actually routes the service that way. " +
+                "applied: false with routed: true means it isn't in effect: the VPN is off, media routing is off, global mode is on, " +
+                "the route was changed without reconnecting, or its rules couldn't be downloaded (rules_missing: true; " +
+                "retried once after connecting, reconnecting also retries). active_node_id is the route in effect now, if any.",
             schema("region" to str("Only services of this country.", StreamingRegion.entries.map { it.name.lowercase() })),
         ) { args ->
             val region = args.optStr("region")?.let { r -> StreamingRegion.entries.firstOrNull { it.name.equals(r, ignoreCase = true) } ?: throw ToolError("Unknown region $r.") }
             ready(tr("查看流媒体服务", "List media services", "Медиасервисы")) {
                 val s = state()
                 val arr = JSONArray()
+                val applied = StreamingMediaManager.appliedRoutes.value
+                val missingRules = StreamingMediaManager.unappliedServices.value
                 StreamingMediaManager.services(region).forEach { service ->
                     val nodeId = s.settings.streamingSelections.firstOrNull { it.serviceId == service.id }?.serverId
+                    val activeId = applied[service.id]
                     arr.put(
                         JSONObject().put("service_id", service.id).put("name", service.name)
                             .put("suggested_region", service.suggestedRegion)
                             .put("regions", JSONArray(service.regions.map { it.name.lowercase() }))
                             .put("routed", !nodeId.isNullOrBlank())
                             .put("direct", nodeId == StreamingMediaManager.DIRECT)
-                            .put("applied", !nodeId.isNullOrBlank() && service.id !in StreamingMediaManager.unappliedServices.value)
+                            .put("applied", !nodeId.isNullOrBlank() && activeId == nodeId)
+                            .put("rules_missing", service.id in missingRules)
+                            .put("active_node_id", activeId?.let { if (it == StreamingMediaManager.DIRECT) "direct" else it } ?: JSONObject.NULL)
                             .put("node_id", nodeId?.let { if (it == StreamingMediaManager.DIRECT) "direct" else it } ?: JSONObject.NULL)
                             .put("node_name", nodeId?.let { id -> s.servers.firstOrNull { it.id == id }?.name?.let(Redactor::name) } ?: JSONObject.NULL),
                     )
@@ -934,7 +944,7 @@ object McpTools {
             val id = args.reqStr("node_id")
             val node = state().servers.firstOrNull { it.id == id } ?: throw ToolError("Node $id not found.")
             PreparedCall(tr("删除节点 ${Redactor.name(node.name)}", "Delete node ${Redactor.name(node.name)} ($id)", "Удалить узел ${Redactor.name(node.name)}")) {
-                AppController.update { s -> StateOps.removeNode(s, id) ?: throw ToolError("Node $id not found.") }
+                AppController.removeNodes { s -> StateOps.removeNode(s, id) ?: throw ToolError("Node $id not found.") }
                 ToolResult(JSONObject().put("deleted", id), "Deleted ${Redactor.name(node.name)}.")
             }
         }
@@ -949,7 +959,7 @@ object McpTools {
             if (group.type != ServerGroupType.Subscription) throw ToolError("Only subscription groups can be deleted; delete local nodes one by one.")
             val count = state().servers.count { it.groupId == id }
             PreparedCall(tr("删除订阅组 ${Redactor.name(group.name)} 及其 $count 个节点", "Delete group ${Redactor.name(group.name)} and its $count nodes", "Удалить группу ${Redactor.name(group.name)} и её узлы ($count)")) {
-                AppController.update { s -> StateOps.removeSubscriptionGroup(s, id) ?: throw ToolError("Group $id not found.") }
+                AppController.removeNodes { s -> StateOps.removeSubscriptionGroup(s, id) ?: throw ToolError("Group $id not found.") }
                 ToolResult(JSONObject().put("deleted", id).put("nodes_deleted", count), "Deleted ${Redactor.name(group.name)} ($count nodes).")
             }
         }

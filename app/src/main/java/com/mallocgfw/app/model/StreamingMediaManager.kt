@@ -34,6 +34,8 @@ data class StreamingMediaService(
 data class StreamingRoutingSetup(
     val outbounds: List<XrayNamedOutbound> = emptyList(),
     val routingRules: List<XrayRoutingRule> = emptyList(),
+    /** Media services this setup routes: service id → node id or [StreamingMediaManager.DIRECT]. */
+    val appliedRoutes: Map<String, String> = emptyMap(),
 )
 
 object StreamingMediaManager {
@@ -154,7 +156,29 @@ object StreamingMediaManager {
      */
     val unappliedServices: StateFlow<Set<String>> = _unappliedServices.asStateFlow()
 
+    private val _appliedRoutes = MutableStateFlow<Map<String, String>>(emptyMap())
+
+    /**
+     * Media routes in the running tunnel: service id → node id or [DIRECT].
+     * Empty while disconnected, with media routing off or in global mode. A
+     * saved route that isn't here isn't in effect (rules not downloaded, or not
+     * reconnected since it was chosen).
+     */
+    val appliedRoutes: StateFlow<Map<String, String>> = _appliedRoutes.asStateFlow()
+
+    /** Records the routes of the setup the tunnel now runs with. */
+    fun markInstalled(setup: StreamingRoutingSetup) {
+        _appliedRoutes.value = setup.appliedRoutes
+    }
+
+    /** The tunnel is down: nothing is applied and nothing waits for a retry. */
     fun clearUnapplied() {
+        _unappliedServices.value = emptySet()
+        _appliedRoutes.value = emptyMap()
+    }
+
+    /** No media rules are built (media routing off, global mode): nothing to retry. */
+    fun clearPending() {
         _unappliedServices.value = emptySet()
     }
 
@@ -203,6 +227,7 @@ object StreamingMediaManager {
             val selections = settings.streamingSelections.associateBy { it.serviceId }
             val outbounds = mutableListOf<XrayNamedOutbound>()
             val rules = mutableListOf<XrayRoutingRule>()
+            val applied = linkedMapOf<String, String>()
 
             // Only services with a chosen node (or set to direct) get a rule.
             // The rest follow the normal rules, so their domains in the home
@@ -225,7 +250,7 @@ object StreamingMediaManager {
                         node = node,
                     )
                 }
-                rules += XrayRoutingRule(
+                val rule = XrayRoutingRule(
                     target = if (node == null) RuleTargetPolicy.Direct else RuleTargetPolicy.Proxy,
                     domainSuffixes = compiled.domainSuffixes,
                     fullDomains = compiled.fullDomains,
@@ -235,12 +260,15 @@ object StreamingMediaManager {
                     outboundTag = outboundTag,
                     priority = STREAMING_RULE_PRIORITY,
                 )
+                rules += rule
+                if (rule.hasEntries()) applied[service.id] = node?.id ?: DIRECT
             }
 
             _unappliedServices.value = unapplied
             StreamingRoutingSetup(
                 outbounds = outbounds.distinctBy { it.tag },
                 routingRules = rules.filter { it.hasEntries() },
+                appliedRoutes = applied,
             )
         }
     }

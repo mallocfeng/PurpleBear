@@ -66,6 +66,16 @@ class XrayVpnService : VpnService() {
     private var statsJob: Job? = null
     private var logMaintenanceJob: Job? = null
     private var heartbeatJob: Job? = null
+    @Volatile
+    private var streamingRetryJob: Job? = null
+
+    /**
+     * Bumped (on the main thread) by every connect, switch and disconnect
+     * request, so a delayed task can tell that the user picked another route
+     * since it was scheduled.
+     */
+    @Volatile
+    private var routeGeneration = 0L
     private var lastFallbackTargetServerId: String? = null
     private var lastUnsupportedFallbackNoticeKey: String? = null
     private var failbackPrimaryServerId: String? = null
@@ -179,6 +189,7 @@ class XrayVpnService : VpnService() {
                 destroyMessage = null
                 val serverId = intent.getStringExtra(EXTRA_SERVER_ID).orEmpty()
                 val keepFailover = intent.getBooleanExtra(EXTRA_KEEP_FAILOVER, false)
+                val generation = newRouteGeneration()
                 AppLogManager.append(applicationContext, TAG, "收到连接请求，serverId=$serverId")
                 VpnRuntimeStore.reset(
                     applicationContext,
@@ -208,7 +219,7 @@ class XrayVpnService : VpnService() {
                                 startLogMaintenance()
                                 startHeartbeatMonitor()
                                 watchSystemDns()
-                                retryUnappliedStreamingRules(serverId)
+                                retryUnappliedStreamingRules(serverId, generation)
                                 val notification = buildNotification(tr("VPN 已连接", "VPN connected", "VPN подключён"))
                                 val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                                 manager.notify(NOTIFICATION_ID, notification)
@@ -237,6 +248,7 @@ class XrayVpnService : VpnService() {
 
             ACTION_SWITCH -> {
                 val serverId = intent.getStringExtra(EXTRA_SERVER_ID).orEmpty()
+                newRouteGeneration()
                 AppLogManager.append(applicationContext, TAG, "收到热切换请求，serverId=$serverId")
                 scope.launch {
                     operationMutex.withLock {
@@ -278,6 +290,7 @@ class XrayVpnService : VpnService() {
             ACTION_DISCONNECT -> {
                 publishDisconnectedOnDestroy = true
                 destroyMessage = null
+                newRouteGeneration()
                 AppLogManager.append(applicationContext, TAG, "收到断开请求")
                 VpnRuntimeStore.reset(
                     applicationContext,
@@ -383,6 +396,7 @@ class XrayVpnService : VpnService() {
             )
         }
         val streamingRouting = if (globalProxyEnabled) {
+            StreamingMediaManager.clearPending()
             StreamingRoutingSetup()
         } else {
             StreamingMediaManager.buildRoutingSetup(
@@ -476,6 +490,7 @@ class XrayVpnService : VpnService() {
             encryptedDns = encryptedDnsOf(state.settings),
         )
             .getOrElse { throw it }
+        StreamingMediaManager.markInstalled(streamingRouting)
     }
 
     private suspend fun switchActiveServer(serverId: String) {
@@ -498,6 +513,7 @@ class XrayVpnService : VpnService() {
             )
         }
         val streamingRouting = if (globalProxyEnabled) {
+            StreamingMediaManager.clearPending()
             StreamingRoutingSetup()
         } else {
             StreamingMediaManager.buildRoutingSetup(
@@ -522,6 +538,7 @@ class XrayVpnService : VpnService() {
             dnsOverProxy = state.settings.dnsMode == AppDnsMode.Remote,
             encryptedDns = encryptedDnsOf(state.settings),
         ).getOrElse { throw it }
+        StreamingMediaManager.markInstalled(streamingRouting)
     }
 
     private suspend fun disconnect(
@@ -593,22 +610,54 @@ class XrayVpnService : VpnService() {
      * Media routes whose rules couldn't be downloaded before the tunnel was up
      * (from mainland China GitHub often fails direct) are retried through the
      * proxy once connected; if any now has rules, reconnect once to apply it.
+     *
+     * The download can take a while; if the user switched node, reconnected or
+     * disconnected meanwhile (or a failover moved the tunnel), the reconnect is
+     * skipped so it doesn't override that choice. The downloaded rules stay
+     * cached and apply on the next connect.
      */
-    private fun retryUnappliedStreamingRules(serverId: String) {
+    private fun retryUnappliedStreamingRules(serverId: String, generation: Long) {
+        streamingRetryJob?.cancel()
+        streamingRetryJob = null
         val pending = StreamingMediaManager.unappliedServices.value
         if (pending.isEmpty()) return
         val names = pending.mapNotNull { StreamingMediaManager.serviceById(it)?.name }.joinToString("、")
         AppLogManager.append(applicationContext, TAG, "流媒体分流未生效（规则下载失败）：$names，连接后重试下载")
-        scope.launch {
+        streamingRetryJob = scope.launch {
             delay(STREAMING_RETRY_DELAY_MS)
-            if (VpnRuntimeStore.snapshot.value.status != ConnectionStatus.Connected) return@launch
-            if (StreamingMediaManager.retryUnapplied(applicationContext)) {
-                AppLogManager.append(applicationContext, TAG, "流媒体规则已下载，重连以应用")
-                startService(connectIntent(applicationContext, serverId).putExtra(EXTRA_KEEP_FAILOVER, true))
-            } else {
+            if (!isCurrentRoute(serverId, generation)) return@launch
+            if (!StreamingMediaManager.retryUnapplied(applicationContext)) {
                 AppLogManager.append(applicationContext, TAG, "流媒体规则重试仍失败：$names")
+                return@launch
+            }
+            // Checked and sent under the operation lock (failover switches hold
+            // it) and on the main thread, where onStartCommand bumps the
+            // generation: a request handled before this check fails it, and one
+            // handled after it is queued behind this reconnect.
+            operationMutex.withLock {
+                withContext(Dispatchers.Main) {
+                    if (isCurrentRoute(serverId, generation)) {
+                        AppLogManager.append(applicationContext, TAG, "流媒体规则已下载，重连以应用")
+                        startService(connectIntent(applicationContext, serverId).putExtra(EXTRA_KEEP_FAILOVER, true))
+                    } else {
+                        AppLogManager.append(applicationContext, TAG, "流媒体规则已下载，但线路已变更，不再重连（下次连接时生效）")
+                    }
+                }
             }
         }
+    }
+
+    private fun newRouteGeneration(): Long {
+        streamingRetryJob?.cancel()
+        streamingRetryJob = null
+        return ++routeGeneration
+    }
+
+    private fun isCurrentRoute(serverId: String, generation: Long): Boolean {
+        val runtime = VpnRuntimeStore.snapshot.value
+        return generation == routeGeneration &&
+            runtime.status == ConnectionStatus.Connected &&
+            runtime.activeServerId == serverId
     }
 
     /** System mode, or a custom value that isn't usable (which falls back to the system DNS). */

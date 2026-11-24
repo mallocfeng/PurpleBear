@@ -56,11 +56,36 @@ object DnsInput {
         Preset("AdGuard DoQ", "quic://dns.adguard-dns.com"),
     )
 
+    /**
+     * Full-width characters a Chinese / Japanese input method types in place of
+     * ASCII (。 ． ： ／ ０-９ …) become their ASCII forms, so "127。0。0。1" is
+     * read, shown and saved as "127.0.0.1". Length is unchanged, so it can run
+     * on every keystroke without moving the cursor.
+     */
+    fun toHalfWidth(raw: String): String {
+        if (raw.all { it.code < 0x80 }) return raw
+        return buildString(raw.length) {
+            raw.forEach { c ->
+                append(
+                    when (c) {
+                        '\u3002', '\uFF61' -> '.' // 。 ｡
+                        '\u3000' -> ' '
+                        in '\uFF01'..'\uFF5E' -> (c.code - 0xFEE0).toChar()
+                        else -> c
+                    },
+                )
+            }
+        }
+    }
+
+    /** The value as it is checked and saved: ASCII, without surrounding spaces. */
+    fun normalize(raw: String): String = toHalfWidth(raw).trim()
+
     private val hostLabel = Regex("""^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$""")
 
     /** The encrypted server in [raw], or null when it isn't one. */
     fun encryptedOf(raw: String): EncryptedDns? {
-        val value = raw.trim()
+        val value = normalize(raw)
         val scheme = value.substringBefore("://", "").lowercase()
         val kind = when (scheme) {
             "https" -> EncryptedDns.Kind.DoH
@@ -107,16 +132,34 @@ object DnsInput {
 
     /**
      * The bare IP Android's VPN builder needs, or null for anything that isn't
-     * an IP (an old DoH link, say). A saved value from older versions with
-     * another port still yields its IP: that port was never used anyway.
+     * an IP (an old DoH link, say) or that Android refuses. A saved value from
+     * older versions with another port still yields its IP: that port was never
+     * used anyway. Null makes the VPN fall back to the system DNS.
      */
-    fun hostOf(raw: String): String? = parse(raw.trim())?.first
+    fun hostOf(raw: String): String? = parse(normalize(raw))?.first?.takeIf(::isAcceptedByAndroid)
 
-    /** A plain IP (port 53 only) or an encrypted server URL. */
+    /** A plain IP (port 53 only) that Android accepts, or an encrypted server URL. */
     fun isValid(raw: String): Boolean {
         if (encryptedOf(raw) != null) return true
-        val (_, port) = parse(raw.trim()) ?: return false
-        return port == null || port == DNS_PORT
+        val (host, port) = parse(normalize(raw)) ?: return false
+        return (port == null || port == DNS_PORT) && isAcceptedByAndroid(host)
+    }
+
+    /** A well-formed IP that Android still refuses as a DNS server (loopback / unspecified). */
+    fun isRefusedByAndroid(raw: String): Boolean {
+        val (host, _) = parse(normalize(raw)) ?: return false
+        return !isAcceptedByAndroid(host)
+    }
+
+    /**
+     * VpnService.Builder.addDnsServer throws for loopback (127.0.0.0/8, ::1)
+     * and unspecified (0.0.0.0, ::) addresses, IPv4-mapped forms included, and
+     * the tunnel would fail to start. [host] is an already checked IP literal,
+     * so this does no lookup.
+     */
+    private fun isAcceptedByAndroid(host: String): Boolean {
+        val address = runCatching { java.net.InetAddress.getByName(host) }.getOrNull() ?: return false
+        return !address.isLoopbackAddress && !address.isAnyLocalAddress
     }
 
     /** Host and optional port, or null when the host isn't a valid IP literal. */

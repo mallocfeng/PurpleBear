@@ -96,12 +96,117 @@ class StateOpsTest {
             summary = "",
         )
         val outcome = StateOps.applyImport(s, preview, connectedServerId = "s1")
-        assertEquals(listOf("a", "n1", "n2"), outcome.state.servers.map { it.id })
-        assertEquals("n1", outcome.state.selectedServerId)
-        assertEquals("n1", outcome.reconnectServer?.id)
+        val ids = outcome.state.servers.map { it.id }
+        assertEquals("a", ids[0])
+        // New nodes of a refresh get fresh ids (see refreshCanNotHandARemovedNodesIdToAnotherServer).
+        assertTrue(ids[1], ids[1].startsWith("n1_"))
+        assertTrue(ids[2], ids[2].startsWith("n2_"))
+        assertEquals(ids[1], outcome.state.selectedServerId)
+        assertEquals(ids[1], outcome.reconnectServer?.id)
         assertEquals(2, outcome.state.subscriptions.single().nodes)
         val notConnected = StateOps.applyImport(s, preview, connectedServerId = null)
         assertNull(notConnected.reconnectServer)
+    }
+
+    @Test
+    fun refreshCanNotHandARemovedNodesIdToAnotherServer() {
+        // Refresh 1: A is in the subscription and an app is pinned to it.
+        val a = node("sub1_1_x", "sub1", name = "HK 01", host = "a.example.com")
+        val base = state(node("local", "local"), a, selected = "local")
+        val app = com.mallocgfw.app.model.ProtectedApp("com.example.video", "Video", "Media", enabled = true, serverId = a.id)
+        val s = base.copy(protectedApps = listOf(app))
+        fun preview(vararg nodes: ServerNode) = ImportPreview(
+            input = "https://sub.example.com/x", group = sub, nodes = nodes.toList(),
+            subscription = s.subscriptions.single(), summary = "",
+        )
+        // Refresh 2: A is gone; the app's binding must go with it.
+        val other = node("sub1_1_y", "sub1", name = "JP 01", host = "jp.example.com")
+        val second = StateOps.applyImport(s, preview(other), connectedServerId = null).state
+        assertTrue(second.servers.none { it.id == a.id })
+        assertEquals("", second.protectedApps.single().serverId)
+        // Refresh 3: another server shows up with A's name and position (so A's parsed id).
+        val impostor = node(a.id, "sub1", name = "HK 01", host = "b.example.com")
+        val third = StateOps.applyImport(second, preview(impostor), connectedServerId = null).state
+        val newNode = third.servers.single { it.groupId == "sub1" && it.address == "b.example.com" }
+        assertTrue("got the removed node's id", newNode.id != a.id)
+        // Even a binding that survived from older versions doesn't follow the id.
+        val stale = second.copy(protectedApps = listOf(app))
+        val fromStale = StateOps.applyImport(stale, preview(impostor), connectedServerId = null).state
+        assertEquals("", fromStale.protectedApps.single().serverId)
+    }
+
+    @Test
+    fun removingNodesClearsAppsPinnedToThem() {
+        val apps = listOf(
+            com.mallocgfw.app.model.ProtectedApp("p.one", "One", "x", enabled = true, serverId = "b"),
+            com.mallocgfw.app.model.ProtectedApp("p.two", "Two", "x", enabled = true, serverId = "a"),
+            com.mallocgfw.app.model.ProtectedApp("p.three", "Three", "x", enabled = true, serverId = "s1"),
+        )
+        val s = state(node("a", "local"), node("b", "local"), node("s1", "sub1")).copy(protectedApps = apps)
+        val afterNode = StateOps.removeNode(s, "b")!!
+        assertEquals(listOf("", "a", "s1"), afterNode.protectedApps.map { it.serverId })
+        val afterGroup = StateOps.removeSubscriptionGroup(afterNode, "sub1")!!
+        assertEquals(listOf("", "a", ""), afterGroup.protectedApps.map { it.serverId })
+        assertTrue(afterGroup.protectedApps.all { it.enabled })
+    }
+
+    @Test
+    fun removalClearsTheLastConnectedNodeAndSelectsAUsableOne() {
+        val hidden = node("h", "local").copy(hiddenUnsupported = true)
+        val s = state(hidden, node("a", "local"), node("b", "local"), selected = "a")
+            .let { it.copy(settings = it.settings.copy(lastConnectedServerId = "a")) }
+        val next = StateOps.removeNode(s, "a")!!
+        assertEquals("b", next.selectedServerId)
+        assertEquals("", StateOps.normalizeNodeReferences(next).settings.lastConnectedServerId)
+        val group = state(node("a", "local"), node("s1", "sub1"), selected = "s1")
+            .let { it.copy(settings = it.settings.copy(lastConnectedServerId = "s1")) }
+        val afterGroup = StateOps.normalizeNodeReferences(StateOps.removeSubscriptionGroup(group, "sub1")!!)
+        assertEquals("a", afterGroup.selectedServerId)
+        assertEquals("", afterGroup.settings.lastConnectedServerId)
+    }
+
+    @Test
+    fun removingTheConnectedNodeSwitchesOrDisconnects() {
+        val s = state(node("a", "local"), node("b", "local"), selected = "a")
+        val effect = StateOps.removalEffect(s, StateOps.removeNode(s, "a")!!, connectedServerId = "a")
+        assertEquals("b", (effect as StateOps.RemovalEffect.Reconnect).server.id)
+        // Not connected: nothing to do.
+        assertEquals(StateOps.RemovalEffect.None, StateOps.removalEffect(s, StateOps.removeNode(s, "a")!!, connectedServerId = null))
+        // Last usable node gone: disconnect.
+        val only = state(node("a", "local"))
+        assertTrue(StateOps.removalEffect(only, StateOps.removeNode(only, "a")!!, "a") is StateOps.RemovalEffect.Disconnect)
+        // Whole group with the connected node.
+        val g = state(node("a", "local"), node("s1", "sub1"), selected = "s1")
+        val afterGroup = StateOps.removeSubscriptionGroup(g, "sub1")!!
+        assertEquals("a", (StateOps.removalEffect(g, afterGroup, "s1") as StateOps.RemovalEffect.Reconnect).server.id)
+    }
+
+    @Test
+    fun removingANodeTheTunnelUsesReconnectsOnTheSameNode() {
+        val base = state(node("a", "local").copy(preProxyNodeId = "p"), node("p", "local"), node("m", "local"), node("x", "local"), node("u", "local"), selected = "a")
+        // Pre-proxy of the connected node.
+        val r1 = StateOps.removalEffect(base, StateOps.removeNode(base, "p")!!, "a")
+        assertEquals("a", (r1 as StateOps.RemovalEffect.Reconnect).server.id)
+        // Media route node, only while media routing is on.
+        val media = StateOps.setStreamingRoute(base, "netflix", "m").let { it.copy(settings = it.settings.copy(streamingRoutingEnabled = true)) }
+        assertTrue(StateOps.removalEffect(media, StateOps.removeNode(media, "m")!!, "a") is StateOps.RemovalEffect.Reconnect)
+        val mediaOff = media.copy(settings = media.settings.copy(streamingRoutingEnabled = false))
+        assertEquals(StateOps.RemovalEffect.None, StateOps.removalEffect(mediaOff, StateOps.removeNode(mediaOff, "m")!!, "a"))
+        // Per-app node, only in per-app mode.
+        val apps = base.copy(
+            proxyMode = ProxyMode.PerApp,
+            protectedApps = listOf(com.mallocgfw.app.model.ProtectedApp("p.one", "One", "x", enabled = true, serverId = "x")),
+        )
+        assertTrue(StateOps.removalEffect(apps, StateOps.removeNode(apps, "x")!!, "a") is StateOps.RemovalEffect.Reconnect)
+        // A node nothing uses: the connection stays.
+        assertEquals(StateOps.RemovalEffect.None, StateOps.removalEffect(apps, StateOps.removeNode(apps, "u")!!, "a"))
+    }
+
+    @Test
+    fun customDnsIsSavedInAscii() {
+        val s = state(node("a", "local"))
+        val next = StateOps.setDns(s, com.mallocgfw.app.model.AppDnsMode.Custom, " 8。8。8。8 ")!!
+        assertEquals("8.8.8.8", next.settings.customDnsValue)
     }
 
     @Test

@@ -1706,6 +1706,18 @@ object ImportParser {
      * selection, pre-proxy and fallback links and deletion, so they must be
      * unique: this returns [base] when free, otherwise a variant of it.
      */
+    /**
+     * A new id that no node has had before: [base] plus a random suffix. Used
+     * for nodes added by a refresh, where [base] may be the id of a node that
+     * an earlier refresh removed.
+     */
+    fun freshNodeId(base: String, taken: Set<String>): String {
+        while (true) {
+            val candidate = base + "_" + java.util.UUID.randomUUID().toString().replace("-", "").take(10)
+            if (candidate !in taken) return candidate
+        }
+    }
+
     fun uniqueNodeId(base: String, taken: Set<String>): String {
         if (base !in taken) return base
         var attempt = 1

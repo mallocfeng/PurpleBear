@@ -71,7 +71,7 @@ object AppController {
             appContext = context.applicationContext
             val loaded = AppStateStore.loadWithStartupCleanup(appContext)
             startupHiddenCount = loaded.newlyHiddenUnsupportedNodeCount
-            publish(loaded.state)
+            publish(normalize(loaded.state))
         }
         saveScope.launch {
             _state.filterNotNull().drop(1).debounce(SAVE_DELAY_MS).collect { AppStateStore.save(appContext, it) }
@@ -111,6 +111,53 @@ object AppController {
         next
     }
 
+    /**
+     * Removes nodes ([transform] is StateOps.removeNode / removeSubscriptionGroup)
+     * and, when the running VPN used a removed node, reconnects or disconnects
+     * it (see StateOps.removalEffect). Returns the new state, or null when
+     * nothing was removed.
+     */
+    fun removeNodes(transform: (PersistedAppState) -> PersistedAppState?): PersistedAppState? {
+        val connected = connectedServerId()
+        var before: PersistedAppState? = null
+        val next = edit { state ->
+            before = state
+            transform(state)?.let { removed ->
+                // The selected (not yet connected) node went away: select the
+                // node the VPN runs on, not an arbitrary one shown as a pending switch.
+                if (connected != null && removed.servers.any { it.id == connected } &&
+                    removed.selectedServerId != state.selectedServerId
+                ) {
+                    removed.copy(selectedServerId = connected)
+                } else {
+                    removed
+                }
+            }
+        } ?: return null
+        val effect = StateOps.removalEffect(before ?: return next, next, connected)
+        if (effect == StateOps.RemovalEffect.None) return next
+        saveScope.launch {
+            val host = uiHost
+            when (effect) {
+                is StateOps.RemovalEffect.Reconnect -> {
+                    AppLogManager.append(appContext, "NODES", effect.message)
+                    if (host != null) {
+                        withContext(Dispatchers.Main) { (uiHost ?: host).reconnect(effect.server, effect.message) }
+                    } else {
+                        VpnServiceController.start(appContext, effect.server)
+                    }
+                }
+                is StateOps.RemovalEffect.Disconnect -> {
+                    AppLogManager.append(appContext, "NODES", effect.message)
+                    disconnect()
+                    showMessage(effect.message)
+                }
+                StateOps.RemovalEffect.None -> Unit
+            }
+        }
+        return next
+    }
+
     /** [edit] that also shows [message] in the open UI. */
     suspend fun update(
         message: String? = null,
@@ -145,7 +192,7 @@ object AppController {
     private fun normalize(state: PersistedAppState): PersistedAppState {
         val servers = StateOps.normalizeNodeLinks(state.servers)
         val withServers = if (servers == state.servers) state else state.copy(servers = servers)
-        return StateOps.normalizeStreamingSelections(withServers)
+        return StateOps.normalizeNodeReferences(withServers)
     }
 
     private suspend fun showMessage(message: String) {
