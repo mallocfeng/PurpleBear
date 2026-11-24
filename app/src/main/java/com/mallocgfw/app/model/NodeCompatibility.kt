@@ -9,7 +9,9 @@ data class MihomoProxy(val name: String, val config: JSONObject) {
     /**
      * YAML for the sidecar's `proxies:` list (JSON is valid YAML flow syntax).
      * A Clash dialer-proxy chain stored under [DIALER_KEY] becomes extra
-     * entries named "<name>-f1", "<name>-f2"… linked by `dialer-proxy`.
+     * entries named "<name>-f1", "<name>-f2"… linked by `dialer-proxy`,
+     * every hop of it: a chain longer than [MAX_FRONTS] is refused before it
+     * gets here (MihomoNodes.sidecarRejection), never cut short.
      */
     val yamlLines: List<String>
         get() {
@@ -19,7 +21,7 @@ data class MihomoProxy(val name: String, val config: JSONObject) {
             while (true) {
                 val front = current.optJSONObject(DIALER_KEY)
                 current.remove(DIALER_KEY)
-                if (front == null || hop >= 4) {
+                if (front == null) {
                     lines += "  - $current"
                     return lines
                 }
@@ -31,6 +33,23 @@ data class MihomoProxy(val name: String, val config: JSONObject) {
 
     companion object {
         const val DIALER_KEY = "pb-dialer"
+
+        /** Most fronts a chain may have, for import and for the sidecar config alike. */
+        const val MAX_FRONTS = 8
+
+        /** How many fronts [config] dials through. */
+        fun frontCount(config: JSONObject): Int {
+            var count = 0
+            var hop = config.optJSONObject(DIALER_KEY)
+            while (hop != null) {
+                count++
+                hop = hop.optJSONObject(DIALER_KEY)
+            }
+            return count
+        }
+
+        /** Why a chain this long isn't run. */
+        fun tooLongChain(): String = "前置链超过 $MAX_FRONTS 个前置节点（或循环引用），无法使用"
     }
 }
 

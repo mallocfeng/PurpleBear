@@ -77,6 +77,7 @@ object MihomoNodes {
      * unsupported instead of being offered.
      */
     fun sidecarRejection(config: JSONObject): String? {
+        if (MihomoProxy.frontCount(config) > MihomoProxy.MAX_FRONTS) return MihomoProxy.tooLongChain()
         val own = when (config.optString("type")) {
             MISSING_FRONT_TYPE -> config.optString("reason").ifBlank { "找不到 ${config.optString("name")}" }
             "snell" -> {

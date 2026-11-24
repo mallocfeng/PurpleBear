@@ -1113,8 +1113,6 @@ object ImportParser {
     /** Key of a provider node's Clash map that couldn't be converted faithfully; its value is the reason. */
     private const val UNCONVERTIBLE_FRONT = "pb-unconvertible"
 
-    private const val MAX_FRONT_HOPS = 8
-
     /** A group member whose name is nowhere in the config. */
     private val NO_MEMBER: Map<*, *> = mapOf("type" to MihomoNodes.MISSING_FRONT_TYPE)
 
@@ -1172,11 +1170,6 @@ object ImportParser {
      * unsupported too ([markMissingFront]); DIRECT means no front.
      */
     private fun attachDialer(config: JSONObject, frontName: String, depth: Int): Boolean {
-        // Mihomo has no limit, but a chain this long is almost surely a loop
-        // (A → B → A); never run it cut short, which would skip hops.
-        if (depth >= MAX_FRONT_HOPS) {
-            return markMissingFront(config, frontName, reason = "前置链超过 $MAX_FRONT_HOPS 个前置节点（或循环引用），无法使用")
-        }
         if (frontName.equals("DIRECT", ignoreCase = true)) return true
         var target = clashContext.get()?.get(frontName) ?: return markMissingFront(config, frontName)
         var hops = 0
@@ -1227,6 +1220,12 @@ object ImportParser {
         if (target["server"] == null && target.string("type")?.lowercase(Locale.ROOT) in PROXY_GROUP_TYPES) {
             val groupName = target.string("name") ?: frontName
             return markMissingFront(config, groupName, reason = "无法从前置代理组 $groupName 确定前置节点")
+        }
+        // A real front beyond the limit (DIRECT, checked above and in groups,
+        // adds none). Mihomo has no limit, but a chain this long is almost
+        // surely a loop (A → B → A); it is refused, never run cut short.
+        if (depth >= MihomoProxy.MAX_FRONTS) {
+            return markMissingFront(config, target.string("name") ?: frontName, reason = MihomoProxy.tooLongChain())
         }
         val raw = MihomoNodes.sanitizeUnchecked(target, "front")
             ?: return markMissingFront(config, frontName, reason = "前置节点 $frontName 的类型无法识别")

@@ -440,25 +440,30 @@ $provider
 
     @Test
     fun aFrontChainIsNeverCutShort() {
-        fun chain(fronts: Int): ServerNode {
+        fun chain(fronts: Int, last: String = "", extra: String = ""): ServerNode {
             val lines = (1..fronts).joinToString("\n") { i ->
-                val next = if (i < fronts) ", dialer-proxy: F${i + 1}" else ""
+                val next = if (i < fronts) ", dialer-proxy: F${i + 1}" else last
                 "  - {name: F$i, type: trojan, server: f$i.example.com, port: 443, password: pw, sni: f$i.example.com$next}"
             }
-            val yaml = "proxies:\n  - {name: Main, type: ss, server: m.example.com, port: 8388, cipher: aes-128-gcm, password: pw, dialer-proxy: F1}\n$lines\n"
+            val yaml = "proxies:\n  - {name: Main, type: ss, server: m.example.com, port: 8388, cipher: aes-128-gcm, password: pw, dialer-proxy: F1}\n$lines\n$extra"
             return ImportParser.buildFilePreview("c.yaml", yaml).nodes.single { it.name == "Main" }
         }
-        fun hops(node: ServerNode): Int {
-            var hop = NodeCompatibility.mihomoProxy(node)!!.config.optJSONObject(MihomoProxy.DIALER_KEY)
-            var count = 0
-            while (hop != null) { count++; hop = hop.optJSONObject(MihomoProxy.DIALER_KEY) }
-            return count
+        // What mihomo is given: every hop, each linked to the next.
+        fun assertWholeChain(node: ServerNode, fronts: Int) {
+            assertFalse("$fronts", node.hiddenUnsupported)
+            val proxy = NodeCompatibility.mihomoProxy(node)!!
+            val entries = proxy.yamlLines.map { JSONObject(it.removePrefix("  - ")) }
+            assertEquals(fronts + 1, entries.size)
+            entries.forEachIndexed { i, entry ->
+                val expectedServer = if (i == 0) "m.example.com" else "f$i.example.com"
+                assertEquals(expectedServer, entry.getString("server"))
+                if (i < fronts) assertEquals("${proxy.name}-f${i + 1}", entry.getString("dialer-proxy")) else assertFalse(entry.has("dialer-proxy"))
+            }
         }
-        listOf(5, 8).forEach { n ->
-            val node = chain(n)
-            assertFalse("$n", node.hiddenUnsupported)
-            assertEquals(n, hops(node))
-        }
+        listOf(1, 5, 8).forEach { n -> assertWholeChain(chain(n), n) }
+        // DIRECT at the end (itself or as a group's choice) adds no front.
+        assertWholeChain(chain(8, last = ", dialer-proxy: DIRECT"), 8)
+        assertWholeChain(chain(8, last = ", dialer-proxy: Out", extra = "proxy-groups:\n  - {name: Out, type: select, proxies: [DIRECT]}\n"), 8)
         val tooLong = chain(9)
         assertTrue(tooLong.hiddenUnsupported)
         assertTrue(NodeCompatibility.coreIncompatibility(tooLong)!!.contains("前置链"))
