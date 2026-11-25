@@ -12,7 +12,18 @@ import java.net.Proxy
 import java.net.Socket
 import java.net.URL
 import javax.net.ssl.HttpsURLConnection
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
 import com.mallocgfw.app.model.tr
@@ -21,6 +32,12 @@ object NodeLatencyTester {
     private const val CONNECT_TIMEOUT_MS = 5_000
     private const val TOTAL_TIMEOUT_MS = 10_000L
     private const val MAX_TARGET_ATTEMPTS = 3
+    private const val MAX_PARALLEL_DIRECT_PROBES = 8
+
+    /** Plain HTTP: the time is the node's own handshake plus one round trip, with no second TLS handshake inside. */
+    private const val PROBE_URL = "http://www.gstatic.com/generate_204"
+    private const val PROBE_TIMEOUT_SECONDS = 6
+    private const val PROBE_COALESCE_MS = 40L
     private const val DIRECT_NETWORK_WAIT_MS = 1_500L
     private const val PROXY_PROBE_URL = "https://www.gstatic.com/generate_204"
     private const val TAG = "NodeLatencyTester"
@@ -29,25 +46,137 @@ object NodeLatencyTester {
     /** UDP-based protocols: a TCP connect to their port proves nothing. */
     private val UDP_PROTOCOLS = setOf("HYSTERIA", "HYSTERIA2", "TUIC", "WIREGUARD", "SHADOWQUIC", "MASQUE")
 
+    /**
+     * One temporary core at a time: there is a single Xray instance, so two
+     * probes at once would stop each other's core and read each other's
+     * latency (testing a whole group starts them together).
+     */
+    private val temporaryCoreMutex = Mutex()
+
+    /** Direct TCP probes at once; a whole group no longer opens hundreds of connections together. */
+    private val directProbePermits = Semaphore(MAX_PARALLEL_DIRECT_PROBES)
+
+    /**
+     * A user-started test.
+     *
+     * Nodes Xray runs are timed for real: one request through the node (and
+     * its pre-proxy chain) in a separate core ([realProbe]), so a node that
+     * accepts connections but no longer works shows as failed, and it works
+     * while the VPN is connected, UDP-based nodes included.
+     *
+     * Nodes the compatibility core runs, and any node when the probe can't be
+     * run, use the older tests: a TCP connection to the server, or a
+     * temporary core for UDP-like nodes (which needs the VPN off). Those are
+     * queued (see above); the time limit only counts once the probe starts.
+     */
     suspend fun measure(context: Context, node: ServerNode): Int = withContext(Dispatchers.IO) {
-        withTimeout(TOTAL_TIMEOUT_MS) {
-            if (requiresCoreProbe(node)) {
-                return@withTimeout measureViaTemporaryXray(context, node)
+        probeConfig(context, node)?.let { config ->
+            try {
+                return@withContext realProbe(context, config)
+            } catch (error: LatencyProbeClient.ProbeUnavailable) {
+                Log.w(TAG, "Real probe unavailable for ${node.name}, using the fallback test", error)
             }
-            return@withTimeout measureViaDirectPort(context, node)
+        }
+        if (requiresCoreProbe(node)) {
+            temporaryCoreMutex.withLock { withTimeout(TOTAL_TIMEOUT_MS) { measureViaTemporaryXray(context, node) } }
+        } else {
+            directProbePermits.withPermit { withTimeout(TOTAL_TIMEOUT_MS) { measureViaDirectPort(context, node) } }
         }
     }
 
+    /** The VPN service's heartbeat: never queued behind user-started tests. */
     suspend fun measureHeartbeat(context: Context, node: ServerNode): Int = withContext(Dispatchers.IO) {
-        withTimeout(TOTAL_TIMEOUT_MS) {
-            if (requiresCoreProbe(node) && VpnServiceController.isActuallyRunning(context)) {
-                if (requiresUdpLikeProbe(node)) {
-                    throw UnsupportedOperationException(heartbeatFallbackUnsupportedMessage(node))
-                }
-                return@withTimeout measureViaDirectPort(context, node)
+        if (requiresCoreProbe(node)) {
+            if (!VpnServiceController.isActuallyRunning(context)) {
+                return@withContext temporaryCoreMutex.withLock { withTimeout(TOTAL_TIMEOUT_MS) { measureViaTemporaryXray(context, node) } }
             }
-            return@withTimeout measure(context, node)
+            if (requiresUdpLikeProbe(node)) {
+                throw UnsupportedOperationException(heartbeatFallbackUnsupportedMessage(node))
+            }
         }
+        withTimeout(TOTAL_TIMEOUT_MS) { measureViaDirectPort(context, node) }
+    }
+
+    /**
+     * Whether testing [node] needs the VPN off: only UDP-like nodes that the
+     * real probe can't cover (they run in the compatibility core).
+     */
+    fun requiresDisconnectToTest(context: Context, node: ServerNode): Boolean =
+        requiresCoreProbe(node) && VpnServiceController.isActuallyRunning(context) && probeConfig(context, node) == null
+
+    private fun probeConfig(context: Context, node: ServerNode): String? = runCatching {
+        XrayConfigFactory.buildProbeOutbounds(node, com.mallocgfw.app.core.AppController.load(context).servers)
+    }.getOrNull()
+
+    // ---- real probe: requests coalesced into batches of LatencyProbeClient.MAX_BATCH ----
+
+    private class ProbeRequest(val config: String, val result: CompletableDeferred<Int>)
+
+    private val probeQueue = Channel<ProbeRequest>(Channel.UNLIMITED)
+    private val probeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val probeWorkerStarted = AtomicBoolean(false)
+
+    private suspend fun realProbe(context: Context, config: String): Int {
+        val request = ProbeRequest(config, CompletableDeferred())
+        startProbeWorker(context.applicationContext)
+        probeQueue.send(request)
+        return request.result.await()
+    }
+
+    private fun startProbeWorker(context: Context) {
+        if (!probeWorkerStarted.compareAndSet(false, true)) return
+        probeScope.launch {
+            for (first in probeQueue) {
+                // Testing a group asks for all its nodes at once: let them arrive.
+                delay(PROBE_COALESCE_MS)
+                val batch = mutableListOf(first)
+                while (batch.size < LatencyProbeClient.MAX_BATCH) {
+                    batch += probeQueue.tryReceive().getOrNull() ?: break
+                }
+                val results = runCatching {
+                    LatencyProbeClient.pingBatch(
+                        context,
+                        batch.map { LatencyProbeClient.Item(it.config) },
+                        PROBE_TIMEOUT_SECONDS,
+                        PROBE_URL,
+                    )
+                }
+                batch.forEachIndexed { index, request ->
+                    val outcome = results.map { it[index] }
+                    val result = outcome.getOrNull()
+                    when {
+                        result == null -> request.result.completeExceptionally(
+                            outcome.exceptionOrNull() as? LatencyProbeClient.ProbeUnavailable
+                                ?: LatencyProbeClient.ProbeUnavailable("probe failed", outcome.exceptionOrNull()),
+                        )
+                        result.delayMs != null -> request.result.complete(result.delayMs)
+                        result.timedOut -> request.result.completeExceptionally(
+                            IllegalStateException(tr("节点在 $PROBE_TIMEOUT_SECONDS 秒内没有响应。", "The node didn't answer within $PROBE_TIMEOUT_SECONDS s.", "Узел не ответил за $PROBE_TIMEOUT_SECONDS с.")),
+                        )
+                        // The outbound couldn't even be built in the probe core:
+                        // not a verdict on the node, so the fallback test decides.
+                        isProbeSetupError(result.error) -> request.result.completeExceptionally(
+                            LatencyProbeClient.ProbeUnavailable(result.error.orEmpty()),
+                        )
+                        else -> request.result.completeExceptionally(
+                            IllegalStateException(
+                                tr("经节点访问测试地址失败", "The test request through the node failed", "Тестовый запрос через узел не прошёл") +
+                                    // Go puts the request in front: Head "http://…": <the reason>.
+                                    result.error?.replace(Regex("^[A-Za-z]+ \"[^\"]*\": "), "")
+                                        ?.takeIf { it.isNotBlank() }?.let { "：${it.take(120)}" }.orEmpty(),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /** libXray's messages for a config it couldn't prepare (xray/ping_batch.go). */
+    internal fun isProbeSetupError(error: String?): Boolean {
+        val text = error?.lowercase().orEmpty()
+        return listOf("failed to build outbound", "ping config", "ping xray json", "outbound tag", "depends on", "dependency cycle")
+            .any { it in text }
     }
 
     fun requiresCoreProbe(node: ServerNode): Boolean {

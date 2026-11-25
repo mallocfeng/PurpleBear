@@ -58,6 +58,29 @@ object AppLogManager {
 
     fun xrayAccessLogFile(context: Context): File = ensureLogFile(context, XRAY_ACCESS_LOG).also(::trimAsync)
 
+    /**
+     * Where Xray writes its access log (every site connected to: in effect a
+     * browsing history). Only kept at the Info and Debug levels, which the
+     * user picks to look into a problem; at Error and Warning Xray is told
+     * "none" and what an earlier session wrote is cleared.
+     */
+    fun xrayAccessLogTarget(context: Context, level: com.mallocgfw.app.model.AppLogLevel): String {
+        if (recordsAccessLog(level)) return xrayAccessLogFile(context).absolutePath
+        val appContext = context.applicationContext ?: context
+        writerScope.launch {
+            synchronized(logLock) {
+                runCatching { ensureLogFile(appContext, XRAY_ACCESS_LOG).writeText("") }
+            }
+        }
+        return ACCESS_LOG_OFF
+    }
+
+    fun recordsAccessLog(level: com.mallocgfw.app.model.AppLogLevel): Boolean =
+        level == com.mallocgfw.app.model.AppLogLevel.Info || level == com.mallocgfw.app.model.AppLogLevel.Debug
+
+    /** Xray's value for "no access log". */
+    const val ACCESS_LOG_OFF = "none"
+
     /** Caps each log's size and drops entries older than [LogRetention.MAX_AGE_DAYS]. */
     fun trimAllLogs(context: Context) {
         val appContext = context.applicationContext ?: context

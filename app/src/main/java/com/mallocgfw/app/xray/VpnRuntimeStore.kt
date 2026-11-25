@@ -1,8 +1,6 @@
 package com.mallocgfw.app.xray
 
 import android.content.Context
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import com.mallocgfw.app.model.ConnectionStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -184,24 +182,17 @@ object VpnRuntimeStore {
         }.getOrDefault(VpnRuntimeSnapshot())
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun reconcileWithSystemState(
         context: Context,
         snapshot: VpnRuntimeSnapshot,
     ): VpnRuntimeSnapshot {
         if (snapshot.status == ConnectionStatus.Disconnected) return snapshot
-        // Don't trust activeNetwork on its own: when WiFi/cellular and VPN are
-        // both up the system can return the underlying transport as active and
-        // we'd wrongly tear our state down. Walk every network and look for a
-        // VPN transport instead.
-        val systemVpnActive = runCatching {
-            val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            @Suppress("DEPRECATION")
-            connectivityManager.allNetworks.any { network ->
-                val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return@any false
-                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
-            }
-        }.getOrDefault(false)
-        if (systemVpnActive) return snapshot
+        // The tunnel lives in this process's XrayVpnService: a saved
+        // "connected" without it is left over from a process that died.
+        // Asking the system whether "a VPN" is up isn't enough, since that
+        // can be another app's VPN, which took ours down.
+        if (XrayVpnService.isRunning()) return snapshot
         return VpnRuntimeSnapshot(
             status = ConnectionStatus.Disconnected,
             activeServerId = null,

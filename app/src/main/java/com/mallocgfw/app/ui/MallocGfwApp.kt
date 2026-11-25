@@ -225,8 +225,9 @@ fun MallocGfwApp(
     var lastRequestedConnectionServerId by rememberSaveable { mutableStateOf<String?>(null) }
     var lastFallbackTargetServerId by rememberSaveable { mutableStateOf<String?>(null) }
     var defaultRulesBootstrapped by rememberSaveable { mutableStateOf(false) }
+    /** Bumped to check again for rule lists to download (after a restore). */
+    var ruleBootstrapNonce by remember { mutableIntStateOf(0) }
     var autoConnectAttemptedServerId by rememberSaveable { mutableStateOf<String?>(null) }
-    var autoReconnectAttempts by rememberSaveable { mutableIntStateOf(0) }
     var manualDisconnectRequested by rememberSaveable { mutableStateOf(false) }
     var perAppSearch by rememberSaveable { mutableStateOf("") }
     var selectedStreamingServiceId by rememberSaveable { mutableStateOf("") }
@@ -469,6 +470,85 @@ fun MallocGfwApp(
         } else {
             "系统未授予通知权限，无法显示更新通知。"
         }
+    }
+
+    // ---- settings backup (ConfigBackup) ----
+    var pendingRestore by remember { mutableStateOf<PersistedAppState?>(null) }
+    val backupExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    val text = com.mallocgfw.app.model.ConfigBackup.export(AppController.current(), APP_DISPLAY_VERSION, System.currentTimeMillis())
+                    val output = context.contentResolver.openOutputStream(uri, "wt") ?: error("openOutputStream returned null")
+                    output.use { it.write(text.toByteArray(Charsets.UTF_8)) }
+                }
+            }
+            settingsMessage = result.fold(
+                onSuccess = {
+                    tr(
+                        "配置已导出。文件里有节点密码和订阅链接，请妥善保管。",
+                        "Settings exported. The file holds node passwords and subscription links: keep it safe.",
+                        "Настройки экспортированы. В файле пароли узлов и ссылки подписок: храните его надёжно.",
+                    )
+                },
+                onFailure = { error ->
+                    AppLogManager.append(context, "BACKUP", "配置导出失败", error)
+                    tr("导出失败：${error.message.orEmpty()}", "Export failed: ${error.message.orEmpty()}", "Не удалось экспортировать: ${error.message.orEmpty()}")
+                },
+            )
+        }
+    }
+    val backupRestoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val input = context.contentResolver.openInputStream(uri) ?: error("openInputStream returned null")
+                    val bytes = input.use { stream ->
+                        // A backup is a few megabytes at most; refuse anything absurd.
+                        val buffer = java.io.ByteArrayOutputStream()
+                        val chunk = ByteArray(64 * 1024)
+                        while (true) {
+                            val read = stream.read(chunk)
+                            if (read < 0) break
+                            buffer.write(chunk, 0, read)
+                            if (buffer.size() > 64 * 1024 * 1024) error(tr("文件太大，不是备份文件。", "The file is too large to be a backup.", "Файл слишком большой для резервной копии."))
+                        }
+                        buffer.toByteArray()
+                    }
+                    com.mallocgfw.app.model.ConfigBackup.parse(String(bytes, Charsets.UTF_8))
+                }
+            }.onSuccess { restored ->
+                pendingRestore = restored
+            }.onFailure { error ->
+                AppLogManager.append(context, "BACKUP", "备份文件读取失败", error)
+                settingsMessage = error.message ?: tr("无法读取备份文件。", "Couldn't read the backup file.", "Не удалось прочитать файл резервной копии.")
+            }
+        }
+    }
+
+    fun applyRestoredState(restored: PersistedAppState) {
+        // The tunnel was built from the settings being replaced.
+        if (VpnServiceController.isRunning()) {
+            settingsMessage = tr("请先断开 VPN，再恢复配置。", "Disconnect the VPN first, then restore.", "Сначала отключите VPN, затем восстановите настройки.")
+            return
+        }
+        AppController.edit { restored }
+        com.mallocgfw.app.model.AppTextLanguage.apply(restored.settings.language)
+        // Downloaded rule lists aren't in a backup: fetch the ones that are on.
+        defaultRulesBootstrapped = false
+        ruleBootstrapNonce += 1
+        expandedGroups.clear()
+        warmServerSections()
+        AppLogManager.append(context, "BACKUP", "已从备份恢复配置：${restored.servers.size} 个节点，${restored.subscriptions.size} 个订阅")
+        settingsMessage = tr(
+            "配置已恢复：${restored.servers.size} 个节点，${restored.subscriptions.size} 个订阅。",
+            "Settings restored: ${restored.servers.size} nodes, ${restored.subscriptions.size} subscriptions.",
+            "Настройки восстановлены: узлов ${restored.servers.size}, подписок ${restored.subscriptions.size}.",
+        )
     }
 
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
@@ -1539,7 +1619,7 @@ fun MallocGfwApp(
             return
         }
         val server = servers[index]
-        if (VpnServiceController.isActuallyRunning(context) && NodeLatencyTester.requiresCoreProbe(server)) {
+        if (NodeLatencyTester.requiresDisconnectToTest(context, server)) {
             runtimeMessage = tr("当前已连接 VPN，这类 ${server.protocol} 节点请先断开当前连接后再检测。", "VPN is connected. Disconnect first to test this ${server.protocol} node.", "VPN подключён. Чтобы проверить этот узел ${server.protocol}, сначала отключитесь.")
             AppLogManager.append(
                 context,
@@ -1660,13 +1740,21 @@ fun MallocGfwApp(
         withContext(Dispatchers.IO) { RuleSourceManager.removeOrphanFiles(context, sources) }
     }
 
-    LaunchedEffect(ruleSources.size, defaultRulesBootstrapped) {
+    LaunchedEffect(ruleSources.size, defaultRulesBootstrapped, ruleBootstrapNonce) {
         if (defaultRulesBootstrapped) return@LaunchedEffect
-        val bootstrapCandidates = ruleSources
-            // Optional built-ins start off; they download when turned on.
-            .filter { it.systemDefault && it.enabled }
-            .filter { it.convertedRules == 0 && it.status != RuleSourceStatus.Ready }
+        val enabledRemote = ruleSources
+            .filter { it.enabled && it.sourceKind == RuleSourceKind.RemoteUrl }
             .filterNot { RuleSourceManager.usesGeoData(it, appSettings.geoRoutingRegion) }
+        // Built-ins never downloaded (optional ones start off and download
+        // when turned on), and lists that say Ready but aren't on this phone
+        // (settings moved from another phone, cache cleared): without the
+        // file their rules silently wouldn't apply.
+        val missingLists = withContext(Dispatchers.IO) {
+            enabledRemote.filter { it.status == RuleSourceStatus.Ready && !RuleSourceManager.hasCompiledFile(context, it) }
+        }
+        val bootstrapCandidates = (
+            enabledRemote.filter { it.systemDefault && it.convertedRules == 0 && it.status != RuleSourceStatus.Ready } + missingLists
+            ).distinctBy { it.id }
         if (bootstrapCandidates.isNotEmpty()) {
             defaultRulesBootstrapped = true
             bootstrapCandidates.forEach { refreshRuleSource(it.id) }
@@ -1857,12 +1945,10 @@ fun MallocGfwApp(
             if (pendingStreamingRoutingApply) {
                 pendingStreamingRoutingApply = false
             }
-            autoReconnectAttempts = 0
             manualDisconnectRequested = false
         }
         if (manualDisconnectRequested && vpnSnapshot.status == ConnectionStatus.Disconnected) {
             manualDisconnectRequested = false
-            autoReconnectAttempts = 0
         }
     }
 
@@ -1933,28 +2019,9 @@ fun MallocGfwApp(
         xraySnapshot.message?.let { runtimeMessage = it }
     }
 
-    var previousVpnStatus by remember { mutableStateOf(vpnSnapshot.status) }
-    LaunchedEffect(vpnSnapshot.status, vpnSnapshot.activeServerId, xraySnapshot.status, appSettings.autoReconnect) {
-        val lastStatus = previousVpnStatus
-        previousVpnStatus = vpnSnapshot.status
-        val shouldReconnect = vpnSnapshot.status == ConnectionStatus.Disconnected &&
-            lastStatus in setOf(ConnectionStatus.Connected, ConnectionStatus.Connecting) &&
-            xraySnapshot.status != XrayCoreStatus.Failed &&
-            !manualDisconnectRequested &&
-            pendingReconnectServerId == null &&
-            appSettings.autoReconnect &&
-            autoReconnectAttempts < 3
-        if (!shouldReconnect) return@LaunchedEffect
-        val serverId = (vpnSnapshot.activeServerId ?: appSettings.lastConnectedServerId).orEmpty()
-        val server = servers.firstOrNull { it.id == serverId } ?: return@LaunchedEffect
-        autoReconnectAttempts += 1
-        val currentAttempt = autoReconnectAttempts
-        runtimeMessage = tr("连接中断，正在尝试第 $currentAttempt 次自动重连…", "Connection lost. Reconnecting automatically (attempt $currentAttempt)…", "Соединение потеряно. Автоматическое переподключение (попытка $currentAttempt)…")
-        delay((1_500L * currentAttempt).coerceAtMost(5_000L))
-        if (connectionStatus == ConnectionStatus.Disconnected && !VpnServiceController.isRunning()) {
-            requestVpnConnection(server)
-        }
-    }
+    // Reconnecting after a dropped connection is the VPN service's job
+    // (XrayVpnService.scheduleAutoReconnect): it works with these screens gone,
+    // and two retry loops would race each other.
 
     BackHandler(enabled = screen !in setOf(AppScreen.Home, AppScreen.Servers, AppScreen.Rules, AppScreen.Import, AppScreen.Me)) {
         onBack()
@@ -1967,6 +2034,18 @@ fun MallocGfwApp(
 
     // App-level dialogs: give them the app language, not the system one.
     CompositionLocalProvider(LocalAppLanguage provides appSettings.language.resolveAppLanguage()) {
+        pendingRestore?.let { restored ->
+            RestoreBackupDialog(
+                nodeCount = restored.servers.count { !it.hiddenUnsupported },
+                subscriptionCount = restored.subscriptions.size,
+                onDismiss = { pendingRestore = null },
+                onConfirm = {
+                    pendingRestore = null
+                    applyRestoredState(restored)
+                },
+            )
+        }
+
         removalNotice?.let { notice ->
             AlertDialog(
                 onDismissRequest = AppController::consumeRemovalNotice,
@@ -2407,6 +2486,7 @@ fun MallocGfwApp(
                     )
 
                     AppScreen.PerApp -> PerAppScreen(
+                        lockdownActive = VpnServiceController.manualDisconnectBlocked(),
                         padding = padding,
                         proxyMode = proxyMode,
                         search = perAppSearch,
@@ -2452,6 +2532,32 @@ fun MallocGfwApp(
                     )
 
                     AppScreen.Settings -> SettingsScreen(
+                        onExportBackup = {
+                            runCatching { backupExportLauncher.launch(com.mallocgfw.app.model.ConfigBackup.fileName(System.currentTimeMillis())) }
+                                .onFailure { settingsMessage = tr("无法打开文件选择器。", "Couldn't open the file picker.", "Не удалось открыть выбор файла.") }
+                        },
+                        onImportBackup = {
+                            if (VpnServiceController.isRunning()) {
+                                settingsMessage = tr("请先断开 VPN，再恢复配置。", "Disconnect the VPN first, then restore.", "Сначала отключите VPN, затем восстановите настройки.")
+                            } else {
+                                runCatching { backupRestoreLauncher.launch(arrayOf("application/json", "text/plain", "application/octet-stream", "*/*")) }
+                                    .onFailure { settingsMessage = tr("无法打开文件选择器。", "Couldn't open the file picker.", "Не удалось открыть выбор файла.") }
+                            }
+                        },
+                        onOpenSystemVpnSettings = {
+                            // No API turns Always-on VPN on; the system page does.
+                            runCatching {
+                                context.startActivity(
+                                    Intent(android.provider.Settings.ACTION_VPN_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                )
+                            }.onFailure {
+                                settingsMessage = tr(
+                                    "无法打开系统 VPN 设置，请在系统设置中搜索“VPN”。",
+                                    "Couldn't open system VPN settings. Search for \"VPN\" in system settings.",
+                                    "Не удалось открыть настройки VPN. Найдите «VPN» в настройках системы.",
+                                )
+                            }
+                        },
                         padding = padding,
                         settings = appSettings,
                         coreVersion = xraySnapshot.version,

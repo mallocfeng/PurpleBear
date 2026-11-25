@@ -155,13 +155,29 @@ object RuleSourceManager {
             defaultSources.forEach { default ->
                 val existing = currentById[default.id]
                 val name = if (default.id == HOME_SITES_ID) homeSitesName(region) else default.name
-                val merged = existing?.copy(
+                val updated = existing?.copy(
                     name = name,
                     url = default.url,
                     type = default.type,
                     policy = default.policy,
                     systemDefault = true,
-                ) ?: default.copy(name = name)
+                )
+                // A built-in whose link or policy changed in this version: its
+                // cached list is from the old definition and isn't used
+                // (loadCurrentRules), so don't show the old counts as Ready.
+                // Enabled ones are downloaded again on launch (they have no rules).
+                val merged = when {
+                    updated == null -> default.copy(name = name)
+                    definitionKey(updated) == existing?.let(::definitionKey) -> updated
+                    else -> updated.copy(
+                        status = if (updated.enabled) RuleSourceStatus.Idle else RuleSourceStatus.Disabled,
+                        totalRules = 0,
+                        convertedRules = 0,
+                        skippedRules = 0,
+                        lastError = null,
+                        updatedAtMs = null,
+                    )
+                }
                 add(if (default.id == DEFAULT_SHADOWROCKET_ID && legacyOn) merged.copy(enabled = true) else merged)
             }
             sources
@@ -337,6 +353,14 @@ object RuleSourceManager {
             RuleRefreshResult(updatedSource, compiled)
         }
     }
+
+    /**
+     * Whether [source] has a downloaded list on this phone. A source can say
+     * Ready without one: the saved settings came from another phone, or the
+     * file was cleared. The app then downloads it again on launch.
+     */
+    fun hasCompiledFile(context: Context, source: RuleSourceItem): Boolean =
+        compiledRuleFile(context, source.id).exists()
 
     /** Writes a list compiled from [source] (as it was fetched) to its cache. */
     fun commitCompiled(context: Context, source: RuleSourceItem, compiled: CompiledRuleSet) {
@@ -667,9 +691,13 @@ object RuleSourceManager {
      */
     private fun loadCurrentRules(context: Context, source: RuleSourceItem): CompiledRuleSet? {
         val file = compiledRuleFile(context, source.id)
-        if (!file.exists()) return null
-        val key = runCatching { JSONObject(file.readText()).optString("definition") }.getOrDefault("")
-        if (key.isEmpty() || key == definitionKey(source)) return loadCompiledRules(context, source.id)
+        if (file.exists()) {
+            val key = runCatching { JSONObject(file.readText()).optString("definition") }.getOrDefault("")
+            if (key.isEmpty() || key == definitionKey(source)) return loadCompiledRules(context, source.id)
+        }
+        // No list, or one from another version of the source. A local text is
+        // compiled again from the saved text (the cache doesn't travel to a new
+        // phone); a remote list has to be downloaded (see [hasCompiledFile]).
         if (source.sourceKind != RuleSourceKind.LocalText) return null
         return runCatching {
             compileText(sourceId = source.id, rawText = source.content, requestedType = source.type, fallbackPolicy = source.policy)

@@ -34,7 +34,7 @@ internal fun groupedServers(
         val groupServers = allGroupServers.filterNot { it.hiddenUnsupported }.filter { server ->
             val matchesFilter = when (filter) {
                 "asia" -> listOf("亚洲", "日本", "香港", "新加坡").contains(server.region)
-                "latency" -> server.latencyMs in 1..100
+                "latency" -> server.latencyMs in 1..300
                 "favorites" -> server.favorite
                 else -> true
             }

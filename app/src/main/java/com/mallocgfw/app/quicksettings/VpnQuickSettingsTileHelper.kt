@@ -9,7 +9,9 @@ import android.service.quicksettings.TileService
 import com.mallocgfw.app.R
 import com.mallocgfw.app.model.ConnectionStatus
 import com.mallocgfw.app.model.ServerNode
+import com.mallocgfw.app.model.tr
 import com.mallocgfw.app.xray.VpnRuntimeSnapshot
+import com.mallocgfw.app.xray.VpnServiceController
 
 internal object VpnQuickSettingsTileHelper {
     fun requestRefresh(context: Context) {
@@ -41,7 +43,13 @@ internal object VpnQuickSettingsTileHelper {
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             tile.subtitle = when (runtime.status) {
-                ConnectionStatus.Connected -> activeServer?.name ?: context.getString(R.string.qs_tile_status_connected)
+                // Lockdown mode: tapping won't turn it off. Shown on the tile
+                // itself, since a toast can end up under the expanded shade.
+                ConnectionStatus.Connected -> if (VpnServiceController.manualDisconnectBlocked()) {
+                    tr("锁定中·不可断开", "Locked: can't turn off", "Заблокировано")
+                } else {
+                    activeServer?.name ?: context.getString(R.string.qs_tile_status_connected)
+                }
                 ConnectionStatus.Connecting -> context.getString(R.string.qs_tile_status_connecting)
                 ConnectionStatus.Disconnecting -> context.getString(R.string.qs_tile_status_disconnecting)
                 ConnectionStatus.Disconnected -> activeServer?.name ?: context.getString(R.string.qs_tile_status_no_node)

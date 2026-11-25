@@ -40,7 +40,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
-import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -166,7 +165,9 @@ object McpTools {
 
         private fun listGroups() = tool(
             "list_groups", "List groups", ToolLevel.Read,
-            "Node groups and subscriptions: id, name, type, node count, last sync, auto-update. Subscription URLs are shortened to the host." + DATA_NOTE,
+            "Node groups and subscriptions: id, name, type, node count, last sync, auto-update, and the traffic used / allowance (bytes) " +
+                "and expiry (ms since epoch) the provider reported at the last refresh (null: not reported or unlimited). " +
+                "Subscription URLs are shortened to the host." + DATA_NOTE,
             schema(),
         ) {
             ready(tr("查看分组", "List groups", "Список групп")) {
@@ -184,6 +185,9 @@ object McpTools {
                             .put("last_sync", sub?.updatedAtMs ?: JSONObject.NULL)
                             .put("status", sub?.status ?: JSONObject.NULL)
                             .put("auto_update", sub?.autoUpdate ?: false)
+                            .put("traffic_used_bytes", sub?.usage?.usedBytes ?: JSONObject.NULL)
+                            .put("traffic_total_bytes", sub?.usage?.limitBytes ?: JSONObject.NULL)
+                            .put("expires_at", sub?.usage?.expiresAtSec?.let { it * 1000L } ?: JSONObject.NULL)
                             .put("url", Redactor.url(group.sourceUrl) ?: JSONObject.NULL),
                     )
                 }
@@ -288,12 +292,14 @@ object McpTools {
                     nodes.map { node ->
                         async {
                             permits.withPermit {
-                                if (vpnOn && NodeLatencyTester.requiresCoreProbe(node)) {
+                                if (vpnOn && NodeLatencyTester.requiresDisconnectToTest(context, node)) {
                                     return@withPermit Triple(node, null as Int?, "skipped: disconnect the VPN to test ${node.protocol}/${node.transport} nodes")
                                 }
-                                val outcome = withTimeoutOrNull(20_000) { runCatching { NodeLatencyTester.measure(context, node) } }
+                                // Each probe has its own time limit; nodes that need a
+                                // temporary core are tested one after another.
+                                val outcome = runCatching { NodeLatencyTester.measure(context, node) }
                                 when {
-                                    outcome == null -> Triple(node, null, "timed out")
+                                    outcome.exceptionOrNull() is kotlinx.coroutines.TimeoutCancellationException -> Triple(node, null, "timed out")
                                     outcome.isSuccess -> Triple(node, outcome.getOrNull(), null)
                                     else -> Triple(node, null, Redactor.text(outcome.exceptionOrNull()?.message ?: "failed"))
                                 }

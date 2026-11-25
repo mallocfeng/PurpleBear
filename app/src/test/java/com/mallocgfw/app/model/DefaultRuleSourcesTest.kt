@@ -100,4 +100,18 @@ class DefaultRuleSourcesTest {
         assertEquals(RuleTargetPolicy.Direct, policy["rule_default_steam"])
         assertEquals(RuleTargetPolicy.Direct, policy["rule_default_tracker"])
     }
+
+    @Test
+    fun aBuiltInWhoseLinkChangedIsNoLongerShownAsReady() {
+        val current = RuleSourceManager.ensureDefaults(emptyList()).first { it.sourceKind == RuleSourceKind.RemoteUrl && it.enabled }
+        val ready = current.copy(status = RuleSourceStatus.Ready, convertedRules = 120, totalRules = 120)
+        // Same definition: kept as it is.
+        assertEquals(RuleSourceStatus.Ready, RuleSourceManager.ensureDefaults(listOf(ready)).single { it.id == ready.id }.status)
+        // Saved with an older link: reset, so it downloads again on launch.
+        val old = ready.copy(url = "https://old.example.com/list.txt")
+        val reset = RuleSourceManager.ensureDefaults(listOf(old)).single { it.id == ready.id }
+        assertEquals(current.url, reset.url)
+        assertEquals(RuleSourceStatus.Idle, reset.status)
+        assertEquals(0, reset.convertedRules)
+    }
 }

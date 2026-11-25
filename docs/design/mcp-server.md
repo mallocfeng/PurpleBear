@@ -168,7 +168,7 @@ Tailnet 模式下，`:tailscale` 进程里的 tsnet 节点在 Tailnet 地址上�
 | `get_status` | — | 连接状态、当前节点、代理模式（规则 / 全局）、分应用模式、DNS 模式、Tailscale 状态、VPN 权限是否已授权（`vpn_permission`）、App 版本、本次连接时长和流量 |
 | `list_nodes` | `group_id?`、`query?`、`limit?` | ID、名称、分组、协议 / 传输 / 安全、地址:端口、最近延迟、由哪个内核运行（xray / 兼容内核）、前置代理、备用节点、不可用原因 |
 | `get_node` | `node_id` | 单个节点的全部参数（已打码） |
-| `list_groups` | — | 分组和订阅：名称、节点数、上次同步时间、是否自动更新，URL 已打码 |
+| `list_groups` | — | 分组和订阅：名称、节点数、上次同步时间、是否自动更新、服务商上次报告的已用流量 / 总流量和到期时间，URL 已打码 |
 | `test_latency` | `node_ids?` | 测速并返回结果；不传则测当前分组 |
 | `connect` | `node_id?` | 连接；不传则用当前节点。VPN 权限尚未授权时返回错误，提示到手机上授权 |
 | `disconnect` | — | 断开连接 |

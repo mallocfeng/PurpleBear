@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -34,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import com.mallocgfw.app.model.ImportPreview
 import com.mallocgfw.app.model.ServerGroupType
 import com.mallocgfw.app.model.SubscriptionItem
+import com.mallocgfw.app.model.SubscriptionUsage
 import com.mallocgfw.app.ui.theme.Error
 import com.mallocgfw.app.ui.theme.Primary
 import com.mallocgfw.app.ui.theme.Success
@@ -236,6 +238,67 @@ internal fun ConfirmImportScreen(
     }
 }
 
+/**
+ * Traffic and expiry the provider reported with the subscription
+ * (`subscription-userinfo`), as of the last refresh.
+ */
+@Composable
+private fun SubscriptionUsageBlock(usage: SubscriptionUsage, nowMs: Long) {
+    val used = usage.usedBytes
+    val limit = usage.limitBytes
+    val expired = usage.isExpired(nowMs)
+    val usedUp = usage.isUsedUp()
+    val traffic = when {
+        used != null && limit != null -> uiText(
+            "已用 ${formatDataSize(used)} / ${formatDataSize(limit)}",
+            "${formatDataSize(used)} of ${formatDataSize(limit)} used",
+            "Использовано ${formatDataSize(used)} из ${formatDataSize(limit)}",
+        )
+        used != null -> uiText("已用 ${formatDataSize(used)}", "${formatDataSize(used)} used", "Использовано ${formatDataSize(used)}")
+        limit != null -> uiText("总流量 ${formatDataSize(limit)}", "${formatDataSize(limit)} total", "Всего ${formatDataSize(limit)}")
+        else -> null
+    }
+    val expiry = usage.expiresAtSec?.let { expireSec ->
+        val date = java.time.Instant.ofEpochSecond(expireSec).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString()
+        val daysLeft = ((expireSec * 1000L - nowMs) / 86_400_000L).toInt()
+        when {
+            expired -> uiText("已于 $date 到期", "Expired on $date", "Истекла $date")
+            daysLeft < 1 -> uiText("今天到期", "Expires today", "Истекает сегодня")
+            else -> uiText("$date 到期（剩 $daysLeft 天）", "Expires $date ($daysLeft days left)", "До $date (осталось дней: $daysLeft)")
+        }
+    }
+    val line = listOfNotNull(traffic, expiry).joinToString(" · ")
+    if (line.isEmpty()) return
+    val warn = expired || usedUp
+    Column(modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
+        if (used != null && limit != null) {
+            val fraction = (used.toDouble() / limit.toDouble()).coerceIn(0.0, 1.0).toFloat()
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(TextSecondary.copy(alpha = 0.18f)),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(fraction)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(if (fraction >= 0.9f) Error else Primary),
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+        }
+        Text(
+            text = line,
+            color = if (warn) Error else TextSecondary,
+            fontSize = TypeScale.Tiny,
+            lineHeight = TypeScale.TinyLine,
+        )
+    }
+}
+
 @Composable
 internal fun SubscriptionsScreen(
     padding: PaddingValues,
@@ -317,6 +380,7 @@ internal fun SubscriptionsScreen(
                         )
                     }
                 }
+                subscription.usage?.let { usage -> SubscriptionUsageBlock(usage, nowMs) }
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),

@@ -367,7 +367,11 @@ internal fun LogLevelDialog(
         icon = Icons.Rounded.Description,
         title = uiText("日志级别", "Log level", "Уровень журналов"),
         subtitle = uiText("决定内核日志记多详细。平时用“警告”就够了。", "How much detail the core logs. Warning is enough for everyday use.", "Насколько подробно ядро ведёт журнал. Для обычного использования хватит «Предупреждений»."),
-        note = uiText("下次连接时生效。日志只保存在本机，可在“查看”里浏览。", "Applies from the next connection. Logs stay on this phone; open them with View.", "Применится при следующем подключении. Журналы хранятся только на телефоне, откройте их через «Просмотр»."),
+        note = uiText(
+            "下次连接时生效。日志只保存在本机，可在“查看”里浏览。访问日志（连接过的网站）只在“信息”和“调试”级别记录，调回“警告”或“错误”后会在下次连接时清除。",
+            "Applies from the next connection. Logs stay on this phone; open them with View. The access log (sites connected to) is only kept at Info and Debug, and is cleared on the next connection after switching back to Warning or Error.",
+            "Применится при следующем подключении. Журналы хранятся только на телефоне, откройте их через «Просмотр». Журнал доступа (посещённые сайты) ведётся только на уровнях «Информация» и «Отладка» и очищается при следующем подключении после возврата к «Предупреждениям» или «Ошибкам».",
+        ),
         canSave = true,
         onDismiss = onDismiss,
         onSave = { onConfirm(pending) },
@@ -414,6 +418,43 @@ internal fun LogLevelDialog(
  * can't restyle). On Android 12 and older, where apps can't ask, it shows the
  * manual steps instead.
  */
+/** How to turn on Android's Always-on VPN for this app (the system has no API to do it). */
+@Composable
+internal fun AlwaysOnVpnDialog(
+    onDismiss: () -> Unit,
+    onOpenSettings: () -> Unit,
+) {
+    ChoiceDialogFrame(
+        icon = Icons.Rounded.ToggleOn,
+        title = uiText("开机自动连接", "Connect on boot", "Подключение при загрузке"),
+        subtitle = uiText(
+            "由 Android 的“始终开启的 VPN”完成：开机、应用更新后，系统会自动启动 PurpleBear 并连接上次的节点。",
+            "Done by Android's Always-on VPN: after the phone starts or the app updates, the system starts PurpleBear and connects to the last node.",
+            "Это делает «Постоянная VPN» Android: после загрузки телефона или обновления приложения система запускает PurpleBear и подключает последний узел.",
+        ),
+        note = uiText(
+            "同一页的“屏蔽未使用 VPN 的连接”请按需打开：打开后不能在 App 里手动断开；分应用模式下，没选中的应用会完全断网。",
+            "Turn on \"Block connections without VPN\" on the same page only if you want it: with it on, the VPN can't be turned off from the app, and in per-app mode the apps you didn't select lose all network access.",
+            "«Блокировать соединения без VPN» на той же странице включайте только при необходимости: тогда VPN нельзя выключить из приложения, а в режиме по приложениям невыбранные приложения остаются без сети.",
+        ),
+        canSave = true,
+        onDismiss = onDismiss,
+        onSave = onOpenSettings,
+        saveText = uiText("打开系统 VPN 设置", "Open system VPN settings", "Открыть настройки VPN"),
+    ) {
+        Text(
+            text = uiText(
+                "1. 在系统 VPN 列表里点 PurpleBear 右边的齿轮。\n2. 打开“始终开启的 VPN”。\n\n需要先在 PurpleBear 里成功连接过一次。",
+                "1. In the system VPN list, tap the gear next to PurpleBear.\n2. Turn on \"Always-on VPN\".\n\nConnect once in PurpleBear first.",
+                "1. В списке VPN нажмите шестерёнку рядом с PurpleBear.\n2. Включите «Постоянная VPN».\n\nСначала один раз подключитесь в PurpleBear.",
+            ),
+            color = TextPrimary,
+            fontSize = TypeScale.Body,
+            lineHeight = TypeScale.BodyLine,
+        )
+    }
+}
+
 @Composable
 internal fun QuickTileDialog(
     canRequest: Boolean,

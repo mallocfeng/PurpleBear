@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+. The app's data holds node credentials, subscription links, the
+  Tailscale auth key and node identity, and the MCP token.
+
+  Cloud backup: nothing. It would put all of that in the user's cloud account.
+
+  Phone-to-phone transfer (set up a new phone from the old one): only the
+  saved nodes and settings. Everything else is tied to the old phone and is
+  made again on the new one: the Tailscale node identity (two phones with the
+  same identity knock each other off the tailnet), pinned certificates, the
+  MCP token, the VPN's run state, logs and downloaded rule lists.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="sharedpref" path="mallocgfw_state.xml" />
+    </device-transfer>
+</data-extraction-rules>

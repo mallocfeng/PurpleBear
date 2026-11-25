@@ -186,11 +186,15 @@ object AppStateStore {
             }
         val visibleServers = filteredServers.filterNot { it.hiddenUnsupported }
         val visibleServerMap = visibleServers.associateBy { it.id }
+        val allServerIds = filteredServers.map { it.id }.toSet()
         val normalizedPreProxyServers = filteredServers.map { server ->
+            // A front hidden on this load (no longer supported) keeps its link:
+            // the node refuses to connect with the reason instead of going
+            // direct, and works again if a later version supports the front.
             val normalizedPreProxyId = server.preProxyNodeId.trim().takeIf { candidateId ->
                 candidateId.isNotBlank() &&
                     candidateId != server.id &&
-                    visibleServerMap[candidateId]?.let(ManualNodeFactory::isRunnable) == true &&
+                    candidateId in allServerIds &&
                     ManualNodeFactory.supportsPreProxy(server)
             }.orEmpty()
             val normalizedFallbackId = server.fallbackNodeId.trim().takeIf { candidateId ->
@@ -352,6 +356,14 @@ object AppStateStore {
                         put("status", subscription.status)
                         put("autoUpdate", subscription.autoUpdate)
                         putOpt("sourceUrl", subscription.sourceUrl)
+                        subscription.usage?.let { usage ->
+                            put("usage", JSONObject().apply {
+                                putOpt("upload", usage.uploadBytes)
+                                putOpt("download", usage.downloadBytes)
+                                putOpt("total", usage.totalBytes)
+                                putOpt("expire", usage.expireAtSec)
+                            })
+                        }
                     })
                 }
             })
@@ -525,6 +537,10 @@ object AppStateStore {
                 status = item.optString("status", "已导入"),
                 autoUpdate = item.optBoolean("autoUpdate", false),
                 sourceUrl = item.optNullableString("sourceUrl"),
+                usage = item.optJSONObject("usage")?.let { usage ->
+                    fun field(name: String) = if (usage.has(name) && !usage.isNull(name)) usage.optLong(name) else null
+                    SubscriptionUsage(field("upload"), field("download"), field("total"), field("expire"))
+                },
             )
         }
     }

@@ -838,6 +838,30 @@ object XrayConfigFactory {
         }.toString(2)
     }
 
+    private val probeAllocation by lazy { LocalProxyAllocation.ephemeral() }
+
+    /**
+     * The outbounds of [node] and its pre-proxy chain, tagged "proxy" first,
+     * for a latency probe in a separate core (LatencyProbeClient). Null when
+     * the probe can't stand in for the real run: a node or front that runs in
+     * the mihomo sidecar (its listener only exists while that sidecar does),
+     * a chain that can't run, or settings the outbound can't be built from.
+     */
+    fun buildProbeOutbounds(node: ServerNode, availableServers: List<ServerNode>): String? {
+        val chain = preProxyChain(node, availableServers)
+        if (chain.problem != null) return null
+        if ((listOf(node) + chain.fronts).any { NodeCompatibility.runsInSidecar(it) }) return null
+        return runCatching {
+            JSONObject().put(
+                "outbounds",
+                JSONArray().apply {
+                    // No sidecar node in this chain, so the allocation is never read.
+                    buildOutboundChain(node, "proxy", availableServers, probeAllocation, emptyList()).forEach(::put)
+                },
+            ).toString()
+        }.getOrNull()
+    }
+
     private fun proxyOutbound(
         node: ServerNode,
         tag: String,
@@ -896,7 +920,12 @@ object XrayConfigFactory {
         val path = mutableListOf(node)
         var current = node
         while (true) {
-            val front = nextPreProxy(current, availableServers) ?: return PreProxyChain(fronts)
+            val front = when (val next = nextPreProxy(current, availableServers)) {
+                NextPreProxy.None -> return PreProxyChain(fronts)
+                // Never dialed directly instead: the node needs that front.
+                is NextPreProxy.Unusable -> return PreProxyChain(fronts, next.reason)
+                is NextPreProxy.Front -> next.node
+            }
             if (path.any { it.id == front.id }) {
                 val loop = (path.dropWhile { it.id != front.id } + front).joinToString(" → ") { it.name }
                 return PreProxyChain(fronts, tr("前置代理循环引用（$loop），无法连接", "The pre-proxy chain loops ($loop) and can't connect", "Цепочка предварительных прокси зациклена ($loop), подключение невозможно"))
@@ -910,18 +939,41 @@ object XrayConfigFactory {
         }
     }
 
-    /** The node [node] dials through, or null when it has none it can use. */
-    private fun nextPreProxy(node: ServerNode, availableServers: List<ServerNode>): ServerNode? {
+    private sealed interface NextPreProxy {
+        data object None : NextPreProxy
+        data class Front(val node: ServerNode) : NextPreProxy
+        /** The node names a front that can't run (gone, hidden, unsupported). */
+        data class Unusable(val reason: String) : NextPreProxy
+    }
+
+    /**
+     * The node [node] dials through. A front it names that is missing, hidden
+     * or can't run is [NextPreProxy.Unusable]: the chain is refused rather
+     * than run without it (the node would dial its server directly).
+     */
+    private fun nextPreProxy(node: ServerNode, availableServers: List<ServerNode>): NextPreProxy {
         val targetId = node.preProxyNodeId.trim()
-        if (targetId.isBlank()) return null
-        val target = availableServers.firstOrNull { candidate ->
-            candidate.id == targetId && !candidate.hiddenUnsupported
-        } ?: return null
+        if (targetId.isBlank()) return NextPreProxy.None
         // The node itself must be an Xray node (it dials through the front with
         // dialerProxy); the front may run anywhere, including the mihomo sidecar,
-        // whose loopback listener is an ordinary SOCKS outbound here.
-        if (!ManualNodeFactory.supportsPreProxy(node) || !ManualNodeFactory.isRunnable(target)) return null
-        return target
+        // whose loopback listener is an ordinary SOCKS outbound here. Saved
+        // links of other nodes are cleared on load (StateOps.normalizeNodeLinks).
+        if (!ManualNodeFactory.supportsPreProxy(node)) return NextPreProxy.None
+        val target = availableServers.firstOrNull { it.id == targetId }
+            ?: return NextPreProxy.Unusable(
+                tr("前置节点已不存在，无法连接", "Its pre-proxy no longer exists, so it can't connect", "Предварительного прокси больше нет, подключение невозможно"),
+            )
+        if (target.hiddenUnsupported || !ManualNodeFactory.isRunnable(target)) {
+            val why = NodeCompatibility.coreIncompatibility(target)?.let { "（$it）" }.orEmpty()
+            return NextPreProxy.Unusable(
+                tr(
+                    "前置节点 ${target.name} 不受支持$why，无法连接",
+                    "Its pre-proxy ${target.name} isn't supported$why, so it can't connect",
+                    "Предварительный прокси ${target.name} не поддерживается$why, подключение невозможно",
+                ),
+            )
+        }
+        return NextPreProxy.Front(target)
     }
 
     private fun attachDialerProxy(

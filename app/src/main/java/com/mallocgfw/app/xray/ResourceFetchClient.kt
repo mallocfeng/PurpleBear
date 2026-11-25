@@ -46,14 +46,26 @@ object ResourceFetchClient {
         readTimeoutMs: Int,
         label: String,
         requestProfile: RequestProfile = RequestProfile.DEFAULT,
-    ): String {
+    ): String = fetchTextWithHeaders(url, connectTimeoutMs, readTimeoutMs, label, requestProfile).text
+
+    /** The body as text and the response headers (names in lower case). */
+    class TextResponse(val text: String, val headers: Map<String, String>)
+
+    fun fetchTextWithHeaders(
+        url: String,
+        connectTimeoutMs: Int,
+        readTimeoutMs: Int,
+        label: String,
+        requestProfile: RequestProfile = RequestProfile.DEFAULT,
+    ): TextResponse {
         val response = fetchResponse(url, connectTimeoutMs, readTimeoutMs, requestProfile)
         if (response.code !in 200..299) {
             error(tr("$label 返回 HTTP ${response.code}。", "$label returned HTTP ${response.code}.", "$label: ответ HTTP ${response.code}."))
         }
-        return response.body.toString(Charsets.UTF_8).also {
+        val text = response.body.toString(Charsets.UTF_8).also {
             if (it.isBlank()) error(tr("$label 返回为空。", "$label returned nothing.", "$label: пустой ответ."))
         }
+        return TextResponse(text, response.headers)
     }
 
     fun fetchBytes(

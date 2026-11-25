@@ -201,8 +201,10 @@ object AppController {
         connected: String?,
         reconnect: Boolean,
     ): String? {
-        if (base.servers.map { it.id }.toSet() == next.servers.map { it.id }.toSet()) return null
-        val notice = StateOps.removalNotice(base, next)
+        // Nodes removed: say what that cleared. Nodes kept but changed (a
+        // refresh moved one to a new address) can still need a reconnect.
+        val idsChanged = base.servers.map { it.id }.toSet() != next.servers.map { it.id }.toSet()
+        val notice = if (idsChanged) StateOps.removalNotice(base, next) else null
         notice?.let {
             AppLogManager.append(appContext, "NODES", it.replace("\n\n", " "))
             _removalNotice.value = it

@@ -553,8 +553,10 @@ internal fun NodeAvatar(server: ServerNode, size: androidx.compose.ui.unit.Dp = 
 internal fun LatencyText(latencyMs: Int, testing: Boolean = false) {
     val color = when {
         testing || latencyMs <= 0 -> TextSecondary
-        latencyMs < 200 -> Success
-        latencyMs < 500 -> Warning
+        // A real request through the node (handshake included), not a bare
+        // TCP connect: a good node is a few hundred milliseconds.
+        latencyMs < 400 -> Success
+        latencyMs < 1000 -> Warning
         else -> Error
     }
     Text(
@@ -689,6 +691,7 @@ internal fun NodeDetailScreen(
     var showDeleteNodeDialog by remember { mutableStateOf(false) }
     var showDeleteGroupDialog by remember { mutableStateOf(false) }
     var showAllParameters by remember { mutableStateOf(false) }
+    var showShareDialog by remember { mutableStateOf(false) }
     val isActiveServer = server?.id != null && server.id == activeServerId
     val parameterRows = remember(server?.id, server?.outboundJson, server?.rawUri) {
         server?.let(::buildNodeParameterRows).orEmpty()
@@ -874,6 +877,15 @@ internal fun NodeDetailScreen(
                 },
             )
         }
+        if (server != null) {
+            item {
+                CompactOutlinedActionButton(
+                    text = uiText("分享节点", "Share node", "Поделиться узлом"),
+                    onClick = { showShareDialog = true },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
         if (server != null && group?.type == ServerGroupType.Local) {
             item {
                 CompactOutlinedActionButton(
@@ -888,6 +900,10 @@ internal fun NodeDetailScreen(
                 NoteBox(text = runtimeMessage)
             }
         }
+    }
+
+    if (showShareDialog && server != null) {
+        NodeShareDialog(server = server, onDismiss = { showShareDialog = false })
     }
 
     if (showDeleteNodeDialog && server != null) {

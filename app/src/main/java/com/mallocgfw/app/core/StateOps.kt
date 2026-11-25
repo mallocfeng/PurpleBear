@@ -63,7 +63,9 @@ object StateOps {
      * latency, pre-proxy, fallback). Parsed ids carry the line number, so
      * without this a reordered subscription would drop every app route, media
      * route and chain pointing at its nodes. A node matches by share link, else
-     * by protocol, address, port and name. Ids of removed nodes are not reused:
+     * by protocol, address, port and name, else by protocol and name when that
+     * name is unique on both sides (providers move nodes to new IPs and ports
+     * under the same name). Ids of removed nodes are not reused:
      * a new node gets a freshly generated id, since its parsed id (group, line,
      * link prefix) can equal that of a node removed earlier, which rule
      * sources (NODE: targets) or other settings may still name.
@@ -82,6 +84,17 @@ object StateOps {
             val old = unmatched.firstOrNull { it.rawUri.isNotBlank() && it.rawUri == node.rawUri }
                 ?: unmatched.firstOrNull { it.subscriptionMergeKey() == node.subscriptionMergeKey() }
                 ?: return@forEach
+            unmatched.remove(old)
+            matched[node.id] = old
+            finalIds[node.id] = old.id
+        }
+        // Same name, new server: only when the name picks one node on each side.
+        fun nameKey(node: ServerNode) = node.protocol.uppercase() + "|" + node.subscriptionNameKey()
+        val newByName = refreshedNodes.filter { it.id !in finalIds }.groupBy(::nameKey)
+        val oldByName = unmatched.groupBy(::nameKey)
+        newByName.forEach { (key, nodes) ->
+            val node = nodes.singleOrNull() ?: return@forEach
+            val old = oldByName[key]?.singleOrNull() ?: return@forEach
             unmatched.remove(old)
             matched[node.id] = old
             finalIds[node.id] = old.id
@@ -205,6 +218,9 @@ object StateOps {
 
         preview.subscription?.let { subscription ->
             val normalizedSubscription = subscription.copy(
+                // A response without the usage header (some panels only send it
+                // to clients they know) keeps what was last reported.
+                usage = subscription.usage ?: subscriptions.firstOrNull { it.id == targetGroupId }?.usage,
                 id = targetGroupId,
                 name = targetGroup.name,
                 nodes = mergedNodeCount,
@@ -351,12 +367,17 @@ object StateOps {
     /** Drops pre-proxy / fallback links that point at missing, hidden or unrunnable nodes. */
     fun normalizeNodeLinks(servers: List<ServerNode>): List<ServerNode> {
         val visibleServerMap = servers.filterNot { it.hiddenUnsupported }.associateBy { it.id }
+        val allIds = servers.map { it.id }.toSet()
         return servers.map { server ->
+            // A pre-proxy that is still there but hidden or unrunnable is kept:
+            // the node then refuses to connect (XrayConfigFactory.preProxyChain)
+            // instead of silently dialing its server directly. Only a front
+            // that was removed is cleared (the removal notice says so).
             val preProxyId = server.preProxyNodeId.trim().takeIf { candidateId ->
                 candidateId.isNotBlank() &&
                     candidateId != server.id &&
                     ManualNodeFactory.supportsPreProxy(server) &&
-                    visibleServerMap[candidateId]?.let(ManualNodeFactory::isRunnable) == true
+                    candidateId in allIds
             }.orEmpty()
             val fallbackId = server.fallbackNodeId.trim().takeIf { candidateId ->
                 candidateId.isNotBlank() &&
@@ -439,14 +460,36 @@ object StateOps {
         val activeId = connectedServerId?.takeIf { it.isNotBlank() } ?: return RemovalEffect.None
         val remaining = after.servers.map { it.id }.toSet()
         val removed = before.servers.map { it.id }.filterNot { it in remaining }.toSet()
-        if (removed.isEmpty()) return RemovalEffect.None
         val activeNode = before.servers.firstOrNull { it.id == activeId }
         if (activeId in removed) return moveOffRemovedNode(after, activeNode?.name ?: activeId)
         val active = after.servers.firstOrNull { it.id == activeId } ?: return RemovalEffect.None
         val used = runningNodeIds ?: nodesInRunningConfig(before, activeId)
-        if (used.none { it in removed }) return RemovalEffect.None
-        return reconnectToDropRemoved(active)
+        if (used.any { it in removed }) return reconnectToDropRemoved(active)
+        // A node the tunnel uses kept its id but connects differently now (a
+        // refresh moved it to a new address): reconnect so the tunnel uses it.
+        val beforeById = before.servers.associateBy { it.id }
+        val afterById = after.servers.associateBy { it.id }
+        val changed = used.any { id ->
+            val old = beforeById[id] ?: return@any false
+            val new = afterById[id] ?: return@any false
+            connectionKey(old) != connectionKey(new)
+        }
+        if (!changed) return RemovalEffect.None
+        return RemovalEffect.Reconnect(
+            active,
+            tr(
+                "正在使用的节点连接参数已更新，正在重连…",
+                "A node the VPN uses has new connection settings; reconnecting…",
+                "У используемого узла новые параметры подключения, переподключение…",
+            ),
+        )
     }
+
+    /** What a node connects with; a change means the running tunnel is out of date. */
+    private fun connectionKey(node: ServerNode): String = listOf(
+        node.protocol, node.address, node.port, node.security, node.transport, node.flow,
+        node.rawUri, node.outboundJson, node.mihomoProxyJson, node.preProxyNodeId,
+    ).joinToString("\u0000")
 
     /**
      * A tunnel that just came up, checked against [state]: a node it was built

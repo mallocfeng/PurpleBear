@@ -73,6 +73,20 @@ class XrayVpnService : VpnService() {
     @Volatile
     private var lastStartId = 0
 
+    /**
+     * A tunnel has been up since the user last connected: a connect that
+     * fails after that is a dropped connection, retried here ([scheduleAutoReconnect])
+     * whether or not the app's screens are in memory.
+     */
+    @Volatile
+    private var sessionEstablished = false
+
+    @Volatile
+    private var autoReconnectJob: Job? = null
+
+    @Volatile
+    private var autoReconnectAttempts = 0
+
     /** Set by [startCore] when routed nodes had to be left out; shown once connected. */
     @Volatile
     private var routedFallbackNotice: String? = null
@@ -196,6 +210,10 @@ class XrayVpnService : VpnService() {
             ACTION_CONNECT -> beginConnect(
                 serverId = intent.getStringExtra(EXTRA_SERVER_ID).orEmpty(),
                 keepFailover = intent.getBooleanExtra(EXTRA_KEEP_FAILOVER, false),
+                autoRetry = intent.getBooleanExtra(EXTRA_AUTO_RETRY, false),
+                // Redelivered after the system killed the process: nobody is
+                // watching, so a failed start is retried like a dropped tunnel.
+                systemStarted = flags and START_FLAG_REDELIVERY != 0,
             )
 
             // The system starts the VPN itself for Always-on (at boot, after an
@@ -215,7 +233,7 @@ class XrayVpnService : VpnService() {
                     stopSelf(startId)
                 } else {
                     AppLogManager.append(applicationContext, TAG, "系统启动 Always-on VPN，serverId=$serverId")
-                    beginConnect(serverId, keepFailover = false)
+                    beginConnect(serverId, keepFailover = false, systemStarted = true)
                 }
             }
 
@@ -244,6 +262,9 @@ class XrayVpnService : VpnService() {
                                 VpnQuickSettingsTileHelper.requestRefresh(applicationContext)
                                 server?.let { XrayCoreManager.updateActiveServer(it.name, message) }
                                 startHeartbeatMonitor()
+                                // This request cancelled a pending media-rule retry
+                                // (newRouteGeneration): schedule it for the new node.
+                                retryUnappliedStreamingRules(serverId, generation)
                             }
                             .onFailure { error ->
                                 if (error is CancellationException) return@onFailure
@@ -258,6 +279,7 @@ class XrayVpnService : VpnService() {
                                     message = failureMessage,
                                 )
                                 VpnQuickSettingsTileHelper.requestRefresh(applicationContext)
+                                activeServerId?.takeIf { it.isNotBlank() }?.let { retryUnappliedStreamingRules(it, generation) }
                             }
                     }
                 }
@@ -284,6 +306,9 @@ class XrayVpnService : VpnService() {
                 publishDisconnectedOnDestroy = true
                 destroyMessage = null
                 val generation = newRouteGeneration()
+                // The session ends here: nothing after this is a dropped tunnel.
+                sessionEstablished = false
+                autoReconnectAttempts = 0
                 AppLogManager.append(applicationContext, TAG, "收到断开请求")
                 VpnRuntimeStore.reset(
                     applicationContext,
@@ -339,6 +364,10 @@ class XrayVpnService : VpnService() {
         publishDisconnectedOnDestroy = true
         destroyMessage = tr("VPN 权限已撤销，连接已断开", "VPN permission was revoked; disconnected", "Разрешение VPN отозвано, соединение разорвано")
         AppLogManager.append(applicationContext, TAG, "VPN 权限被系统撤销")
+        // Another VPN took over, or the user revoked it: not a drop to retry.
+        sessionEstablished = false
+        autoReconnectJob?.cancel()
+        autoReconnectJob = null
         scope.launch {
             operationMutex.withLock {
                 disconnect(updateRuntime = false, message = destroyMessage ?: tr("VPN 已断开", "VPN disconnected", "VPN отключён"))
@@ -412,6 +441,11 @@ class XrayVpnService : VpnService() {
             .addRoute("0.0.0.0", 0)
             .addRoute("::", 0)
             .applyLocalNetworkExclusions(tailscaleRouting?.subnetRoutes.orEmpty())
+        // Android 10+ treats a VPN as metered unless told otherwise, even on
+        // Wi-Fi: Play auto-updates, cloud backups and "Wi-Fi only" downloads
+        // of every app would stop while connected. Not metered here means
+        // "as metered as the network underneath".
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) builder.setMetered(false)
         // MagicDNS: Android gets Tailscale's resolver address, which always enters
         // the tunnel (a LAN resolver is excluded from it). Xray answers tailnet
         // names and forwards every other query to the real resolver, routed as
@@ -446,6 +480,10 @@ class XrayVpnService : VpnService() {
             }
             require(installedAllowedPackageCount > 0) {
                 tr("所选代理应用均未安装，请重新选择后再连接。", "None of the selected apps are installed. Choose again before connecting.", "Ни одно из выбранных приложений не установлено. Выберите заново перед подключением.")
+            }
+            if (manualDisconnectBlocked()) {
+                // The per-app screen warns about this too.
+                AppLogManager.append(applicationContext, TAG, "系统已开启“屏蔽未使用 VPN 的连接”：分应用模式下，未选中的应用不经过 VPN，会被系统断网")
             }
         } else {
             // Smart mode and the global-proxy rule mode keep the app's own outbound traffic
@@ -745,10 +783,22 @@ class XrayVpnService : VpnService() {
      * Starts a connection to [serverId]: an ACTION_CONNECT from the app, or the
      * system starting the VPN (Always-on, see [alwaysOnServerId]).
      */
-    private fun beginConnect(serverId: String, keepFailover: Boolean) {
+    private fun beginConnect(
+        serverId: String,
+        keepFailover: Boolean,
+        /** One of [scheduleAutoReconnect]'s attempts: keeps counting them. */
+        autoRetry: Boolean = false,
+        /** Started by the system (Always-on, redelivery), not from the app's screens. */
+        systemStarted: Boolean = false,
+    ) {
         publishDisconnectedOnDestroy = false
         destroyMessage = null
         val generation = newRouteGeneration()
+        if (!autoRetry) autoReconnectAttempts = 0
+        // A failure of this connect is retried when it interrupts a session
+        // that was up, or when the system started it with no screen to show
+        // the error on. A first connect the user just tapped reports its error.
+        val retryOnFailure = sessionEstablished || systemStarted || autoRetry
         AppLogManager.append(applicationContext, TAG, "收到连接请求，serverId=$serverId")
         VpnRuntimeStore.reset(
             applicationContext,
@@ -767,6 +817,8 @@ class XrayVpnService : VpnService() {
                 runCatching { connect(serverId, keepFailover) }
                     .onSuccess {
                         if (recheckInstalledNodes()) return@onSuccess
+                        sessionEstablished = true
+                        autoReconnectAttempts = 0
                         val connectedAtMs = System.currentTimeMillis()
                         AppLogManager.append(applicationContext, TAG, "VPN 已连接，serverId=$serverId")
                         VpnRuntimeStore.updateConnection(
@@ -804,6 +856,8 @@ class XrayVpnService : VpnService() {
                             ?: tr("VPN 建立失败。", "Couldn't set up the VPN.", "Не удалось установить VPN.")
                         AppLogManager.append(applicationContext, TAG, "VPN 连接失败：$failureMessage", error)
                         Log.e(TAG, "VPN connect failed: $failureMessage", error)
+                        if (retryOnFailure && scheduleAutoReconnect(serverId, error, failureMessage, generation)) return@onFailure
+                        sessionEstablished = false
                         VpnRuntimeStore.reset(
                             applicationContext,
                             status = ConnectionStatus.Disconnected,
@@ -818,6 +872,61 @@ class XrayVpnService : VpnService() {
                     }
             }
         }
+    }
+
+    /**
+     * The tunnel went down on its own (a reconnect after a network change
+     * failed, a node switch left nothing running): try again here, up to
+     * [AUTO_RECONNECT_DELAYS_MS].size times with growing pauses, when "断线自动重连"
+     * is on. In the service, so it works with the app's screens gone.
+     * True when a retry was scheduled; the caller then leaves the service
+     * running. Not retried: a setting the user has to fix (require() failures
+     * such as no app selected in per-app mode), and a node that is gone.
+     * A connect, switch or disconnect that arrives meanwhile cancels the retry
+     * ([newRouteGeneration]).
+     */
+    private suspend fun scheduleAutoReconnect(
+        serverId: String,
+        error: Throwable,
+        failureMessage: String,
+        generation: Long,
+    ): Boolean {
+        if (error is IllegalArgumentException) return false
+        val state = AppController.load(applicationContext)
+        if (!state.settings.autoReconnect) return false
+        if (state.servers.none { it.id == serverId }) return false
+        if (autoReconnectAttempts >= AUTO_RECONNECT_DELAYS_MS.size) {
+            AppLogManager.append(applicationContext, TAG, "自动重连 ${AUTO_RECONNECT_DELAYS_MS.size} 次仍失败，停止重试：$failureMessage")
+            return false
+        }
+        val attempt = ++autoReconnectAttempts
+        val delayMs = AUTO_RECONNECT_DELAYS_MS[attempt - 1]
+        val seconds = delayMs / 1000
+        val message = tr(
+            "连接中断（$failureMessage），$seconds 秒后第 $attempt 次自动重连…",
+            "Connection lost ($failureMessage). Reconnecting in $seconds s (attempt $attempt)…",
+            "Соединение потеряно ($failureMessage). Переподключение через $seconds с (попытка $attempt)…",
+        )
+        AppLogManager.append(applicationContext, TAG, message)
+        disconnect(updateRuntime = false)
+        VpnRuntimeStore.reset(applicationContext, status = ConnectionStatus.Connecting, activeServerId = serverId, message = message)
+        VpnQuickSettingsTileHelper.requestRefresh(applicationContext)
+        // disconnect() left the foreground; stay there while waiting, or the
+        // system may stop the service (and refuse the start below).
+        startServiceForeground(buildNotification(tr("连接中断，等待自动重连…", "Connection lost; waiting to reconnect…", "Соединение потеряно, ожидание переподключения…")))
+        autoReconnectJob?.cancel()
+        autoReconnectJob = scope.launch {
+            delay(delayMs)
+            withContext(Dispatchers.Main) {
+                if (generation != routeGeneration) return@withContext
+                startService(
+                    connectIntent(applicationContext, serverId)
+                        .putExtra(EXTRA_KEEP_FAILOVER, true)
+                        .putExtra(EXTRA_AUTO_RETRY, true),
+                )
+            }
+        }
+        return true
     }
 
     /** The node an Always-on start connects to (StateOps.alwaysOnServerId). */
@@ -845,6 +954,8 @@ class XrayVpnService : VpnService() {
     private fun newRouteGeneration(): Long {
         streamingRetryJob?.cancel()
         streamingRetryJob = null
+        autoReconnectJob?.cancel()
+        autoReconnectJob = null
         return ++routeGeneration
     }
 
@@ -952,12 +1063,27 @@ class XrayVpnService : VpnService() {
 
                 val heartbeatOk = runHeartbeatProbeBatch(activeNode)
                 if (heartbeatOk == false) {
-                    switchToFallback(
+                    // The phone being offline (a lift, the underground) fails the
+                    // probes just the same: only switch when the fallback can be
+                    // reached, or the VPN would sit on the fallback for a quarter
+                    // of an hour over a few seconds without signal.
+                    if (!hasUnderlyingNetwork()) {
+                        AppLogManager.append(applicationContext, "FALLBACK", "心跳失败，但当前没有可用网络，不切换备用节点")
+                        continue
+                    }
+                    if (runHeartbeatProbeBatch(fallbackNode) == false) {
+                        AppLogManager.append(applicationContext, "FALLBACK", "心跳失败，但备用节点 ${fallbackNode.name} 同样无法连通，不切换")
+                        continue
+                    }
+                    val switching = switchToFallback(
                         source = activeNode,
                         fallback = fallbackNode,
                         reason = tr("心跳连续 3 次检测失败", "3 fallback checks failed in a row", "3 проверки подряд не прошли"),
                     )
-                    return@launch
+                    // A switch that went ahead restarts the monitor itself; one
+                    // that was called off (settings changed meanwhile) must not
+                    // end the checks for the rest of the session.
+                    if (switching) return@launch
                 }
             }
         }
@@ -986,11 +1112,11 @@ class XrayVpnService : VpnService() {
                     "主节点 ${primaryNode.name} 恢复探测成功($failbackPrimarySuccessCount/$FAILBACK_SUCCESS_THRESHOLD)",
                 )
                 if (failbackPrimarySuccessCount >= FAILBACK_SUCCESS_THRESHOLD) {
-                    switchBackToPrimary(
+                    // False: called off, the monitor keeps running.
+                    return switchBackToPrimary(
                         primary = primaryNode,
                         fallback = activeNode,
                     )
-                    return true
                 }
             }
             false -> {
@@ -1055,19 +1181,24 @@ class XrayVpnService : VpnService() {
         return false
     }
 
+    /**
+     * True when the switch went ahead (whatever its outcome, it restarts the
+     * heartbeat monitor or hands over to a reconnect); false when it was
+     * called off because the route or the settings changed meanwhile.
+     */
     private suspend fun switchToFallback(
         source: ServerNode,
         fallback: ServerNode,
         reason: String,
-    ) {
+    ): Boolean {
         operationMutex.withLock {
             val generation = routeGeneration
             val runtime = VpnRuntimeStore.snapshot.value
-            if (runtime.status != ConnectionStatus.Connected || runtime.activeServerId != source.id) return
+            if (runtime.status != ConnectionStatus.Connected || runtime.activeServerId != source.id) return false
             val latestState = AppController.load(applicationContext)
-            val latestSource = latestState.servers.firstOrNull { it.id == source.id } ?: return
-            val latestFallback = fallbackNodeFor(latestSource, latestState.servers) ?: return
-            if (latestFallback.id != fallback.id) return
+            val latestSource = latestState.servers.firstOrNull { it.id == source.id } ?: return false
+            val latestFallback = fallbackNodeFor(latestSource, latestState.servers) ?: return false
+            if (latestFallback.id != fallback.id) return false
 
             val switchingMessage = tr("$reason，正在切换到备用节点 ${latestFallback.name}…", "$reason. Switching to fallback node ${latestFallback.name}…", "$reason. Переключение на резервный узел ${latestFallback.name}…")
             AppLogManager.append(
@@ -1101,6 +1232,8 @@ class XrayVpnService : VpnService() {
                     VpnQuickSettingsTileHelper.requestRefresh(applicationContext)
                     XrayCoreManager.updateActiveServer(latestFallback.name, message)
                     startHeartbeatMonitor()
+                    // A pending media-rule retry was for the previous node: redo it for this one.
+                    retryUnappliedStreamingRules(latestFallback.id, generation)
                 }
                 .onFailure { error ->
                     if (error is CancellationException) return@onFailure
@@ -1118,20 +1251,22 @@ class XrayVpnService : VpnService() {
                     startHeartbeatMonitor()
                 }
         }
+        return true
     }
 
+    /** True when the switch went ahead, false when it was called off (see [switchToFallback]). */
     private suspend fun switchBackToPrimary(
         primary: ServerNode,
         fallback: ServerNode,
-    ) {
+    ): Boolean {
         operationMutex.withLock {
             val generation = routeGeneration
             val runtime = VpnRuntimeStore.snapshot.value
-            if (runtime.status != ConnectionStatus.Connected || runtime.activeServerId != fallback.id) return
+            if (runtime.status != ConnectionStatus.Connected || runtime.activeServerId != fallback.id) return false
             val latestState = AppController.load(applicationContext)
             val latestPrimary = latestState.servers.firstOrNull { it.id == primary.id } ?: run {
                 resetFailoverState()
-                return
+                return false
             }
             val switchingMessage = tr("主节点 ${latestPrimary.name} 已恢复，正在切回主节点…", "Primary node ${latestPrimary.name} is back; switching back…", "Основной узел ${latestPrimary.name} снова доступен, возврат на него…")
             AppLogManager.append(
@@ -1163,6 +1298,8 @@ class XrayVpnService : VpnService() {
                     VpnQuickSettingsTileHelper.requestRefresh(applicationContext)
                     XrayCoreManager.updateActiveServer(latestPrimary.name, message)
                     startHeartbeatMonitor()
+                    // A pending media-rule retry was for the previous node: redo it for this one.
+                    retryUnappliedStreamingRules(latestPrimary.id, generation)
                 }
                 .onFailure { error ->
                     if (error is CancellationException) return@onFailure
@@ -1180,7 +1317,25 @@ class XrayVpnService : VpnService() {
                     startHeartbeatMonitor()
                 }
         }
+        return true
     }
+
+    /**
+     * Whether a physical network is up at all. The heartbeat asks before
+     * blaming a node for failed probes. Not NET_CAPABILITY_VALIDATED: where
+     * the system's own connectivity check is blocked, a working network
+     * never gets it. A network that is up but dead is caught by probing the
+     * fallback node too.
+     */
+    private fun hasUnderlyingNetwork(): Boolean = runCatching {
+        val connectivity = getSystemService(ConnectivityManager::class.java) ?: return@runCatching true
+        @Suppress("DEPRECATION")
+        connectivity.allNetworks.any { network ->
+            val capabilities = connectivity.getNetworkCapabilities(network) ?: return@any false
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) &&
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        }
+    }.getOrDefault(true)
 
     /**
      * A failed switch can leave nothing behind the tunnel: runXray stops the
@@ -1215,6 +1370,10 @@ class XrayVpnService : VpnService() {
             return false
         }
         AppLogManager.append(applicationContext, TAG, message, error)
+        // Nothing runs behind the tunnel now: a dropped connection. Reconnect
+        // to the node that was running rather than stay off.
+        if (previousId != null && scheduleAutoReconnect(previousId, error, message, generation)) return false
+        sessionEstablished = false
         publishDisconnectedOnDestroy = true
         destroyMessage = message
         disconnect(updateRuntime = true, message = message)
@@ -1500,6 +1659,10 @@ class XrayVpnService : VpnService() {
         private const val ACTION_REFRESH_SPEED = "com.mallocgfw.app.action.REFRESH_SPEED"
         private const val EXTRA_SERVER_ID = "extra_server_id"
         private const val EXTRA_KEEP_FAILOVER = "extra_keep_failover"
+        private const val EXTRA_AUTO_RETRY = "extra_auto_retry"
+
+        /** Pauses before each automatic reconnect; their number is the number of attempts. */
+        private val AUTO_RECONNECT_DELAYS_MS = listOf(2_000L, 5_000L, 10_000L)
         private const val EXTRA_INTERNAL_DISCONNECT = "extra_internal_disconnect"
         private const val NOTIFICATION_CHANNEL_ID = "mallocgfw_vpn"
         private const val NOTIFICATION_ID = 2001

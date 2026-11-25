@@ -363,7 +363,7 @@ object ImportParser {
         val requestProfile = selectSubscriptionRequestProfile(sourceUrl)
         val autoUpdate = shouldAutoRefreshSubscription(sourceUrl)
         suspend fun fetch(profile: ResourceFetchClient.RequestProfile) = withContext(Dispatchers.IO) {
-            ResourceFetchClient.fetchText(
+            ResourceFetchClient.fetchTextWithHeaders(
                 url = sourceUrl,
                 connectTimeoutMs = SUBSCRIPTION_CONNECT_TIMEOUT_MS,
                 readTimeoutMs = SUBSCRIPTION_READ_TIMEOUT_MS,
@@ -379,10 +379,22 @@ object ImportParser {
             content = content,
             providerContents = fetchProviderContents(content),
         )
+        // Traffic and expiry, from whichever response carried them: panels send
+        // the header to the clients they know, so one of the two may lack it.
+        var reportedUsage: SubscriptionUsage? = null
+        fun withUsage(preview: ImportPreview): ImportPreview {
+            val usage = reportedUsage ?: return preview
+            val subscription = preview.subscription ?: return preview
+            return if (subscription.usage != null) preview else preview.copy(subscription = subscription.copy(usage = usage))
+        }
         suspend fun attempt(profile: ResourceFetchClient.RequestProfile) = runCatching {
-            val content = fetch(profile)
-            if (looksLikeWebPage(content)) error(WEB_PAGE_ERROR)
-            preview(content)
+            val response = fetch(profile)
+            val usage = SubscriptionUsage.parse(response.headers["subscription-userinfo"])
+            if (usage != null && reportedUsage == null) reportedUsage = usage
+            if (looksLikeWebPage(response.text)) error(WEB_PAGE_ERROR)
+            preview(response.text).let { built ->
+                built.copy(subscription = built.subscription?.copy(usage = usage))
+            }
         }
         val first = attempt(requestProfile)
         if (requestProfile != ResourceFetchClient.RequestProfile.DEFAULT) return first.getOrThrow()
@@ -394,8 +406,8 @@ object ImportParser {
         val second = attempt(ResourceFetchClient.RequestProfile.CLASH_META_SUBSCRIPTION)
         fun usable(result: Result<ImportPreview>) = result.getOrNull()?.nodes?.count { !it.hiddenUnsupported } ?: -1
         return when {
-            usable(second) > usable(first) -> second.getOrThrow()
-            first.isSuccess -> first.getOrThrow()
+            usable(second) > usable(first) -> withUsage(second.getOrThrow())
+            first.isSuccess -> withUsage(first.getOrThrow())
             else -> throw first.exceptionOrNull()!!
         }
     }
@@ -459,7 +471,8 @@ object ImportParser {
         // Groups that use a downloaded provider pick their front from it.
         val previousProviders = clashProviders.get()
         clashProviders.set(downloadedProviderCandidates(providerContents, sourceId, groupName))
-        val parsedNodes = try { (listOf(ProviderContent(content)) + providerContents).flatMap { part ->
+        // One list per part: links (pre-proxy, fallback) only point inside their own part.
+        val parsedParts = try { (listOf(ProviderContent(content)) + providerContents).map { part ->
             runCatching {
                 withClashContext(mainProxies, mainGroups) {
                     if (part.override.fields.isNotEmpty() && !isClashProxyDocument(part.content)) {
@@ -479,11 +492,13 @@ object ImportParser {
                 .map { node -> part.override.rename(node.name).let { if (it == node.name) node else node.copy(name = it) } }
                 .filter(part.filter::keeps)
         } } finally { clashProviders.set(previousProviders) }
-        val uniqueNodes = withUniqueIds(parsedNodes)
+        val uniqueNodes = withUniqueIdsByPart(parsedParts)
         val skipped = skippedTypes.get().toList()
         val unreadableProviders = skippedProviders.get().toList()
+        // Fronts can be hidden (unsupported), filtered out or dropped as
+        // decorative: nodes dialing through them are left out, not run direct.
+        val nodes = withoutBrokenChains(uniqueNodes.filterNot(::isDecorativeNode).map(::markHiddenIfUnsupported))
         val brokenChains = refusedChains.get().toList()
-        val nodes = uniqueNodes.filterNot(::isDecorativeNode).map(::markHiddenIfUnsupported)
         val visibleNodeCount = nodes.count { !it.hiddenUnsupported }
         val hiddenUnsupportedNodeCount = nodes.count { it.hiddenUnsupported }
 
@@ -627,6 +642,24 @@ object ImportParser {
         is Nested -> isEmptyValue(value) || (value is JSONObject && value.keys().asSequence().all { key ->
             default.keys[key]?.let { isDefault(value.opt(key), it) } == true
         })
+    }
+
+    /**
+     * [nodes] without the visible ones whose pre-proxy chain can't run now
+     * that hidden and filtered nodes are known (a front that is hidden, or
+     * not in the list), noted in [refusedChains]. Repeated, since leaving one
+     * out breaks the chains that go through it.
+     */
+    private fun withoutBrokenChains(nodes: List<ServerNode>): List<ServerNode> {
+        var kept = nodes
+        while (true) {
+            val broken = kept.filter { !it.hiddenUnsupported && it.preProxyNodeId.isNotBlank() }
+                .mapNotNull { node -> XrayConfigFactory.preProxyChain(node, kept).problem?.let { node to it } }
+            if (broken.isEmpty()) return kept
+            broken.forEach { (node, problem) -> refusedChains.get().add("${node.name}：$problem") }
+            val ids = broken.map { it.first.id }.toSet()
+            kept = kept.filterNot { it.id in ids }
+        }
     }
 
     /** Nodes left out because their pre-proxy chain can't run (a loop, too long). */
@@ -2221,6 +2254,40 @@ object ImportParser {
      * are renamed (pre-proxy and fallback links to a duplicated id are kept on
      * the first node, which is the one they resolved to before).
      */
+    /**
+     * [withUniqueIds] for an import made of several parts (main config and
+     * providers), whose parsed ids can collide. A node that gets a new id
+     * takes its part's links with it: a pre-proxy or fallback in that part
+     * still points at it, not at the other part's node with the old id.
+     */
+    fun withUniqueIdsByPart(parts: List<List<ServerNode>>): List<ServerNode> {
+        val allIds = parts.flatten().map { it.id }.toSet()
+        val claimed = mutableSetOf<String>()
+        return parts.flatMap { part ->
+            // Old id → new id, for ids whose first node in this part was renamed.
+            val renamed = mutableMapOf<String, String>()
+            val seenInPart = mutableSetOf<String>()
+            val withIds = part.map { node ->
+                val firstInPart = seenInPart.add(node.id)
+                if (claimed.add(node.id)) return@map node
+                val id = uniqueNodeId(node.id, allIds + claimed)
+                claimed += id
+                if (firstInPart) renamed[node.id] = id
+                node.copy(id = id)
+            }
+            if (renamed.isEmpty()) {
+                withIds
+            } else {
+                withIds.map { node ->
+                    val preProxy = renamed[node.preProxyNodeId] ?: node.preProxyNodeId
+                    val fallback = renamed[node.fallbackNodeId] ?: node.fallbackNodeId
+                    if (preProxy == node.preProxyNodeId && fallback == node.fallbackNodeId) node
+                    else node.copy(preProxyNodeId = preProxy, fallbackNodeId = fallback)
+                }
+            }
+        }
+    }
+
     fun withUniqueIds(nodes: List<ServerNode>): List<ServerNode> {
         if (nodes.distinctBy { it.id }.size == nodes.size) return nodes
         val taken = nodes.map { it.id }.toMutableSet()

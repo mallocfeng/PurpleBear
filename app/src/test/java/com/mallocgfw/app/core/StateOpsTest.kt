@@ -98,11 +98,14 @@ class StateOpsTest {
         val outcome = StateOps.applyImport(s, preview, connectedServerId = "s1")
         val ids = outcome.state.servers.map { it.id }
         assertEquals("a", ids[0])
+        // HK 01 moved to a new server under the same (unique) name: same node, same id.
+        assertEquals("s1", ids[1])
+        assertEquals("new-hk.example.com", outcome.state.servers[1].address)
         // New nodes of a refresh get fresh ids (see refreshCanNotHandARemovedNodesIdToAnotherServer).
-        assertTrue(ids[1], ids[1].startsWith("n1_"))
         assertTrue(ids[2], ids[2].startsWith("n2_"))
-        assertEquals(ids[1], outcome.state.selectedServerId)
-        assertEquals(ids[1], outcome.reconnectServer?.id)
+        assertEquals("s1", outcome.state.selectedServerId)
+        // The connected node now connects elsewhere: reconnect to it.
+        assertEquals("s1", outcome.reconnectServer?.id)
         assertEquals(2, outcome.state.subscriptions.single().nodes)
         val notConnected = StateOps.applyImport(s, preview, connectedServerId = null)
         assertNull(notConnected.reconnectServer)
@@ -354,6 +357,63 @@ class StateOpsTest {
         assertNull(StateOps.applySubscriptionRefresh(first, "sub1", url, preview, 50L, null))
         assertNull(StateOps.markSubscriptionRefreshFailed(first, "sub1", url, 50L))
         assertNotNull(StateOps.applySubscriptionRefresh(first, "sub1", url, preview, 150L, null))
+    }
+
+    @Test
+    fun aNodeWhoseFrontIsHiddenRefusesToConnectInsteadOfGoingDirect() {
+        val front = node("b", "local").copy(hiddenUnsupported = true)
+        val owner = node("a", "local").copy(preProxyNodeId = "b")
+        val servers = listOf(owner, front)
+        // The link survives normalization while the front is still there…
+        assertEquals("b", StateOps.normalizeNodeLinks(servers).single { it.id == "a" }.preProxyNodeId)
+        // …and the chain is refused, not run without the front.
+        assertNotNull(com.mallocgfw.app.xray.XrayConfigFactory.preProxyChain(owner, servers).problem)
+        // A front that was removed is cleared (the removal notice says so).
+        assertEquals("", StateOps.normalizeNodeLinks(listOf(owner)).single().preProxyNodeId)
+        // A usable front still works.
+        val usable = listOf(owner, node("b", "local"))
+        val chain = com.mallocgfw.app.xray.XrayConfigFactory.preProxyChain(owner, usable)
+        assertNull(chain.problem)
+        assertEquals(listOf("b"), chain.fronts.map { it.id })
+    }
+
+    @Test
+    fun aRefreshedNodeOnANewAddressKeepsItsIdWhenItsNameIsUnique() {
+        val before = listOf(node("s1", "sub1", name = "HK 01", host = "old1.example.com"), node("s2", "sub1", name = "JP 01"))
+        val refreshed = listOf(
+            node("p1", "sub1", name = "HK 01", host = "new1.example.com"),
+            node("p2", "sub1", name = "JP 01"),
+        )
+        val after = StateOps.refreshSubscriptionNodes(before, "sub1", refreshed)
+        assertEquals("s1", after.single { it.name == "HK 01" }.id)
+        assertEquals("new1.example.com", after.single { it.name == "HK 01" }.address)
+        // Two nodes with the same name: no guessing, a new id.
+        val twins = listOf(node("t1", "sub1", name = "US", host = "a.example.com"), node("t2", "sub1", name = "US", host = "b.example.com"))
+        val moved = listOf(node("q1", "sub1", name = "US", host = "c.example.com"), node("q2", "sub1", name = "US", host = "d.example.com"))
+        assertTrue(StateOps.refreshSubscriptionNodes(twins, "sub1", moved).none { it.id == "t1" || it.id == "t2" })
+    }
+
+    @Test
+    fun aNodeTheTunnelUsesThatMovedMakesItReconnect() {
+        val base = state(node("a", "sub1", name = "HK 01", host = "old.example.com"), node("b", "local"), selected = "a")
+        val moved = base.copy(servers = base.servers.map { if (it.id == "a") node("a", "sub1", name = "HK 01", host = "new.example.com") else it })
+        val effect = StateOps.removalEffect(base, moved, "a", runningNodeIds = setOf("a"))
+        assertEquals("a", (effect as StateOps.RemovalEffect.Reconnect).server.id)
+        // A node the tunnel doesn't use changing needs nothing.
+        val other = base.copy(servers = base.servers.map { if (it.id == "b") node("b", "local", host = "x.example.com") else it })
+        assertEquals(StateOps.RemovalEffect.None, StateOps.removalEffect(base, other, "a", runningNodeIds = setOf("a")))
+        // Nothing changed: nothing to do.
+        assertEquals(StateOps.RemovalEffect.None, StateOps.removalEffect(base, base, "a", runningNodeIds = setOf("a")))
+    }
+
+    @Test
+    fun partsOfAnImportKeepTheirOwnLinksWhenIdsCollide() {
+        val main = listOf(node("x1", "sub1", name = "Main A"), node("x2", "sub1", name = "Main B"))
+        val provider = listOf(node("x1", "sub1", name = "Prov A").copy(preProxyNodeId = "x2"), node("x2", "sub1", name = "Prov B"))
+        val merged = com.mallocgfw.app.model.ImportParser.withUniqueIdsByPart(listOf(main, provider))
+        assertEquals(4, merged.map { it.id }.distinct().size)
+        val provA = merged.single { it.name == "Prov A" }
+        assertEquals(merged.single { it.name == "Prov B" }.id, provA.preProxyNodeId)
     }
 
     @Test

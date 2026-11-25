@@ -265,7 +265,58 @@ data class SubscriptionItem(
     val status: String,
     val autoUpdate: Boolean,
     val sourceUrl: String? = null,
+    /** Traffic and expiry as the provider last reported them; null when it reports none. */
+    val usage: SubscriptionUsage? = null,
 )
+
+/**
+ * A provider's `subscription-userinfo` response header:
+ * `upload=…; download=…; total=…; expire=…` (bytes; expire in Unix seconds).
+ * A field the provider left out is null; total 0 and expire 0 mean "no limit".
+ */
+data class SubscriptionUsage(
+    val uploadBytes: Long? = null,
+    val downloadBytes: Long? = null,
+    val totalBytes: Long? = null,
+    val expireAtSec: Long? = null,
+) {
+    /** Upload plus download, or null when neither was reported. */
+    val usedBytes: Long?
+        get() = if (uploadBytes == null && downloadBytes == null) null else (uploadBytes ?: 0L) + (downloadBytes ?: 0L)
+
+    /** The traffic allowance, or null when unlimited or not reported. */
+    val limitBytes: Long? get() = totalBytes?.takeIf { it > 0L }
+
+    /** When it expires (Unix seconds), or null when it doesn't or wasn't reported. */
+    val expiresAtSec: Long? get() = expireAtSec?.takeIf { it > 0L }
+
+    fun isExpired(nowMs: Long): Boolean = expiresAtSec?.let { it * 1000L < nowMs } == true
+
+    fun isUsedUp(): Boolean {
+        val limit = limitBytes ?: return false
+        return (usedBytes ?: 0L) >= limit
+    }
+
+    companion object {
+        /** Null when [header] has none of the known fields. */
+        fun parse(header: String?): SubscriptionUsage? {
+            if (header.isNullOrBlank()) return null
+            val fields = header.split(';').mapNotNull { part ->
+                val key = part.substringBefore('=', "").trim().lowercase()
+                // Some panels send floats ("1.2E10") or quote the value.
+                val value = part.substringAfter('=', "").trim().trim('"').toDoubleOrNull()?.takeIf { it >= 0 && it.isFinite() }?.toLong()
+                if (key.isEmpty() || value == null) null else key to value
+            }.toMap()
+            val usage = SubscriptionUsage(
+                uploadBytes = fields["upload"],
+                downloadBytes = fields["download"],
+                totalBytes = fields["total"],
+                expireAtSec = fields["expire"],
+            )
+            return usage.takeIf { it != SubscriptionUsage() }
+        }
+    }
+}
 
 data class RuleSourceItem(
     val id: String,

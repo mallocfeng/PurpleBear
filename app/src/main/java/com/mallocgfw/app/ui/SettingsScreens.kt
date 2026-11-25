@@ -71,6 +71,7 @@ import com.mallocgfw.app.model.StreamingRouteSelection
 import com.mallocgfw.app.update.AppUpdateInfo
 import com.mallocgfw.app.update.AppUpdateStatus
 import com.mallocgfw.app.update.AppUpdateUiState
+import com.mallocgfw.app.ui.theme.Error
 import com.mallocgfw.app.ui.theme.Primary
 import com.mallocgfw.app.ui.theme.Secondary
 import com.mallocgfw.app.ui.theme.Success
@@ -104,6 +105,8 @@ internal fun PerAppScreen(
     onApplyChanges: () -> Unit,
     serverNames: Map<String, String> = emptyMap(),
     onOpenApp: (String) -> Unit = {},
+    /** Always-on VPN with "Block connections without VPN" is on for this app. */
+    lockdownActive: Boolean = false,
 ) {
     val language = LocalAppLanguage.current
     val context = LocalContext.current
@@ -150,6 +153,22 @@ internal fun PerAppScreen(
     ) {
         item {
             AppTopBar(title = "分应用代理", subtitle = "应用选择", onBack = onBack)
+        }
+        if (lockdownActive && proxyMode == ProxyMode.PerApp) {
+            item {
+                SurfaceCard {
+                    Text(
+                        text = uiText(
+                            "系统已开启“屏蔽未使用 VPN 的连接”。分应用模式下，没有选中的应用不经过 VPN，会被系统完全断网。要让它们正常联网，请在系统 VPN 设置中关闭这个开关，或改用智能分流。",
+                            "Android's \"Block connections without VPN\" is on. In per-app mode, apps that aren't selected don't use the VPN, so the system cuts them off entirely. To let them online, turn that switch off in system VPN settings, or use smart routing.",
+                            "В Android включено «Блокировать соединения без VPN». В режиме по приложениям невыбранные приложения не используют VPN, и система полностью отключает им сеть. Выключите этот переключатель в настройках VPN или используйте умную маршрутизацию.",
+                        ),
+                        color = Error,
+                        fontSize = TypeScale.Meta,
+                        lineHeight = TypeScale.MetaLine,
+                    )
+                }
+            }
         }
         item {
             SurfaceCard {
@@ -455,7 +474,12 @@ internal fun SettingsScreen(
     onViewLogs: () -> Unit,
     onOpenLicenses: () -> Unit,
     onOpenMcp: () -> Unit,
+    onOpenSystemVpnSettings: () -> Unit = {},
+    onExportBackup: () -> Unit = {},
+    onImportBackup: () -> Unit = {},
 ) {
+    var showAlwaysOnDialog by remember { mutableStateOf(false) }
+    var showExportDialog by remember { mutableStateOf(false) }
     var showDnsDialog by remember { mutableStateOf(false) }
     var showLogLevelDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
@@ -507,6 +531,17 @@ internal fun SettingsScreen(
                     subtitle = "断开后重连上次节点。",
                     checked = settings.autoReconnect,
                     onToggle = { onAutoReconnectChange(!settings.autoReconnect) },
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                SettingActionRow(
+                    title = uiText("开机自动连接", "Connect on boot", "Подключение при загрузке"),
+                    subtitle = uiText(
+                        "使用系统的“始终开启的 VPN”，开机后自动连接上次的节点。",
+                        "Uses Android's Always-on VPN to connect to the last node after the phone starts.",
+                        "Использует «Постоянную VPN» Android: после загрузки подключается к последнему узлу.",
+                    ),
+                    actionText = uiText("设置", "Set up", "Настроить"),
+                    onAction = { showAlwaysOnDialog = true },
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 SettingActionRow(
@@ -576,6 +611,22 @@ internal fun SettingsScreen(
             }
         }
         item {
+            SettingsGroup(title = uiText("备份与恢复", "Backup and restore", "Резервная копия")) {
+                SettingDualActionRow(
+                    title = uiText("配置备份", "Settings backup", "Копия настроек"),
+                    subtitle = uiText(
+                        "把节点、订阅、规则和设置导出成文件，或从文件恢复。",
+                        "Export nodes, subscriptions, rules and settings to a file, or restore from one.",
+                        "Экспорт узлов, подписок, правил и настроек в файл или восстановление из файла.",
+                    ),
+                    primaryActionText = uiText("导出", "Export", "Экспорт"),
+                    onPrimaryAction = { showExportDialog = true },
+                    secondaryActionText = uiText("恢复", "Restore", "Восстановить"),
+                    onSecondaryAction = onImportBackup,
+                )
+            }
+        }
+        item {
             SettingsGroup(title = uiText("AI 远程控制", "AI remote control", "Удалённое управление ИИ")) {
                 SettingActionRow(
                     title = uiText("AI 远程控制（MCP）", "AI remote control (MCP)", "Удалённое управление ИИ (MCP)"),
@@ -629,6 +680,26 @@ internal fun SettingsScreen(
                 )
             }
         }
+    }
+
+    if (showExportDialog) {
+        ExportBackupDialog(
+            onDismiss = { showExportDialog = false },
+            onContinue = {
+                showExportDialog = false
+                onExportBackup()
+            },
+        )
+    }
+
+    if (showAlwaysOnDialog) {
+        AlwaysOnVpnDialog(
+            onDismiss = { showAlwaysOnDialog = false },
+            onOpenSettings = {
+                showAlwaysOnDialog = false
+                onOpenSystemVpnSettings()
+            },
+        )
     }
 
     if (showDnsDialog) {

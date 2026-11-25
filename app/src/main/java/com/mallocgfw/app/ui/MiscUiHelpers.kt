@@ -412,6 +412,23 @@ internal fun XrayCoreStatus.label(): String {
     }
 }
 
+/** Sizes up to terabytes (a subscription's traffic allowance). */
+internal fun formatDataSize(bytes: Long): String {
+    if (bytes <= 0L) return "0 B"
+    val units = listOf("B", "KB", "MB", "GB", "TB")
+    var value = bytes.toDouble()
+    var unit = 0
+    while (value >= 1024.0 && unit < units.lastIndex) {
+        value /= 1024.0
+        unit++
+    }
+    return if (unit == 0 || value >= 100.0) {
+        String.format(Locale.getDefault(), "%.0f %s", value, units[unit])
+    } else {
+        String.format(Locale.getDefault(), "%.1f %s", value, units[unit])
+    }
+}
+
 internal fun formatBytes(bytes: Long): String {
     if (bytes <= 0L) return "0 B"
     val kb = 1024.0
