@@ -2,7 +2,7 @@
 
 PurpleBear 各版本的完整更新记录。安装包见 [GitHub Releases](https://github.com/mallocfeng/PurpleBear/releases)。
 
-## 0.9.2.2
+## 0.9.3
 
 1. 订阅刷新导致节点消失时，和手动删除一样处理：弹出“相关设置已调整”，列出被清除的前置代理、备用节点、分应用和流媒体设置；当前连接的节点或正在使用的前置节点、分应用、流媒体节点消失时，VPN 自动重连。覆盖手动导入 / 刷新、“同步全部”、MCP 的 `refresh_subscription` / `import_nodes` 和每日后台同步（后台同步完成通知里也会写明）。以前每日后台同步让当前连接的节点消失时，VPN 会继续停在已不存在的节点上。
 
@@ -52,7 +52,7 @@ PurpleBear 各版本的完整更新记录。安装包见 [GitHub Releases](https
 
 24. 应用自己的前置代理链（节点设置、MCP 的 `set_pre_proxy`、Xray JSON 的 `dialerProxy`）同样不再静默断开：循环引用（如 A → B → A）和超过 8 个前置节点的链，在设置时被拒绝并说明原因（前置节点选择列表不再列出会造成循环或超限的节点，包括让上游节点的链超限的情况）；导入 Xray JSON 时这些节点不导入并在结果中说明；旧版本保存的此类链在连接时明确报错，不再让其中一段直连；Xray JSON 中节点把自己设为前置（A → A）同样按循环处理；`dialerProxy` 指向不存在的出站、无法导入的出站或 blackhole 等非代理出站时，节点不导入并在结果中写明缺失的标签（只有不带额外设置的 freedom 出站按直连处理，显式写出的默认值也算，包括出站上和 `settings` 里的 `targetStrategy: AsIs`、`domainStrategy: AsIs`、`proxyProtocol: 0`、空 `redirect` / `finalRules`，`sendThrough: 0.0.0.0`，以及 `streamSettings.sockopt` 里的 `domainStrategy: AsIs`、`mark: 0`、`tcpFastOpen: 0` 等默认值（`tcpFastOpen: false` 会强制关闭 Fast Open，不是默认值，按无法保留处理）；带 redirect、fragment、非默认域名策略或自身 streamSettings 等设置的 freedom 前置无法保留其行为，节点不导入），依赖这些节点作前置的节点也一并不导入，不会改为直连。每次连接只读取一次节点列表，链路校验、取证书、兼容内核端口分配和 Xray 出站生成都使用这一份，连接过程中修改前置节点不会再让兼容内核的端口和 Xray 出站对应到不同的前置。分应用、流媒体或规则分流使用的节点链路无效时，连接前就把它们隔离：主节点照常连接，相关分流暂时改走当前节点，并提示是哪个节点、什么原因、影响哪类分流。链路无效时在任何网络请求之前就拒绝，不会先向链中节点发起取证书的握手。生成配置、兼容内核端口分配和 VPN 使用的节点集合改为共用同一条链解析结果，第 8 个前置节点需要兼容内核时也能正常连接。
 
-25. 更新版本号到 `0.9.2.2`，`versionCode` 更新为 `322`。
+25. 更新版本号到 `0.9.3`，`versionCode` 更新为 `330`。
 
 ## 0.9.2.1
 
