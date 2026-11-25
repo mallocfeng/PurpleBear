@@ -189,13 +189,44 @@ class PreProxyChainLimitsTest {
             JSONObject().put("targetStrategy", "AsIs"),
             JSONObject().put("domainStrategy", "AsIs"),
         ).forEach { settings ->
-            val config = JSONObject().put(
-                "outbounds",
-                JSONArray().put(xrayOutbound("A", "direct")).put(xrayOutbound("B", "A"))
-                    .put(JSONObject().put("tag", "direct").put("protocol", "freedom").put("settings", settings)),
-            )
-            assertEquals("$settings", setOf("A", "B"), ImportParser.buildFilePreview("e.json", config.toString()).nodes.map { it.name }.toSet())
+            assertImportsThrough(JSONObject().put("tag", "direct").put("protocol", "freedom").put("settings", settings))
         }
+        // Outside settings too: the outbound's own targetStrategy, a default sockopt / stream.
+        val freedom = { JSONObject().put("tag", "direct").put("protocol", "freedom") }
+        assertImportsThrough(freedom().put("targetStrategy", "AsIs"))
+        assertImportsThrough(freedom().put("streamSettings", JSONObject().put("sockopt", JSONObject().put("domainStrategy", "AsIs"))))
+        assertImportsThrough(
+            freedom().put(
+                "streamSettings",
+                JSONObject().put("network", "tcp").put("security", "none")
+                    .put("sockopt", JSONObject().put("mark", 0).put("tcpFastOpen", false).put("tproxy", "off").put("dialerProxy", "")),
+            ),
+        )
+        // What changes the connection is still refused.
+        listOf(
+            freedom().put("targetStrategy", "UseIPv4"),
+            freedom().put("streamSettings", JSONObject().put("sockopt", JSONObject().put("domainStrategy", "UseIP"))),
+            freedom().put("streamSettings", JSONObject().put("sockopt", JSONObject().put("mark", 255))),
+            freedom().put("streamSettings", JSONObject().put("sockopt", JSONObject().put("interface", "wlan0"))),
+            freedom().put("streamSettings", JSONObject().put("security", "tls")),
+            freedom().put("sendThrough", "10.0.0.2"),
+            freedom().put("settings", JSONObject().put("redirect", "1.2.3.4:443")),
+        ).forEach { front ->
+            val config = JSONObject().put("outbounds", JSONArray().put(xrayOutbound("A", "direct")).put(xrayOutbound("B", "A")).put(front))
+            try {
+                ImportParser.buildFilePreview("r.json", config.toString())
+                fail("imported through $front")
+            } catch (e: IllegalArgumentException) {
+                assertTrue(e.message.orEmpty(), e.message.orEmpty().contains("direct"))
+            }
+        }
+    }
+
+    private fun assertImportsThrough(front: JSONObject) {
+        val config = JSONObject().put("outbounds", JSONArray().put(xrayOutbound("A", "direct")).put(xrayOutbound("B", "A")).put(front))
+        val nodes = ImportParser.buildFilePreview("e.json", config.toString()).nodes
+        assertEquals("$front", setOf("A", "B"), nodes.map { it.name }.toSet())
+        assertEquals("$front", nodes.single { it.name == "A" }.id, nodes.single { it.name == "B" }.preProxyNodeId)
     }
 
     @Test

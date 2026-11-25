@@ -545,41 +545,81 @@ object ImportParser {
     private val skippedProviders: ThreadLocal<MutableList<String>> = ThreadLocal.withInitial { mutableListOf() }
 
     /**
-     * A freedom outbound that only goes direct. Every key must be absent or
+     * A freedom outbound that only goes direct. Every key, on the outbound, in
+     * its settings and in its streamSettings / sockopt, must be absent or
      * written as Xray's own default, which behaves the same as leaving it out
-     * (targetStrategy / its older name domainStrategy AsIs, no redirect,
-     * proxyProtocol 0, no finalRules or noises, an empty streamSettings, mux
-     * off); a user level changes nothing on the wire.
-     * Anything else (redirect, fragment, another domain strategy, a stream
-     * or dialer of its own, sendThrough …) changes how it connects.
+     * (see [FREEDOM_DEFAULTS]). Anything else (redirect, proxyProtocol 1/2,
+     * finalRules, fragment, another domain strategy, a mark, an interface, a
+     * dialer of its own, sendThrough …) changes how it connects.
      */
-    private fun isPlainFreedom(outbound: JSONObject): Boolean {
-        fun empty(value: Any?) = value == null || value == JSONObject.NULL ||
-            (value is JSONObject && value.length() == 0) || (value is JSONArray && value.length() == 0) ||
-            (value is String && value.isBlank())
-        fun zero(value: Any?) = empty(value) || (value as? Number)?.toDouble() == 0.0 || value?.toString()?.trim() == "0"
-        val outer = outbound.keys().asSequence().all { key ->
-            val value = outbound.opt(key)
-            when (key) {
-                "tag", "protocol" -> true
-                "settings" -> empty(value) || value is JSONObject
-                "streamSettings" -> empty(value)
-                "mux" -> empty(value) || (value as? JSONObject)?.let { it.optBoolean("enabled", false).not() } == true
-                else -> false
+    private fun isPlainFreedom(outbound: JSONObject): Boolean = isDefault(outbound, FREEDOM_DEFAULTS)
+
+    /** A default: what an explicitly written value must be to change nothing. */
+    private sealed interface XrayDefault
+    private object AnyValue : XrayDefault // changes nothing on the wire (tag, protocol, user level)
+    private object Empty : XrayDefault // absent, null, "", {} or []
+    private class OneOf(vararg val values: Any) : XrayDefault
+    private class Nested(val keys: Map<String, XrayDefault>) : XrayDefault
+
+    private val FREEDOM_SOCKOPT = Nested(
+        mapOf(
+            "domainStrategy" to OneOf("AsIs"),
+            "dialerProxy" to Empty,
+            "mark" to OneOf(0),
+            "tcpFastOpen" to OneOf(false),
+            "tproxy" to OneOf("off"),
+            "tcpMptcp" to OneOf(false),
+            "interface" to Empty,
+            "tcpCongestion" to Empty,
+            "addressPortStrategy" to OneOf("none"),
+        ),
+    )
+
+    private val FREEDOM_DEFAULTS = Nested(
+        mapOf(
+            "tag" to AnyValue,
+            "protocol" to AnyValue,
+            // The outbound's own target strategy (newer Xray) and the settings' older one.
+            "targetStrategy" to OneOf("AsIs"),
+            "settings" to Nested(
+                mapOf(
+                    "userLevel" to AnyValue,
+                    "targetStrategy" to OneOf("AsIs"),
+                    "domainStrategy" to OneOf("AsIs"),
+                    "redirect" to Empty,
+                    "noises" to Empty,
+                    "finalRules" to Empty,
+                    "proxyProtocol" to OneOf(0),
+                ),
+            ),
+            "streamSettings" to Nested(
+                mapOf(
+                    "network" to OneOf("tcp", "raw"),
+                    "security" to OneOf("none"),
+                    "sockopt" to FREEDOM_SOCKOPT,
+                ),
+            ),
+            "mux" to Nested(mapOf("enabled" to OneOf(false), "concurrency" to AnyValue, "xudpConcurrency" to AnyValue, "xudpProxyUDP443" to AnyValue)),
+        ),
+    )
+
+    private fun isEmptyValue(value: Any?) = value == null || value == JSONObject.NULL ||
+        (value is JSONObject && value.length() == 0) || (value is JSONArray && value.length() == 0) ||
+        (value is String && value.isBlank())
+
+    private fun isDefault(value: Any?, default: XrayDefault): Boolean = when (default) {
+        AnyValue -> true
+        Empty -> isEmptyValue(value)
+        is OneOf -> isEmptyValue(value) || default.values.any { expected ->
+            when (expected) {
+                is Number -> (value as? Number)?.toDouble() == expected.toDouble() || value?.toString()?.trim() == expected.toString()
+                is Boolean -> value == expected || value?.toString()?.trim()?.equals(expected.toString(), ignoreCase = true) == true
+                else -> value?.toString()?.trim()?.equals(expected.toString(), ignoreCase = true) == true
             }
         }
-        if (!outer) return false
-        val settings = outbound.optJSONObject("settings") ?: return true
-        return settings.keys().asSequence().all { key ->
-            val value = settings.opt(key)
-            when (key) {
-                "userLevel" -> true
-                "targetStrategy", "domainStrategy" -> empty(value) || value.toString().equals("AsIs", ignoreCase = true)
-                "redirect", "noises", "finalRules" -> empty(value)
-                "proxyProtocol" -> zero(value)
-                else -> false
-            }
-        }
+        is Nested -> isEmptyValue(value) || (value is JSONObject && value.keys().asSequence().all { key ->
+            default.keys[key]?.let { isDefault(value.opt(key), it) } == true
+        })
     }
 
     /** Nodes left out because their pre-proxy chain can't run (a loop, too long). */
