@@ -49,7 +49,11 @@ object AppController {
     interface UiHost {
         fun showMessage(message: String)
         fun connect(server: ServerNode)
-        fun disconnect()
+        /**
+         * [internal]: the app's own disconnect (the node it ran on was removed
+         * and none is left), allowed in lockdown mode; else the user's.
+         */
+        fun disconnect(internal: Boolean = false)
         fun reconnect(server: ServerNode, message: String)
         fun restartTailscale(settings: AppSettings, message: String)
     }
@@ -137,8 +141,11 @@ object AppController {
     /**
      * [edit] for a change that can make nodes disappear: a delete, an import or
      * a subscription refresh. When nodes went away:
-     * - a selected (not yet connected) node that went away is replaced by the
-     *   node the VPN runs on, not an arbitrary one shown as a pending switch;
+     * - with [preferConnectedSelection], a selected (not yet connected) node
+     *   that went away is replaced by the node the VPN runs on, not an
+     *   arbitrary one shown as a pending switch. Imports and refreshes that
+     *   report their own pick (ImportOutcome.message: "switched to …") pass
+     *   false, so the selection is the node the message names;
      * - what it cleared is logged and posted to [removalNotice];
      * - with [reconnect], the running VPN reconnects or disconnects when it used
      *   a removed node (StateOps.removalEffect). Imports pass false: their
@@ -146,12 +153,16 @@ object AppController {
      *   a row would race.
      * Returns the new state and the notice, or null when [transform] returned null.
      */
-    fun editNodes(reconnect: Boolean, transform: (PersistedAppState) -> PersistedAppState?): NodeRemoval? {
+    fun editNodes(
+        reconnect: Boolean,
+        preferConnectedSelection: Boolean = true,
+        transform: (PersistedAppState) -> PersistedAppState?,
+    ): NodeRemoval? {
         val connected = tunnelServerId()
         var before: PersistedAppState? = null
         val next = edit { state ->
             before = state
-            transform(state)?.let { keepConnectedSelected(state, it, connected) }
+            transform(state)?.let { if (preferConnectedSelection) keepConnectedSelected(state, it, connected) else it }
         } ?: return null
         val base = before ?: return NodeRemoval(next, null)
         return NodeRemoval(next, afterNodeChanges(base, next, connected, reconnect))
@@ -212,7 +223,11 @@ object AppController {
                 }
                 is StateOps.RemovalEffect.Disconnect -> {
                     AppLogManager.append(appContext, "NODES", effect.message)
-                    disconnect()
+                    // Not the user's disconnect: allowed in lockdown too, or the
+                    // tunnel would keep running on the removed node while the
+                    // message says it stopped (the service does the same, see
+                    // XrayVpnService.recheckInstalledNodes).
+                    disconnect(internal = true)
                     showMessage(effect.message)
                 }
                 StateOps.RemovalEffect.None -> Unit
@@ -230,11 +245,18 @@ object AppController {
      * applies (StateOps.applyRuleSourceRefresh). [expected] is the source as it
      * is in the state now (null: [draft] is a new source). A cache write that
      * fails throws before the state changes.
+     * [keepFailure] false: a failed refresh changes nothing (an add that
+     * reports the failure instead of saving a broken source).
      */
-    suspend fun refreshRuleSourceAndCommit(draft: RuleSourceItem, expected: RuleSourceItem?): RuleCommit {
+    suspend fun refreshRuleSourceAndCommit(
+        draft: RuleSourceItem,
+        expected: RuleSourceItem?,
+        keepFailure: Boolean = true,
+    ): RuleCommit {
         val startedAtMs = System.currentTimeMillis()
         val outcome = runCatching { RuleSourceManager.refreshSource(appContext, draft) }
         val refreshed = outcome.getOrNull()
+        if (refreshed == null && !keepFailure) return RuleCommit(null, null, outcome.exceptionOrNull())
         val result = refreshed?.source ?: RuleSourceManager.buildFailureState(draft, outcome.exceptionOrNull() ?: IllegalStateException())
         var stored: RuleSourceItem? = null
         edit { state ->
@@ -316,18 +338,22 @@ object AppController {
         return Result.success(server)
     }
 
-    /** Turns the VPN off as the user would; false in lockdown mode, where it stays up. */
-    suspend fun disconnect(): Boolean {
-        if (VpnServiceController.manualDisconnectBlocked()) {
+    /**
+     * Turns the VPN off as the user would; false in lockdown mode, where it
+     * stays up. [internal]: the app's own disconnect (no usable node left after
+     * a removal), which lockdown doesn't block.
+     */
+    suspend fun disconnect(internal: Boolean = false): Boolean {
+        if (!internal && VpnServiceController.manualDisconnectBlocked()) {
             showMessage(VpnServiceController.lockdownDisconnectMessage())
             return false
         }
         val host = uiHost
         if (host != null) {
-            withContext(Dispatchers.Main) { (uiHost ?: host).disconnect() }
+            withContext(Dispatchers.Main) { (uiHost ?: host).disconnect(internal) }
         } else {
             update { it.copy(settings = it.settings.copy(resumeConnectionOnLaunch = false)) }
-            VpnServiceController.disconnect(appContext)
+            if (internal) VpnServiceController.disconnectInternal(appContext) else VpnServiceController.disconnect(appContext)
         }
         return true
     }

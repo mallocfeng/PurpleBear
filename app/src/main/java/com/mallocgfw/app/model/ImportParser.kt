@@ -151,14 +151,17 @@ object ImportParser {
         else -> value
     }
 
-    /** Runs [block] without leaving "unsupported type" notes (a trial parse, not the import's). */
+    /**
+     * Runs [block] without leaving "unsupported type" or "chain can't run"
+     * notes (a trial parse, not the import's: the real parse adds its own).
+     */
     private fun <T> withoutSkipNotes(block: () -> T): T {
-        val skipped = skippedTypes.get()
-        val before = skipped.size
+        val notes = listOf(skippedTypes.get(), refusedChains.get())
+        val before = notes.map { it.size }
         try {
             return block()
         } finally {
-            while (skipped.size > before) skipped.removeAt(skipped.lastIndex)
+            notes.zip(before).forEach { (list, size) -> while (list.size > size) list.removeAt(list.lastIndex) }
         }
     }
 

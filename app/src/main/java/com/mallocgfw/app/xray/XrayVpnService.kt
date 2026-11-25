@@ -274,7 +274,12 @@ class XrayVpnService : VpnService() {
                         activeServerId = runtime.activeServerId,
                         message = lockdownDisconnectMessage(),
                     )
-                    return START_REDELIVER_INTENT
+                    // Not sticky for this request: with REDELIVER the system would
+                    // keep this refused disconnect and replay it after a process
+                    // restart, when lockdown may be off, taking the VPN down then.
+                    // (stopSelf(startId) can't drop it: as the newest start it
+                    // would stop the service.)
+                    return START_NOT_STICKY
                 }
                 publishDisconnectedOnDestroy = true
                 destroyMessage = null

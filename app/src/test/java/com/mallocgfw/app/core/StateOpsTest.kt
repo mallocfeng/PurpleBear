@@ -357,6 +357,43 @@ class StateOpsTest {
     }
 
     @Test
+    fun aStoredRefreshTimeAheadOfTheClockOrdersNothing() {
+        val base = state(node("a", "local"), node("s1", "sub1", name = "HK 01"), selected = "a")
+        val preview = ImportPreview(
+            input = "https://sub.example.com/x", group = sub,
+            nodes = listOf(node("n1", "sub1", name = "JP 01")), subscription = base.subscriptions.single(), summary = "",
+        )
+        val url = sub.sourceUrl
+        // Written while the clock ran a month ahead, then the clock was corrected.
+        val ahead = base.copy(subscriptions = base.subscriptions.map { it.copy(updatedAtMs = 5_000L) })
+        assertNotNull(StateOps.applySubscriptionRefresh(ahead, "sub1", url, preview, 1_000L, null, nowMs = 2_000L))
+        assertNotNull(StateOps.markSubscriptionRefreshFailed(ahead, "sub1", url, 1_000L, nowMs = 2_000L))
+        // Once the clock is past it, it orders refreshes again.
+        assertNull(StateOps.applySubscriptionRefresh(ahead, "sub1", url, preview, 1_000L, null, nowMs = 6_000L))
+
+        val source = com.mallocgfw.app.model.RuleSourceItem(
+            id = "r1", name = "Mine", url = "https://rules.example.com/a.list", type = com.mallocgfw.app.model.RuleSourceType.Auto,
+            policy = com.mallocgfw.app.model.RuleTargetPolicy.Proxy, enabled = true, systemDefault = false, updatedAt = "刚刚",
+            status = com.mallocgfw.app.model.RuleSourceStatus.Ready, totalRules = 1, convertedRules = 1, skippedRules = 0,
+            updatedAtMs = 5_000L,
+        )
+        val rules = base.copy(ruleSources = listOf(source))
+        assertNotNull(StateOps.applyRuleSourceRefresh(rules, source, source.copy(convertedRules = 3), 1_000L, succeeded = true, nowMs = 2_000L))
+        assertNull(StateOps.applyRuleSourceRefresh(rules, source, source.copy(convertedRules = 3), 1_000L, succeeded = true, nowMs = 6_000L))
+    }
+
+    @Test
+    fun aDroppedRefreshDoesNotLeaveTheSubscriptionRefreshing() {
+        val base = state(node("a", "local"), node("s1", "sub1"), selected = "a")
+        val refreshing = StateOps.setSubscriptionStatus(base, "sub1", "刷新中")
+        assertEquals("刷新失败", StateOps.endDroppedSubscriptionRefresh(refreshing, "sub1", "刷新失败")!!.subscriptions.single().status)
+        // A newer refresh already set its own status: left alone.
+        assertNull(StateOps.endDroppedSubscriptionRefresh(StateOps.setSubscriptionStatus(base, "sub1", "已同步"), "sub1", "刷新失败"))
+        // Gone: nothing to do.
+        assertNull(StateOps.endDroppedSubscriptionRefresh(StateOps.removeSubscriptionGroup(refreshing, "sub1")!!, "sub1", "已同步"))
+    }
+
+    @Test
     fun aTunnelThatCameUpAfterARemovalIsFixedBeforeItIsAnnounced() {
         val s = state(node("a", "local"), node("b", "local"), node("m", "local"), selected = "a")
         // Everything still there.

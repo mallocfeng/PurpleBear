@@ -719,7 +719,9 @@ object McpTools {
                     "Добавить список правил «${Redactor.name(name)}» (правил: ${preview.convertedRules}, $action)",
                 ),
             ) {
-                val commit = AppController.refreshRuleSourceAndCommit(draft, expected = null)
+                // A list that can't be downloaded isn't added: a retry would
+                // otherwise leave one broken copy per attempt.
+                val commit = AppController.refreshRuleSourceAndCommit(draft, expected = null, keepFailure = false)
                 commit.error?.let { throw ToolError("Couldn't download the list: ${Redactor.text(it.message ?: "unknown error")}") }
                 val refreshed = commit.stored ?: throw ToolError("A rule source with this id already exists; nothing was saved.")
                 val reconnected = AppController.reconnectIfRunning("规则源已添加，正在重连 VPN…")
@@ -1068,13 +1070,13 @@ object McpTools {
         /** applyImport for a refresh (StateOps.applySubscriptionRefresh); null when it no longer applies. */
         private suspend fun applyRefresh(id: String, url: String, preview: ImportPreview, fetchStartedAtMs: Long): AppliedImport? {
             var outcome: StateOps.ImportOutcome? = null
-            val removal = AppController.editNodes(reconnect = false) { s ->
+            val removal = AppController.editNodes(reconnect = false, preferConnectedSelection = false) { s ->
                 StateOps.applySubscriptionRefresh(s, id, url, preview, fetchStartedAtMs, AppController.tunnelServerId(), AppController.runningNodeIds())
                     ?.also { outcome = it }?.state
             }
             val result = outcome ?: return null
             when {
-                result.disconnectMessage != null -> AppController.disconnect()
+                result.disconnectMessage != null -> AppController.disconnect(internal = true)
                 result.reconnectServer != null -> AppController.reconnectIfRunning("订阅已更新，正在重新连接当前线路…")
             }
             return AppliedImport(result, removal?.notice?.let(Redactor::text))
@@ -1085,13 +1087,13 @@ object McpTools {
 
         private suspend fun applyImport(preview: ImportPreview, also: (PersistedAppState) -> PersistedAppState = { it }): AppliedImport {
             var outcome: StateOps.ImportOutcome? = null
-            val removal = AppController.editNodes(reconnect = false) { s ->
+            val removal = AppController.editNodes(reconnect = false, preferConnectedSelection = false) { s ->
                 StateOps.applyImport(s, preview, AppController.tunnelServerId(), AppController.runningNodeIds())
                     .also { outcome = it }.state.let(also)
             }
             val result = checkNotNull(outcome)
             when {
-                result.disconnectMessage != null -> AppController.disconnect()
+                result.disconnectMessage != null -> AppController.disconnect(internal = true)
                 result.reconnectServer != null -> AppController.reconnectIfRunning("订阅已更新，正在重新连接当前线路…")
             }
             return AppliedImport(result, removal?.notice?.let(Redactor::text))

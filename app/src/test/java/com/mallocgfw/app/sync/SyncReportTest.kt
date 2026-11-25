@@ -67,6 +67,19 @@ class SyncReportTest {
     )
 
     @Test
+    fun aRuleListThatCantBeWrittenFailsOnlyThatSource() {
+        val atStart = snapshot()
+        val merged = report(atStart).applyTo(atStart) { _, _ -> throw java.io.IOException("No space left on device") }
+        // The subscription refresh is still saved.
+        assertTrue(merged.servers.any { it.name == "JP 01" })
+        assertEquals("已同步", merged.subscriptions.single().status)
+        // The rule source is marked failed and keeps the list it had.
+        val source = merged.ruleSources.single()
+        assertTrue(source.status != RuleSourceStatus.Ready)
+        assertEquals(1, source.convertedRules)
+    }
+
+    @Test
     fun changesMadeDuringTheSyncAreKept() {
         val atStart = snapshot()
         val fetched = report(atStart)

@@ -49,6 +49,7 @@ class SyncReport(
      * [commitRules] writes the compiled list of each rule source that is merged
      * (RuleSourceManager.commitCompiled). It runs inside the state edit, so a
      * source edited meanwhile neither gets the old metadata nor the old list.
+     * A write that throws marks only that source as failed.
      */
     fun applyTo(
         state: PersistedAppState,
@@ -72,8 +73,22 @@ class SyncReport(
             val merged = StateOps.applyRuleSourceRefresh(
                 next, fetch.original, fetch.result, fetch.fetchStartedAtMs, succeeded = fetch.compiled != null,
             ) ?: return@forEach
-            fetch.compiled?.let { commitRules(fetch.original, it) }
-            next = merged
+            val compiled = fetch.compiled
+            if (compiled == null) {
+                next = merged
+                return@forEach
+            }
+            // A list that can't be written (disk full …) fails only this source,
+            // keeping its last list; the rest of the sync is still saved.
+            next = runCatching { commitRules(fetch.original, compiled) }.fold(
+                onSuccess = { merged },
+                onFailure = { error ->
+                    StateOps.applyRuleSourceRefresh(
+                        next, fetch.original, RuleSourceManager.buildFailureState(fetch.original, error),
+                        fetch.fetchStartedAtMs, succeeded = false,
+                    ) ?: next
+                },
+            )
         }
         return next
     }

@@ -280,7 +280,8 @@ object StateOps {
      * Null, and nothing changes, when the result no longer applies:
      * - the subscription was deleted, or its link changed, meanwhile;
      * - a refresh that started later already committed (its updatedAtMs is
-     *   newer), so this older list would roll it back.
+     *   newer), so this older list would roll it back. A stored time later
+     *   than [nowMs] (the clock was set back) doesn't count.
      * The subscription's updatedAtMs becomes [fetchStartedAtMs]: the time the
      * list was asked for, which orders refreshes.
      */
@@ -292,8 +293,9 @@ object StateOps {
         fetchStartedAtMs: Long,
         connectedServerId: String?,
         runningNodeIds: Set<String>? = null,
+        nowMs: Long = System.currentTimeMillis(),
     ): ImportOutcome? {
-        if (!refreshStillApplies(state, subscriptionId, sourceUrl, fetchStartedAtMs)) return null
+        if (!refreshStillApplies(state, subscriptionId, sourceUrl, fetchStartedAtMs, nowMs)) return null
         val outcome = applyImport(state, preview, connectedServerId, runningNodeIds)
         // A refresh isn't an import the user made: keep their recent-imports list.
         val refreshed = setSubscriptionStatus(
@@ -305,21 +307,45 @@ object StateOps {
         return outcome.copy(state = refreshed)
     }
 
+    /**
+     * A refresh whose result was dropped: puts back [previousStatus] if the
+     * subscription still shows "刷新中" (null otherwise: gone, or a newer
+     * refresh or edit already set its status).
+     */
+    fun endDroppedSubscriptionRefresh(state: PersistedAppState, subscriptionId: String, previousStatus: String): PersistedAppState? {
+        val current = state.subscriptions.firstOrNull { it.id == subscriptionId } ?: return null
+        if (current.status != "刷新中") return null
+        return setSubscriptionStatus(state, subscriptionId, previousStatus.takeIf { it != "刷新中" } ?: "已同步")
+    }
+
     /** Marks a failed refresh, unless the subscription is gone or a later refresh already committed. */
     fun markSubscriptionRefreshFailed(
         state: PersistedAppState,
         subscriptionId: String,
         sourceUrl: String?,
         fetchStartedAtMs: Long,
+        nowMs: Long = System.currentTimeMillis(),
     ): PersistedAppState? {
-        if (!refreshStillApplies(state, subscriptionId, sourceUrl, fetchStartedAtMs)) return null
+        if (!refreshStillApplies(state, subscriptionId, sourceUrl, fetchStartedAtMs, nowMs)) return null
         return setSubscriptionStatus(state, subscriptionId, "刷新失败")
     }
 
-    private fun refreshStillApplies(state: PersistedAppState, subscriptionId: String, sourceUrl: String?, fetchStartedAtMs: Long): Boolean {
+    private fun refreshStillApplies(state: PersistedAppState, subscriptionId: String, sourceUrl: String?, fetchStartedAtMs: Long, nowMs: Long): Boolean {
         val current = state.subscriptions.firstOrNull { it.id == subscriptionId } ?: return false
         if (current.sourceUrl != sourceUrl) return false
-        return (current.updatedAtMs ?: 0L) <= fetchStartedAtMs
+        return !newerRefreshCommitted(current.updatedAtMs, fetchStartedAtMs, nowMs)
+    }
+
+    /**
+     * A refresh that started after [fetchStartedAtMs] already committed
+     * ([storedAtMs] is its start). A stored time later than [nowMs] can't be a
+     * refresh's start: the clock was set back since it was written (it ran
+     * ahead, then was corrected). It orders nothing then, or every refresh
+     * would be dropped until the clock caught up with it.
+     */
+    private fun newerRefreshCommitted(storedAtMs: Long?, fetchStartedAtMs: Long, nowMs: Long): Boolean {
+        val stored = storedAtMs ?: return false
+        return stored > fetchStartedAtMs && stored <= nowMs
     }
 
     /** Drops pre-proxy / fallback links that point at missing, hidden or unrunnable nodes. */
@@ -795,6 +821,7 @@ object StateOps {
         result: RuleSourceItem,
         fetchStartedAtMs: Long,
         succeeded: Boolean,
+        nowMs: Long = System.currentTimeMillis(),
     ): PersistedAppState? {
         val current = state.ruleSources.firstOrNull { it.id == result.id }
         if (expected == null) {
@@ -802,7 +829,7 @@ object StateOps {
         } else {
             if (current == null) return null
             if (RuleSourceManager.definitionKey(current) != RuleSourceManager.definitionKey(expected)) return null
-            if ((current.updatedAtMs ?: 0L) > fetchStartedAtMs) return null
+            if (newerRefreshCommitted(current.updatedAtMs, fetchStartedAtMs, nowMs)) return null
         }
         val stored = result.copy(
             name = current?.name ?: result.name,

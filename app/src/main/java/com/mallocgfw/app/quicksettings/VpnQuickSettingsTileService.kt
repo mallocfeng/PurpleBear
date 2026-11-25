@@ -5,10 +5,12 @@ import android.app.PendingIntent
 import android.net.VpnService
 import android.os.Build
 import android.service.quicksettings.TileService
+import android.widget.Toast
 import com.mallocgfw.app.MainActivity
 import com.mallocgfw.app.core.AppController
 import com.mallocgfw.app.model.ConnectionStatus
 import com.mallocgfw.app.model.ServerNode
+import com.mallocgfw.app.xray.AppLogManager
 import com.mallocgfw.app.xray.VpnRuntimeSnapshot
 import com.mallocgfw.app.xray.VpnRuntimeStore
 import com.mallocgfw.app.xray.VpnServiceController
@@ -55,8 +57,15 @@ class VpnQuickSettingsTileService : TileService() {
                 ConnectionStatus.Connected,
                 ConnectionStatus.Connecting,
                 ConnectionStatus.Disconnecting -> {
-                    // Lockdown mode: the tunnel stays up; the service logs why.
-                    if (!VpnServiceController.manualDisconnectBlocked()) {
+                    if (VpnServiceController.manualDisconnectBlocked()) {
+                        // Lockdown mode: the tunnel stays up. Say why, or the tap
+                        // looks like it did nothing.
+                        val message = VpnServiceController.lockdownDisconnectMessage()
+                        AppLogManager.append(applicationContext, "TILE", "锁定模式下拒绝手动断开")
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(applicationContext, message, Toast.LENGTH_LONG).show()
+                        }
+                    } else {
                         VpnServiceController.disconnect(applicationContext)
                     }
                 }

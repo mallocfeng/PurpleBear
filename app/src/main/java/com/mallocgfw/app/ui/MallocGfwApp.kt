@@ -841,13 +841,14 @@ fun MallocGfwApp(
         var applied: StateOps.ImportOutcome? = null
         // editNodes posts what the refresh cleared (dropped nodes) for the dialog;
         // outcome.reconnectServer below covers the reconnect.
-        AppController.editNodes(reconnect = false) { state ->
+        AppController.editNodes(reconnect = false, preferConnectedSelection = false) { state ->
             StateOps.applyImport(state, preview, connectedServerId, AppController.runningNodeIds()).also { applied = it }.state
         }
         warmServerSections()
         val outcome = checkNotNull(applied)
-        // The import dropped the connected node and left nothing usable.
-        outcome.disconnectMessage?.let { AppController.uiHost?.disconnect() }
+        // The import dropped the connected node and left nothing usable
+        // (the app's own disconnect: lockdown mode doesn't block it).
+        outcome.disconnectMessage?.let { AppController.uiHost?.disconnect(internal = true) }
         expandedGroups[preview.group.id] = true
         return ImportApplyResult(
             selectedServerChanged = outcome.selectedServerChanged,
@@ -864,7 +865,7 @@ fun MallocGfwApp(
         fetchStartedAtMs: Long,
     ): ImportApplyResult? {
         var applied: StateOps.ImportOutcome? = null
-        AppController.editNodes(reconnect = false) { state ->
+        AppController.editNodes(reconnect = false, preferConnectedSelection = false) { state ->
             StateOps.applySubscriptionRefresh(
                 state, subscriptionId, sourceUrl, preview, fetchStartedAtMs,
                 AppController.tunnelServerId(), AppController.runningNodeIds(),
@@ -873,7 +874,7 @@ fun MallocGfwApp(
         val outcome = applied ?: return null
         warmServerSections()
         expandedGroups[preview.group.id] = true
-        outcome.disconnectMessage?.let { AppController.uiHost?.disconnect() }
+        outcome.disconnectMessage?.let { AppController.uiHost?.disconnect(internal = true) }
         return ImportApplyResult(
             selectedServerChanged = outcome.selectedServerChanged,
             message = outcome.message,
@@ -1068,12 +1069,25 @@ fun MallocGfwApp(
             navigateSecondary(AppScreen.RuleSourceDetail)
         }
         scope.launch {
+            // An edit saved while this refresh ran asked for its own refresh,
+            // which the in-flight guard above turned away: run it afterwards.
+            var refreshEditedVersion = false
             try {
                 // Committed only if the source wasn't deleted, edited or refreshed
                 // again meanwhile; its on/off switch stays as it is now.
                 val commit = AppController.refreshRuleSourceAndCommit(source, expected = source)
                 val result = commit.result
+                if (commit.stored == null) {
+                    val current = AppController.current().ruleSources.firstOrNull { it.id == sourceId }
+                    refreshEditedVersion = current != null && current.status == RuleSourceStatus.Updating &&
+                        RuleSourceManager.definitionKey(current) != RuleSourceManager.definitionKey(source)
+                }
                 ruleMessage = when {
+                    refreshEditedVersion -> tr(
+                        "${source.name} 在更新期间已修改，正在按新内容更新…",
+                        "${source.name} was changed while updating; updating the new version…",
+                        "${source.name} изменён во время обновления; обновляется новая версия…",
+                    )
                     commit.stored == null -> tr(
                         "${source.name} 在更新期间已修改或删除，本次结果未保存。",
                         "${source.name} was changed or deleted while updating; this result wasn't saved.",
@@ -1090,6 +1104,7 @@ fun MallocGfwApp(
             } finally {
                 ruleUpdateInFlight.remove(sourceId)
             }
+            if (refreshEditedVersion) refreshRuleSource(sourceId)
         }
     }
 
@@ -1125,7 +1140,7 @@ fun MallocGfwApp(
                 // sync are kept). Reconnects (or disconnects) when the refresh
                 // dropped the connected node or one the tunnel uses, and posts
                 // what it cleared. A rule cache that can't be written (disk
-                // full …) throws here, before the state changes.
+                // full …) marks only that source as failed.
                 AppController.editNodes(reconnect = true) { state ->
                     report.applyTo(state) { source, compiled -> RuleSourceManager.commitCompiled(context, source, compiled) }
                 }
@@ -1671,8 +1686,8 @@ fun MallocGfwApp(
                 connectOrSwitchServer(server)
             }
 
-            override fun disconnect() {
-                if (VpnServiceController.manualDisconnectBlocked()) {
+            override fun disconnect(internal: Boolean) {
+                if (!internal && VpnServiceController.manualDisconnectBlocked()) {
                     val message = VpnServiceController.lockdownDisconnectMessage()
                     runtimeMessage = message
                     Toast.makeText(context, message, Toast.LENGTH_LONG).show()
@@ -1692,7 +1707,7 @@ fun MallocGfwApp(
                     disconnectInFlight = true
                     connectionStatus = ConnectionStatus.Disconnecting
                     runtimeMessage = "正在断开 VPN…"
-                    VpnServiceController.disconnect(context)
+                    if (internal) VpnServiceController.disconnectInternal(context) else VpnServiceController.disconnect(context)
                 }
             }
 
@@ -2344,6 +2359,7 @@ fun MallocGfwApp(
                                 return@SubscriptionsScreen
                             }
                             subscriptionRefreshInFlight[subscriptionId] = true
+                            val previousStatus = subscription.status
                             AppController.edit { StateOps.setSubscriptionStatus(it, subscriptionId, "刷新中") }
                             val sourceUrl = subscription.sourceUrl
                             val fetchStartedAtMs = System.currentTimeMillis()
@@ -2353,7 +2369,14 @@ fun MallocGfwApp(
                                 }.onSuccess { preview ->
                                     val applyResult = applySubscriptionRefresh(subscriptionId, sourceUrl, preview, fetchStartedAtMs)
                                     if (applyResult == null) {
-                                        // Deleted, re-pointed or refreshed again while downloading.
+                                        // Deleted, re-pointed or refreshed again while downloading:
+                                        // nothing applied. Don't leave "刷新中" behind.
+                                        AppController.edit { StateOps.endDroppedSubscriptionRefresh(it, subscriptionId, previousStatus) }
+                                        subscriptionMessage = tr(
+                                            "${subscription.name} 在刷新期间已修改、删除或已被更新的刷新覆盖，本次结果未保存。",
+                                            "${subscription.name} was changed, deleted or refreshed again while refreshing; this result wasn't saved.",
+                                            "${subscription.name} изменена, удалена или обновлена повторно во время обновления; результат не сохранён.",
+                                        )
                                         subscriptionRefreshInFlight.remove(subscriptionId)
                                         return@launch
                                     }
@@ -2369,7 +2392,10 @@ fun MallocGfwApp(
                                         )
                                     }
                                 }.onFailure { error ->
-                                    AppController.edit { StateOps.markSubscriptionRefreshFailed(it, subscriptionId, sourceUrl, fetchStartedAtMs) }
+                                    AppController.edit {
+                                        StateOps.markSubscriptionRefreshFailed(it, subscriptionId, sourceUrl, fetchStartedAtMs)
+                                            ?: StateOps.endDroppedSubscriptionRefresh(it, subscriptionId, previousStatus)
+                                    }
                                     subscriptionMessage = error.message ?: "订阅刷新失败。"
                                 }
                                 subscriptionRefreshInFlight.remove(subscriptionId)

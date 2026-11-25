@@ -48,6 +48,15 @@ object VpnServiceController {
 
     /** The first half of the app's own reconnect (disconnect, then connect). */
     fun disconnectForReconnect(context: Context) {
+        disconnectInternal(context)
+    }
+
+    /**
+     * The app's own disconnect, not the user's: a reconnect's first half, or
+     * the node the VPN ran on was removed and no usable one is left. Allowed
+     * in lockdown mode.
+     */
+    fun disconnectInternal(context: Context) {
         context.startService(XrayVpnService.disconnectIntent(context, internal = true))
     }
 
