@@ -199,9 +199,11 @@ class PreProxyChainLimitsTest {
             freedom().put(
                 "streamSettings",
                 JSONObject().put("network", "tcp").put("security", "none")
-                    .put("sockopt", JSONObject().put("mark", 0).put("tcpFastOpen", false).put("tproxy", "off").put("dialerProxy", "")),
+                    .put("sockopt", JSONObject().put("mark", 0).put("tcpFastOpen", 0).put("tproxy", "off").put("dialerProxy", "")),
             ),
         )
+        assertImportsThrough(freedom().put("sendThrough", "0.0.0.0"))
+        assertImportsThrough(freedom().put("sendThrough", "::"))
         // What changes the connection is still refused.
         listOf(
             freedom().put("targetStrategy", "UseIPv4"),
@@ -210,6 +212,9 @@ class PreProxyChainLimitsTest {
             freedom().put("streamSettings", JSONObject().put("sockopt", JSONObject().put("interface", "wlan0"))),
             freedom().put("streamSettings", JSONObject().put("security", "tls")),
             freedom().put("sendThrough", "10.0.0.2"),
+            // false forces Fast Open off, true forces it on: not the system default.
+            freedom().put("streamSettings", JSONObject().put("sockopt", JSONObject().put("tcpFastOpen", false))),
+            freedom().put("streamSettings", JSONObject().put("sockopt", JSONObject().put("tcpFastOpen", true))),
             freedom().put("settings", JSONObject().put("redirect", "1.2.3.4:443")),
         ).forEach { front ->
             val config = JSONObject().put("outbounds", JSONArray().put(xrayOutbound("A", "direct")).put(xrayOutbound("B", "A")).put(front))

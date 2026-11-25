@@ -549,8 +549,9 @@ object ImportParser {
      * its settings and in its streamSettings / sockopt, must be absent or
      * written as Xray's own default, which behaves the same as leaving it out
      * (see [FREEDOM_DEFAULTS]). Anything else (redirect, proxyProtocol 1/2,
-     * finalRules, fragment, another domain strategy, a mark, an interface, a
-     * dialer of its own, sendThrough …) changes how it connects.
+     * finalRules, fragment, another domain strategy, a mark, an interface,
+     * Fast Open forced on or off, a dialer of its own, a sendThrough address …)
+     * changes how it connects.
      */
     private fun isPlainFreedom(outbound: JSONObject): Boolean = isDefault(outbound, FREEDOM_DEFAULTS)
 
@@ -566,7 +567,8 @@ object ImportParser {
             "domainStrategy" to OneOf("AsIs"),
             "dialerProxy" to Empty,
             "mark" to OneOf(0),
-            "tcpFastOpen" to OneOf(false),
+            // 0 keeps the system's setting (as leaving it out); false forces it off.
+            "tcpFastOpen" to OneOf(0),
             "tproxy" to OneOf("off"),
             "tcpMptcp" to OneOf(false),
             "interface" to Empty,
@@ -579,6 +581,8 @@ object ImportParser {
         mapOf(
             "tag" to AnyValue,
             "protocol" to AnyValue,
+            // Any local address, as when left out.
+            "sendThrough" to OneOf("0.0.0.0", "::"),
             // The outbound's own target strategy (newer Xray) and the settings' older one.
             "targetStrategy" to OneOf("AsIs"),
             "settings" to Nested(
