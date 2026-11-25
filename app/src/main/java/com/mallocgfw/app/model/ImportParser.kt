@@ -581,8 +581,8 @@ object ImportParser {
         mapOf(
             "tag" to AnyValue,
             "protocol" to AnyValue,
-            // Any local address, as when left out.
-            "sendThrough" to OneOf("0.0.0.0", "::"),
+            // Xray treats 0.0.0.0 as no source binding. It binds explicitly to ::.
+            "sendThrough" to OneOf("0.0.0.0"),
             // The outbound's own target strategy (newer Xray) and the settings' older one.
             "targetStrategy" to OneOf("AsIs"),
             "settings" to Nested(

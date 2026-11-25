@@ -203,7 +203,6 @@ class PreProxyChainLimitsTest {
             ),
         )
         assertImportsThrough(freedom().put("sendThrough", "0.0.0.0"))
-        assertImportsThrough(freedom().put("sendThrough", "::"))
         // What changes the connection is still refused.
         listOf(
             freedom().put("targetStrategy", "UseIPv4"),
@@ -212,6 +211,7 @@ class PreProxyChainLimitsTest {
             freedom().put("streamSettings", JSONObject().put("sockopt", JSONObject().put("interface", "wlan0"))),
             freedom().put("streamSettings", JSONObject().put("security", "tls")),
             freedom().put("sendThrough", "10.0.0.2"),
+            freedom().put("sendThrough", "::"),
             // false forces Fast Open off, true forces it on: not the system default.
             freedom().put("streamSettings", JSONObject().put("sockopt", JSONObject().put("tcpFastOpen", false))),
             freedom().put("streamSettings", JSONObject().put("sockopt", JSONObject().put("tcpFastOpen", true))),
