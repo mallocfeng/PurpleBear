@@ -547,8 +547,9 @@ object ImportParser {
     /**
      * A freedom outbound that only goes direct. Every key must be absent or
      * written as Xray's own default, which behaves the same as leaving it out
-     * (domainStrategy AsIs, no redirect, proxyProtocol 0, no noises, an empty
-     * streamSettings, mux off); a user level changes nothing on the wire.
+     * (targetStrategy / its older name domainStrategy AsIs, no redirect,
+     * proxyProtocol 0, no finalRules or noises, an empty streamSettings, mux
+     * off); a user level changes nothing on the wire.
      * Anything else (redirect, fragment, another domain strategy, a stream
      * or dialer of its own, sendThrough …) changes how it connects.
      */
@@ -573,8 +574,8 @@ object ImportParser {
             val value = settings.opt(key)
             when (key) {
                 "userLevel" -> true
-                "domainStrategy" -> empty(value) || value.toString().equals("AsIs", ignoreCase = true)
-                "redirect", "noises" -> empty(value)
+                "targetStrategy", "domainStrategy" -> empty(value) || value.toString().equals("AsIs", ignoreCase = true)
+                "redirect", "noises", "finalRules" -> empty(value)
                 "proxyProtocol" -> zero(value)
                 else -> false
             }

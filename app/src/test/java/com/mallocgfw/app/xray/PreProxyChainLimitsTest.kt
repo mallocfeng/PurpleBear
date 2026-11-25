@@ -181,13 +181,31 @@ class PreProxyChainLimitsTest {
     }
 
     @Test
+    fun eachFreedomDefaultAloneStillCountsAsDirect() {
+        // One key at a time, as a config would write it: the chain still imports.
+        listOf(
+            JSONObject().put("proxyProtocol", 0),
+            JSONObject().put("proxyProtocol", "0"),
+            JSONObject().put("targetStrategy", "AsIs"),
+            JSONObject().put("domainStrategy", "AsIs"),
+        ).forEach { settings ->
+            val config = JSONObject().put(
+                "outbounds",
+                JSONArray().put(xrayOutbound("A", "direct")).put(xrayOutbound("B", "A"))
+                    .put(JSONObject().put("tag", "direct").put("protocol", "freedom").put("settings", settings)),
+            )
+            assertEquals("$settings", setOf("A", "B"), ImportParser.buildFilePreview("e.json", config.toString()).nodes.map { it.name }.toSet())
+        }
+    }
+
+    @Test
     fun explicitFreedomDefaultsStillCountAsDirect() {
         fun freedom(tag: String) = JSONObject().put("tag", tag).put("protocol", "freedom")
         val defaults = freedom("direct")
             .put(
                 "settings",
-                JSONObject().put("domainStrategy", "AsIs").put("redirect", "").put("proxyProtocol", 0)
-                    .put("noises", JSONArray()).put("userLevel", 0),
+                JSONObject().put("domainStrategy", "AsIs").put("targetStrategy", "AsIs").put("redirect", "").put("proxyProtocol", 0)
+                    .put("noises", JSONArray()).put("finalRules", JSONArray()).put("userLevel", 0),
             )
             .put("streamSettings", JSONObject())
             .put("mux", JSONObject().put("enabled", false))
@@ -201,6 +219,8 @@ class PreProxyChainLimitsTest {
             JSONObject().put("proxyProtocol", 2),
             JSONObject().put("redirect", "1.2.3.4:443"),
             JSONObject().put("domainStrategy", "UseIP"),
+            JSONObject().put("targetStrategy", "UseIPv4"),
+            JSONObject().put("finalRules", JSONArray().put(JSONObject().put("action", "block").put("port", "22"))),
         ).forEach { settings ->
             val changed = JSONObject().put(
                 "outbounds",
