@@ -545,18 +545,37 @@ object ImportParser {
     private val skippedProviders: ThreadLocal<MutableList<String>> = ThreadLocal.withInitial { mutableListOf() }
 
     /**
-     * A freedom outbound that only goes direct: no keys beyond tag, protocol
-     * and settings, and settings with nothing but a user level or the default
-     * domain strategy (AsIs).
+     * A freedom outbound that only goes direct. Every key must be absent or
+     * written as Xray's own default, which behaves the same as leaving it out
+     * (domainStrategy AsIs, no redirect, proxyProtocol 0, no noises, an empty
+     * streamSettings, mux off); a user level changes nothing on the wire.
+     * Anything else (redirect, fragment, another domain strategy, a stream
+     * or dialer of its own, sendThrough …) changes how it connects.
      */
     private fun isPlainFreedom(outbound: JSONObject): Boolean {
-        val keys = outbound.keys().asSequence().toSet()
-        if (!setOf("tag", "protocol", "settings").containsAll(keys)) return false
-        val settings = outbound.optJSONObject("settings") ?: return !outbound.has("settings") || outbound.isNull("settings")
+        fun empty(value: Any?) = value == null || value == JSONObject.NULL ||
+            (value is JSONObject && value.length() == 0) || (value is JSONArray && value.length() == 0) ||
+            (value is String && value.isBlank())
+        fun zero(value: Any?) = empty(value) || (value as? Number)?.toDouble() == 0.0 || value?.toString()?.trim() == "0"
+        val outer = outbound.keys().asSequence().all { key ->
+            val value = outbound.opt(key)
+            when (key) {
+                "tag", "protocol" -> true
+                "settings" -> empty(value) || value is JSONObject
+                "streamSettings" -> empty(value)
+                "mux" -> empty(value) || (value as? JSONObject)?.let { it.optBoolean("enabled", false).not() } == true
+                else -> false
+            }
+        }
+        if (!outer) return false
+        val settings = outbound.optJSONObject("settings") ?: return true
         return settings.keys().asSequence().all { key ->
+            val value = settings.opt(key)
             when (key) {
                 "userLevel" -> true
-                "domainStrategy" -> settings.optString(key).equals("AsIs", ignoreCase = true)
+                "domainStrategy" -> empty(value) || value.toString().equals("AsIs", ignoreCase = true)
+                "redirect", "noises" -> empty(value)
+                "proxyProtocol" -> zero(value)
                 else -> false
             }
         }

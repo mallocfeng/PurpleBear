@@ -180,6 +180,51 @@ class PreProxyChainLimitsTest {
         assertTrue(preview.summary, preview.summary.contains("4 个节点的前置代理链"))
     }
 
+    @Test
+    fun explicitFreedomDefaultsStillCountAsDirect() {
+        fun freedom(tag: String) = JSONObject().put("tag", tag).put("protocol", "freedom")
+        val defaults = freedom("direct")
+            .put(
+                "settings",
+                JSONObject().put("domainStrategy", "AsIs").put("redirect", "").put("proxyProtocol", 0)
+                    .put("noises", JSONArray()).put("userLevel", 0),
+            )
+            .put("streamSettings", JSONObject())
+            .put("mux", JSONObject().put("enabled", false))
+        // Two levels: B → A → direct. Both import, as with empty settings.
+        val config = JSONObject().put("outbounds", JSONArray().put(xrayOutbound("A", "direct")).put(xrayOutbound("B", "A")).put(defaults))
+        val preview = ImportParser.buildFilePreview("d.json", config.toString())
+        assertEquals(setOf("A", "B"), preview.nodes.map { it.name }.toSet())
+        assertEquals(preview.nodes.single { it.name == "A" }.id, preview.nodes.single { it.name == "B" }.preProxyNodeId)
+        // A value that changes the connection still doesn't.
+        listOf(
+            JSONObject().put("proxyProtocol", 2),
+            JSONObject().put("redirect", "1.2.3.4:443"),
+            JSONObject().put("domainStrategy", "UseIP"),
+        ).forEach { settings ->
+            val changed = JSONObject().put(
+                "outbounds",
+                JSONArray().put(xrayOutbound("A", "direct")).put(xrayOutbound("B", "A")).put(freedom("direct").put("settings", settings)),
+            )
+            try {
+                ImportParser.buildFilePreview("c.json", changed.toString())
+                fail("imported through $settings")
+            } catch (e: IllegalArgumentException) {
+                assertTrue(e.message.orEmpty(), e.message.orEmpty().contains("direct"))
+            }
+        }
+        val muxOn = JSONObject().put(
+            "outbounds",
+            JSONArray().put(xrayOutbound("A", "direct")).put(freedom("direct").put("mux", JSONObject().put("enabled", true))),
+        )
+        try {
+            ImportParser.buildFilePreview("m.json", muxOn.toString())
+            fail("imported through a freedom front with mux on")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message.orEmpty().contains("direct"))
+        }
+    }
+
     private fun xrayOutbound(tag: String, dialer: String?) = JSONObject()
         .put("tag", tag)
         .put("protocol", "vless")
