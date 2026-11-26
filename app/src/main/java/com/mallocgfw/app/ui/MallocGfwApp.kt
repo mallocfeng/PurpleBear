@@ -88,6 +88,8 @@ import com.mallocgfw.app.model.ServerGroupType
 import com.mallocgfw.app.model.AppTextLanguage
 import com.mallocgfw.app.model.isSameImportedNode
 import com.mallocgfw.app.model.tr
+import com.mallocgfw.app.core.RuleAnalysisCollector
+import com.mallocgfw.app.core.RuleAnalysisReport
 import com.mallocgfw.app.model.mergedSubscriptionGroupNodes
 import com.mallocgfw.app.model.normalizedAppVpnMtu
 import com.mallocgfw.app.model.RuleTargetPolicy
@@ -158,7 +160,6 @@ fun MallocGfwApp(
     }
     var ruleEditorSourceId by rememberSaveable { mutableStateOf<String?>(null) }
     var ruleEditorKind by rememberSaveable { mutableStateOf(RuleSourceKind.RemoteUrl) }
-    var scrollRulesToCustomSources by remember { mutableStateOf(false) }
     var preProxyPickerOwnerNodeId by rememberSaveable { mutableStateOf<String?>(null) }
     var nodeLinkPickerMode by rememberSaveable { mutableStateOf(NodeLinkPickerMode.PreProxy) }
     var serverFilter by rememberSaveable { mutableStateOf("all") }
@@ -195,6 +196,8 @@ fun MallocGfwApp(
     }
     var runtimeMessage by remember { mutableStateOf<String?>(null) }
     var ruleMessage by remember { mutableStateOf<String?>(null) }
+    /** "Geo data updated", shown for a moment in the Geo line at the bottom of Rules. */
+    var geoDataUpdatedNotice by remember { mutableStateOf(false) }
     var subscriptionMessage by remember { mutableStateOf<String?>(null) }
     var settingsMessage by remember { mutableStateOf<String?>(null) }
     var updateState by remember { mutableStateOf(AppUpdateUiState()) }
@@ -215,6 +218,8 @@ fun MallocGfwApp(
     var pendingReconnectServerId by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingReconnectMessage by rememberSaveable { mutableStateOf<String?>(null) }
     var blockingReconnectInFlight by rememberSaveable { mutableStateOf(false) }
+    var ruleAnalysisReport by remember { mutableStateOf<RuleAnalysisReport?>(null) }
+    var ruleAnalysisInFlight by remember { mutableStateOf(false) }
     var blockingReconnectMessage by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingProtectedAppsApply by rememberSaveable { mutableStateOf(false) }
     var pendingStreamingRoutingApply by rememberSaveable { mutableStateOf(false) }
@@ -308,10 +313,12 @@ fun MallocGfwApp(
         mainTab = when (target) {
             AppScreen.Home, AppScreen.QrScanner -> MainTab.Home
             AppScreen.Servers, AppScreen.NodeDetail, AppScreen.LocalNodeBuilder, AppScreen.PreProxyNodePicker -> MainTab.Servers
-            AppScreen.Rules, AppScreen.RuleSourceDetail, AppScreen.AddRuleSource -> MainTab.Rules
+            AppScreen.Rules, AppScreen.RuleSourceDetail, AppScreen.AddRuleSource,
+            AppScreen.CustomRules, AppScreen.DefaultRules,
+            AppScreen.PerApp, AppScreen.PerAppNodePicker, AppScreen.MediaRouting, AppScreen.MediaRoutingNodePicker -> MainTab.Rules
             AppScreen.Import, AppScreen.ConfirmImport, AppScreen.Subscriptions -> MainTab.Import
-            AppScreen.Me, AppScreen.PerApp, AppScreen.Diagnostics, AppScreen.Settings, AppScreen.Permission,
-            AppScreen.OpenSourceLicenses, AppScreen.Mcp, AppScreen.MediaRouting, AppScreen.MediaRoutingNodePicker, AppScreen.PerAppNodePicker, AppScreen.LogViewer,
+            AppScreen.Me, AppScreen.Diagnostics, AppScreen.Settings, AppScreen.Permission,
+            AppScreen.OpenSourceLicenses, AppScreen.Mcp, AppScreen.LogViewer,
             AppScreen.Tailscale -> MainTab.Me
             else -> mainTab
         }
@@ -338,10 +345,12 @@ fun MallocGfwApp(
             AppScreen.Home, AppScreen.QrScanner -> MainTab.Home
             AppScreen.Servers, AppScreen.NodeDetail, AppScreen.LocalNodeBuilder -> MainTab.Servers
             AppScreen.PreProxyNodePicker -> MainTab.Servers
-            AppScreen.Rules, AppScreen.RuleSourceDetail, AppScreen.AddRuleSource -> MainTab.Rules
+            AppScreen.Rules, AppScreen.RuleSourceDetail, AppScreen.AddRuleSource,
+            AppScreen.CustomRules, AppScreen.DefaultRules,
+            AppScreen.PerApp, AppScreen.PerAppNodePicker, AppScreen.MediaRouting, AppScreen.MediaRoutingNodePicker -> MainTab.Rules
             AppScreen.Import, AppScreen.ConfirmImport, AppScreen.Subscriptions -> MainTab.Import
-            AppScreen.Me, AppScreen.PerApp, AppScreen.Diagnostics, AppScreen.Settings, AppScreen.Permission,
-            AppScreen.OpenSourceLicenses, AppScreen.Mcp, AppScreen.MediaRouting, AppScreen.MediaRoutingNodePicker, AppScreen.PerAppNodePicker, AppScreen.LogViewer,
+            AppScreen.Me, AppScreen.Diagnostics, AppScreen.Settings, AppScreen.Permission,
+            AppScreen.OpenSourceLicenses, AppScreen.Mcp, AppScreen.LogViewer,
             AppScreen.Tailscale -> MainTab.Me
             else -> MainTab.Home
         }
@@ -1197,13 +1206,13 @@ fun MallocGfwApp(
                 GeoDataManager.refresh(context)
             }.onSuccess { snapshot ->
                 geoDataSnapshot = snapshot
-                ruleMessage = "Geo 数据已更新。"
+                geoDataUpdatedNotice = true
             }.onFailure { error ->
                 geoDataSnapshot = geoDataSnapshot.copy(
                     status = GeoDataStatus.Failed,
                     lastError = error.message ?: "Geo 数据更新失败。",
                 )
-                ruleMessage = error.message ?: "Geo 数据更新失败。"
+                // The error shows in the Geo line itself (snapshot.lastError).
             }
             geoDataUpdating = false
         }
@@ -1471,19 +1480,23 @@ fun MallocGfwApp(
         }
     }
 
+    /** After saving a custom rule: the custom rules list, with Rules underneath. */
+    fun showCustomRulesAfterSave() {
+        goToMain(MainTab.Rules)
+        navigateSecondary(AppScreen.CustomRules)
+    }
+
     fun addRuleSource(name: String, url: String, type: RuleSourceType, policy: RuleTargetPolicy = RuleTargetPolicy.Proxy) {
         val draft = RuleSourceManager.createDraft(name = name, url = url, requestedType = type, policy = policy)
         replaceRuleSource(draft.copy(status = RuleSourceStatus.Updating))
-        goToMain(MainTab.Rules)
-        scrollRulesToCustomSources = true
+        showCustomRulesAfterSave()
         refreshRuleSource(draft.id)
     }
 
     fun addTextRuleSource(name: String, text: String, type: RuleSourceType) {
         val draft = RuleSourceManager.createTextDraft(name = name, text = text, requestedType = type)
         replaceRuleSource(draft.copy(status = RuleSourceStatus.Updating))
-        goToMain(MainTab.Rules)
-        scrollRulesToCustomSources = true
+        showCustomRulesAfterSave()
         refreshRuleSource(draft.id)
     }
 
@@ -1495,6 +1508,13 @@ fun MallocGfwApp(
         sourceKind: RuleSourceKind,
         policy: RuleTargetPolicy = RuleTargetPolicy.Proxy,
     ) {
+        if (editingSourceId == RuleSourceManager.TOP_RULE_ID && ruleSources.none { it.id == editingSourceId }) {
+            val draft = RuleSourceManager.createTopRuleDraft(content, type)
+            replaceRuleSource(draft.copy(status = RuleSourceStatus.Updating))
+            goToMain(MainTab.Rules)
+            refreshRuleSource(draft.id)
+            return
+        }
         if (editingSourceId.isNullOrBlank() || ruleSources.none { it.id == editingSourceId }) {
             if (sourceKind == RuleSourceKind.LocalText) {
                 addTextRuleSource(name, content, type)
@@ -1516,8 +1536,7 @@ fun MallocGfwApp(
             lastError = null,
         )
         replaceRuleSource(updated)
-        goToMain(MainTab.Rules)
-        scrollRulesToCustomSources = true
+        if (RuleSourceManager.isTopRule(updated) || updated.systemDefault) goToMain(MainTab.Rules) else showCustomRulesAfterSave()
         refreshRuleSource(updated.id)
     }
 
@@ -1726,6 +1745,12 @@ fun MallocGfwApp(
         if (settingsMessage != null) {
             delay(NOTICE_VISIBLE_MS)
             settingsMessage = null
+        }
+    }
+    LaunchedEffect(geoDataUpdatedNotice) {
+        if (geoDataUpdatedNotice) {
+            delay(NOTICE_VISIBLE_MS)
+            geoDataUpdatedNotice = false
         }
     }
     LaunchedEffect(ruleMessage) {
@@ -2173,12 +2198,6 @@ fun MallocGfwApp(
             pendingHomeSwitchPromptServerId = null
         }
     }
-    LaunchedEffect(screen, scrollRulesToCustomSources, ruleSources.size) {
-        if (screen != AppScreen.Rules || !scrollRulesToCustomSources) return@LaunchedEffect
-        val customHeaderIndex = 4 + ruleSources.count { it.systemDefault }
-        rulesListState.animateScrollToItem(customHeaderIndex.coerceAtLeast(0))
-        scrollRulesToCustomSources = false
-    }
     val selectedServerGroup = selectedServer?.let { server ->
         serverGroups.firstOrNull { it.id == server.groupId }
     }
@@ -2314,32 +2333,46 @@ fun MallocGfwApp(
                         padding = padding,
                         listState = rulesListState,
                         ruleSources = ruleSources,
-                        selectedRuleSourceId = selectedRuleSourceId,
                         geoDataSnapshot = geoDataSnapshot,
                         geoDataUpdating = geoDataUpdating,
+                        geoDataUpdatedNotice = geoDataUpdatedNotice,
                         geoRoutingRegion = appSettings.geoRoutingRegion,
                         globalProxyEnabled = appSettings.globalProxyEnabled,
                         ruleMessage = ruleMessage,
-                        updatingIds = ruleUpdateInFlight.keys,
                         onGlobalProxyChange = ::updateGlobalProxyEnabled,
                         onGeoRoutingRegionChange = ::updateGeoRoutingRegion,
                         onRefreshGeoData = ::refreshGeoData,
-                        onSelectSource = { sourceId ->
-                            selectedRuleSourceId = sourceId
-                            navigateSecondary(AppScreen.RuleSourceDetail)
-                        },
-                        onAddSource = {
-                            ruleEditorSourceId = null
-                            ruleEditorKind = RuleSourceKind.RemoteUrl
-                            navigateSecondary(AppScreen.AddRuleSource)
-                        },
-                        onAddTextSource = {
-                            ruleEditorSourceId = null
+                        onToggleEnabled = ::toggleRuleSourceEnabled,
+                        onOpenCustomRules = { navigateSecondary(AppScreen.CustomRules) },
+                        onOpenDefaultRules = { navigateSecondary(AppScreen.DefaultRules) },
+                        ruleAnalysisInFlight = ruleAnalysisInFlight,
+                        ruleAnalysisShowing = ruleAnalysisReport != null,
+                        perAppEnabled = proxyMode == ProxyMode.PerApp,
+                        streamingRoutingEnabled = appSettings.streamingRoutingEnabled,
+                        onOpenPerApp = { navigateSecondary(AppScreen.PerApp) },
+                        onOpenMediaRouting = { navigateSecondary(AppScreen.MediaRouting) },
+                        onOpenTopRule = {
+                            ruleEditorSourceId = RuleSourceManager.TOP_RULE_ID
                             ruleEditorKind = RuleSourceKind.LocalText
                             navigateSecondary(AppScreen.AddRuleSource)
                         },
-                        onToggleEnabled = ::toggleRuleSourceEnabled,
-                        onRefreshSource = ::refreshRuleSource,
+                        onAnalyzeRules = {
+                            if (!ruleAnalysisInFlight) {
+                                ruleAnalysisInFlight = true
+                                scope.launch {
+                                    try {
+                                        ruleAnalysisReport = RuleAnalysisCollector.collect(context.applicationContext)
+                                    } catch (error: kotlinx.coroutines.CancellationException) {
+                                        throw error
+                                    } catch (error: Exception) {
+                                        android.util.Log.w("RuleAnalysis", "Rule analysis failed", error)
+                                        ruleMessage = tr("规则分析失败：", "Rule analysis failed: ", "Ошибка анализа правил: ") + (error.message ?: error.javaClass.simpleName)
+                                    } finally {
+                                        ruleAnalysisInFlight = false
+                                    }
+                                }
+                            }
+                        },
                     )
 
                     AppScreen.NodeDetail -> NodeDetailScreen(
@@ -2487,6 +2520,7 @@ fun MallocGfwApp(
 
                     AppScreen.PerApp -> PerAppScreen(
                         lockdownActive = VpnServiceController.manualDisconnectBlocked(),
+                        globalProxyEnabled = appSettings.globalProxyEnabled,
                         padding = padding,
                         proxyMode = proxyMode,
                         search = perAppSearch,
@@ -2786,15 +2820,12 @@ fun MallocGfwApp(
                         connectionStatus = connectionStatus,
                         proxyMode = proxyMode,
                         server = selectedServer,
-                        streamingRoutingEnabled = appSettings.streamingRoutingEnabled,
                         lightThemeEnabled = appSettings.lightThemeEnabled,
                         onToggleTheme = ::toggleThemeMode,
                         onOpenSubscriptions = { navigateSecondary(AppScreen.Subscriptions) },
-                        onOpenPerApp = { navigateSecondary(AppScreen.PerApp) },
                         onOpenDiagnostics = { navigateSecondary(AppScreen.Diagnostics) },
                         onOpenSettings = { navigateSecondary(AppScreen.Settings) },
                         onOpenTailscale = { navigateSecondary(AppScreen.Tailscale) },
-                        onOpenMediaRouting = { navigateSecondary(AppScreen.MediaRouting) },
                         onOpenPermission = { navigateSecondary(AppScreen.Permission) },
                         vpnPermissionGranted = vpnPermissionGranted,
                         updateBadge = updateBadge,
@@ -2879,6 +2910,47 @@ fun MallocGfwApp(
                         },
                     )
 
+                    AppScreen.CustomRules -> CustomRulesScreen(
+                        padding = padding,
+                        sources = ruleSources.filterNot { it.systemDefault || RuleSourceManager.isTopRule(it) },
+                        selectedRuleSourceId = selectedRuleSourceId,
+                        updatingIds = ruleUpdateInFlight.keys,
+                        globalProxyEnabled = appSettings.globalProxyEnabled,
+                        onBack = ::onBack,
+                        onSelectSource = { sourceId ->
+                            selectedRuleSourceId = sourceId
+                            navigateSecondary(AppScreen.RuleSourceDetail)
+                        },
+                        onToggleEnabled = ::toggleRuleSourceEnabled,
+                        onRefreshSource = ::refreshRuleSource,
+                        onAddTextSource = {
+                            ruleEditorSourceId = null
+                            ruleEditorKind = RuleSourceKind.LocalText
+                            navigateSecondary(AppScreen.AddRuleSource)
+                        },
+                        onAddSource = {
+                            ruleEditorSourceId = null
+                            ruleEditorKind = RuleSourceKind.RemoteUrl
+                            navigateSecondary(AppScreen.AddRuleSource)
+                        },
+                    )
+
+                    AppScreen.DefaultRules -> DefaultRulesScreen(
+                        padding = padding,
+                        sources = ruleSources.filter { it.systemDefault },
+                        selectedRuleSourceId = selectedRuleSourceId,
+                        updatingIds = ruleUpdateInFlight.keys,
+                        region = appSettings.geoRoutingRegion,
+                        globalProxyEnabled = appSettings.globalProxyEnabled,
+                        onBack = ::onBack,
+                        onSelectSource = { sourceId ->
+                            selectedRuleSourceId = sourceId
+                            navigateSecondary(AppScreen.RuleSourceDetail)
+                        },
+                        onToggleEnabled = ::toggleRuleSourceEnabled,
+                        onRefreshSource = ::refreshRuleSource,
+                    )
+
                     AppScreen.RuleSourceDetail -> RuleSourceDetailScreen(
                         padding = padding,
                         summary = ruleDetailSummary,
@@ -2903,6 +2975,7 @@ fun MallocGfwApp(
                         onSubmit = { name, content, type, sourceKind, policy ->
                             saveRuleSourceEdits(ruleEditorSourceId, name, content, type, sourceKind, policy)
                         },
+                        topPriority = ruleEditorSourceId == RuleSourceManager.TOP_RULE_ID,
                     )
 
                     else -> Unit
@@ -2910,6 +2983,10 @@ fun MallocGfwApp(
                 }
                 }
             }
+
+                ruleAnalysisReport?.takeIf { screen == AppScreen.Rules }?.let { report ->
+                    RuleAnalysisReportOverlay(report = report, onDismiss = { ruleAnalysisReport = null })
+                }
 
                 if (blockingReconnectInFlight) {
                     Box(

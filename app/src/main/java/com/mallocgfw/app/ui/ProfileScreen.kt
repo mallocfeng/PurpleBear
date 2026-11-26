@@ -44,15 +44,12 @@ internal fun MeScreen(
     connectionStatus: ConnectionStatus,
     proxyMode: ProxyMode,
     server: ServerNode?,
-    streamingRoutingEnabled: Boolean,
     lightThemeEnabled: Boolean,
     onToggleTheme: () -> Unit,
     onOpenSubscriptions: () -> Unit,
-    onOpenPerApp: () -> Unit,
     onOpenDiagnostics: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenTailscale: () -> Unit,
-    onOpenMediaRouting: () -> Unit,
     onOpenPermission: () -> Unit,
     vpnPermissionGranted: Boolean = true,
     updateBadge: Boolean = false,
@@ -122,20 +119,6 @@ internal fun MeScreen(
         item {
             GroupedCard {
                 ListRow(title = "订阅管理", icon = Icons.Rounded.Inventory2, onClick = onOpenSubscriptions)
-                GroupDivider(startIndent = 58.dp)
-                ListRow(
-                    title = "分应用代理",
-                    value = if (proxyMode == ProxyMode.PerApp) "已启用" else null,
-                    icon = Icons.Rounded.Apps,
-                    onClick = onOpenPerApp,
-                )
-                GroupDivider(startIndent = 58.dp)
-                ListRow(
-                    title = "流媒体分流",
-                    value = if (streamingRoutingEnabled) "已启用" else null,
-                    icon = Icons.Rounded.LiveTv,
-                    onClick = onOpenMediaRouting,
-                )
                 GroupDivider(startIndent = 58.dp)
                 ListRow(title = "Tailscale", icon = Icons.Rounded.DeviceHub, onClick = onOpenTailscale)
             }

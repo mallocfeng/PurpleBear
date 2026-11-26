@@ -8,8 +8,11 @@ import android.content.Context
  * through [com.mallocgfw.app.xray.AppProcessFinder]) against `process` rules.
  */
 object PerAppRouting {
-    /** Above media routing (1000) and rule sources: the app's choice wins. */
-    const val PRIORITY = 2_000
+    /**
+     * Above media routing (1000) and user rule sources (2000): the app's
+     * choice wins. Kept strictly higher so it doesn't hang on list order.
+     */
+    const val PRIORITY = 3_000
 
     fun buildSetup(
         context: Context,

@@ -43,7 +43,7 @@ object StreamingMediaManager {
     private const val CONNECT_TIMEOUT_MS = 10_000
     private const val READ_TIMEOUT_MS = 15_000
     private const val CACHE_TTL_MS = 24 * 60 * 60 * 1000L
-    private const val STREAMING_RULE_PRIORITY = 1_000
+    const val STREAMING_RULE_PRIORITY = 1_000
 
     private fun service(
         id: String,
@@ -272,6 +272,9 @@ object StreamingMediaManager {
             )
         }
     }
+
+    /** The service's rules as cached, without downloading (rule analysis). */
+    fun cachedRulesForAnalysis(context: Context, serviceId: String): CompiledRuleSet? = loadCompiledRules(context, serviceId)
 
     private fun ensureRules(
         context: Context,

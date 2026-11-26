@@ -218,11 +218,13 @@ internal fun screenMatchesTab(screen: AppScreen, tab: MainTab): Boolean {
         MainTab.Home -> screen == AppScreen.Home || screen == AppScreen.QrScanner
         MainTab.Servers -> screen == AppScreen.Servers || screen == AppScreen.NodeDetail ||
             screen == AppScreen.LocalNodeBuilder || screen == AppScreen.PreProxyNodePicker
-        MainTab.Rules -> screen == AppScreen.Rules || screen == AppScreen.RuleSourceDetail || screen == AppScreen.AddRuleSource
+        MainTab.Rules -> screen == AppScreen.Rules || screen == AppScreen.RuleSourceDetail || screen == AppScreen.AddRuleSource ||
+            screen == AppScreen.CustomRules || screen == AppScreen.DefaultRules ||
+            screen == AppScreen.PerApp || screen == AppScreen.PerAppNodePicker ||
+            screen == AppScreen.MediaRouting || screen == AppScreen.MediaRoutingNodePicker
         MainTab.Import -> screen == AppScreen.Import || screen == AppScreen.ConfirmImport || screen == AppScreen.Subscriptions
-        MainTab.Me -> screen == AppScreen.Me || screen == AppScreen.PerApp || screen == AppScreen.Diagnostics ||
-            screen == AppScreen.Settings || screen == AppScreen.Permission || screen == AppScreen.MediaRouting ||
-            screen == AppScreen.MediaRoutingNodePicker || screen == AppScreen.PerAppNodePicker || screen == AppScreen.LogViewer || screen == AppScreen.Update ||
+        MainTab.Me -> screen == AppScreen.Me || screen == AppScreen.Diagnostics ||
+            screen == AppScreen.Settings || screen == AppScreen.Permission || screen == AppScreen.LogViewer || screen == AppScreen.Update ||
             screen == AppScreen.OpenSourceLicenses || screen == AppScreen.Tailscale || screen == AppScreen.Mcp
     }
 }

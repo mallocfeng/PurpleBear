@@ -107,6 +107,7 @@ internal fun PerAppScreen(
     onOpenApp: (String) -> Unit = {},
     /** Always-on VPN with "Block connections without VPN" is on for this app. */
     lockdownActive: Boolean = false,
+    globalProxyEnabled: Boolean = false,
 ) {
     val language = LocalAppLanguage.current
     val context = LocalContext.current
@@ -170,74 +171,38 @@ internal fun PerAppScreen(
                 }
             }
         }
-        item {
-            SurfaceCard {
-                ScreenHeader(
-                    title = "只代理需要保护的应用",
-                    subtitle = "选择需要代理的应用。",
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Eyebrow("当前模式")
-                        Text(
-                            text = uiText(if (proxyMode == ProxyMode.PerApp) "仅代理选中应用" else "智能分流"),
-                            fontSize = TypeScale.CardTitle,
-                            lineHeight = TypeScale.CardTitleLine,
-                            fontWeight = FontWeight.ExtraBold,
-                        )
-                        Text(
-                            text = uiText(
-                                if (proxyMode == ProxyMode.PerApp) {
-                                    "仅勾选应用进入 VPN。"
-                                } else {
-                                    "切换到分应用后生效。"
-                                },
-                            ),
-                            color = TextSecondary,
-                            modifier = Modifier.padding(top = 6.dp),
-                        )
-                    }
-                    StatusPill(
-                        text = if (proxyMode == ProxyMode.PerApp) "已启用" else "未启用",
-                        color = if (proxyMode == ProxyMode.PerApp) Success else TextSecondary,
-                        background = if (proxyMode == ProxyMode.PerApp) Success.copy(alpha = 0.14f) else ControlSurfaceStrongColor,
-                    )
-                }
-                Spacer(modifier = Modifier.height(14.dp))
-                OutlinedActionButton(
-                    text = if (proxyMode == ProxyMode.PerApp) "切回智能分流" else "启用分应用代理",
-                    onClick = {
-                        onModeChange(
-                            if (proxyMode == ProxyMode.PerApp) ProxyMode.Smart else ProxyMode.PerApp,
-                        )
-                    },
+        if (globalProxyEnabled && proxyMode == ProxyMode.PerApp) {
+            item {
+                NoteBox(
+                    text = uiText(
+                        "全局代理模式下，所有应用都经过 VPN，下方的应用选择暂不生效；给应用单独指定的节点仍然有效。",
+                        "In global proxy mode every app uses the VPN, so the app selection below is paused. Nodes set for single apps still apply.",
+                        "В режиме глобального прокси все приложения идут через VPN, поэтому выбор приложений ниже не действует. Узлы, заданные отдельным приложениям, по-прежнему работают.",
+                    ),
                 )
             }
         }
         item {
-            SurfaceCard {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        text = uiText("应用设置后会重连 VPN。"),
-                        color = TextSecondary,
-                    )
-                    OutlinedActionButton(
-                        text = when {
-                            proxyMode != ProxyMode.PerApp -> "先启用分应用代理"
-                            hasPendingChanges && applyEnabled -> "应用设置"
-                            hasPendingChanges -> "等待连接后应用"
-                            else -> "当前名单已生效"
-                        },
-                        enabled = applyEnabled,
-                        onClick = onApplyChanges,
-                    )
-                }
+            // One switch, like media routing: on = only the selected apps use the VPN.
+            SettingsGroup(title = "总开关") {
+                SettingToggleRow(
+                    title = "启用分应用代理",
+                    subtitle = if (proxyMode == ProxyMode.PerApp) {
+                        "仅选中的应用进入 VPN，其余应用直接联网。"
+                    } else {
+                        "开启后只代理下方选中的应用。"
+                    },
+                    checked = proxyMode == ProxyMode.PerApp,
+                    onToggle = {
+                        onModeChange(if (proxyMode == ProxyMode.PerApp) ProxyMode.Smart else ProxyMode.PerApp)
+                    },
+                )
             }
+        }
+        // Only while connected with changes not yet applied: otherwise the next
+        // connection picks them up and there is nothing to press.
+        if (applyEnabled) {
+            item { PendingApplyCard(onApply = onApplyChanges) }
         }
         item {
             SearchField(
@@ -1063,6 +1028,35 @@ private fun UpdateAction(
 /** Country tab of the media routing list; kept while the node picker is open. null: all. */
 private val mediaRoutingRegion = mutableStateOf<StreamingRegion?>(null)
 
+/**
+ * Shown only while the VPN is connected and changes wait to be applied:
+ * applying reconnects the VPN once for all of them.
+ */
+@Composable
+private fun PendingApplyCard(
+    onApply: () -> Unit,
+    title: String = uiText("有修改尚未生效", "Some changes aren't applied yet", "Есть непримененные изменения"),
+    buttonText: String = uiText("应用（会重连 VPN）", "Apply (reconnects the VPN)", "Применить (VPN переподключится)"),
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(CardRadius))
+            .background(PendingBannerColor)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            text = title,
+            color = TextPrimary,
+            fontSize = TypeScale.ListTitle,
+            lineHeight = TypeScale.ListTitleLine,
+            fontWeight = FontWeight.SemiBold,
+        )
+        PrimaryActionButton(text = buttonText, onClick = onApply)
+    }
+}
+
 @Composable
 internal fun MediaRoutingScreen(
     padding: PaddingValues,
@@ -1090,13 +1084,6 @@ internal fun MediaRoutingScreen(
         item {
             AppTopBar(title = "流媒体分流", subtitle = "按服务指定出口", onBack = onBack)
         }
-        if (connectionStatus == ConnectionStatus.Connected) {
-            item {
-                NoteBox(
-                    text = "应用设置后会重连 VPN。",
-                )
-            }
-        }
         val unappliedNames = services.filter { it.id in unappliedServiceIds }.map { it.name }
         if (enabled && connectionStatus == ConnectionStatus.Connected && unappliedNames.isNotEmpty()) {
             item {
@@ -1123,25 +1110,19 @@ internal fun MediaRoutingScreen(
                 )
             }
         }
-        item {
-            SurfaceCard {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        text = uiText("应用设置后会重连 VPN。"),
-                        color = TextSecondary,
-                    )
-                    val retryable = enabled && unappliedServiceIds.isNotEmpty()
-                    OutlinedActionButton(
-                        text = when {
-                            hasPendingChanges && connectionStatus == ConnectionStatus.Connected -> "应用设置"
-                            hasPendingChanges -> "等待连接后应用"
-                            retryable && connectionStatus == ConnectionStatus.Connected -> uiText("重试下载规则", "Retry rules download", "Повторить загрузку правил")
-                            else -> "当前设置已生效"
-                        },
-                        enabled = (hasPendingChanges || retryable) && connectionStatus == ConnectionStatus.Connected,
-                        onClick = onApplyChanges,
-                    )
-                }
+        // Only while connected and there is something to do: changes to apply,
+        // or rules to download again.
+        val connected = connectionStatus == ConnectionStatus.Connected
+        val retryable = enabled && unappliedServiceIds.isNotEmpty()
+        if (connected && hasPendingChanges) {
+            item { PendingApplyCard(onApply = onApplyChanges) }
+        } else if (connected && retryable) {
+            item {
+                PendingApplyCard(
+                    title = uiText("部分服务的规则还没下载成功", "Some services' rules aren't downloaded yet", "Правила некоторых сервисов ещё не загружены"),
+                    buttonText = uiText("重试下载规则", "Retry rules download", "Повторить загрузку правил"),
+                    onApply = onApplyChanges,
+                )
             }
         }
         item {

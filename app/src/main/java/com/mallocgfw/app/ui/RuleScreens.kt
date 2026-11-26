@@ -7,7 +7,17 @@ import com.mallocgfw.app.model.RuleTextHelper
 import com.mallocgfw.app.model.tr
 import com.mallocgfw.app.model.RuleTargetPolicy
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.WarningAmber
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.rounded.VpnLock
+import androidx.compose.material.icons.rounded.Lan
+import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.foundation.layout.widthIn
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
@@ -69,158 +79,8 @@ import com.mallocgfw.app.ui.theme.SurfaceHigh
 import com.mallocgfw.app.ui.theme.SurfaceLow
 import com.mallocgfw.app.ui.theme.TextPrimary
 import com.mallocgfw.app.ui.theme.TextSecondary
+import com.mallocgfw.app.ui.theme.Warning
 import com.mallocgfw.app.xray.GeoDataSnapshot
-
-@Composable
-internal fun RulesScreen(
-    padding: PaddingValues,
-    listState: LazyListState,
-    ruleSources: List<RuleSourceItem>,
-    selectedRuleSourceId: String,
-    geoDataSnapshot: GeoDataSnapshot,
-    geoDataUpdating: Boolean,
-    geoRoutingRegion: AppGeoRoutingRegion,
-    globalProxyEnabled: Boolean,
-    ruleMessage: String?,
-    updatingIds: Set<String>,
-    onGlobalProxyChange: (Boolean) -> Unit,
-    onGeoRoutingRegionChange: (AppGeoRoutingRegion) -> Unit,
-    onRefreshGeoData: () -> Unit,
-    onSelectSource: (String) -> Unit,
-    onAddSource: () -> Unit,
-    onAddTextSource: () -> Unit,
-    onToggleEnabled: (String) -> Unit,
-    onRefreshSource: (String) -> Unit,
-) {
-    val defaultSources = ruleSources.filter { it.systemDefault }
-    val customSources = ruleSources.filterNot { it.systemDefault }
-    var selectedCustomKind by remember { mutableStateOf(RuleSourceKind.LocalText) }
-    var showAddRuleMenu by remember { mutableStateOf(false) }
-    val displayedCustomSources = customSources.filter { it.sourceKind == selectedCustomKind }
-    // Global mode skips every rule; dim them so the page shows they are idle.
-    val rulesAlpha = if (globalProxyEnabled) 0.45f else 1f
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(padding),
-    ) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            state = listState,
-            contentPadding = mainScreenPadding(bottom = 96.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            item(key = "routing-card") {
-                RoutingOverviewCard(
-                    globalProxyEnabled = globalProxyEnabled,
-                    onGlobalProxyChange = onGlobalProxyChange,
-                    geoDataSnapshot = geoDataSnapshot,
-                    geoDataUpdating = geoDataUpdating,
-                    geoRoutingRegion = geoRoutingRegion,
-                    onGeoRoutingRegionChange = onGeoRoutingRegionChange,
-                    onRefreshGeoData = onRefreshGeoData,
-                )
-            }
-            if (!ruleMessage.isNullOrBlank()) {
-                item { NoteBox(text = ruleMessage) }
-            }
-            item {
-                SectionLabel(
-                    text = "默认规则",
-                    trailing = if (globalProxyEnabled) {
-                        { InactiveRulesHint() }
-                    } else {
-                        null
-                    },
-                )
-            }
-            item(key = "default-rules") {
-                GroupedCard(modifier = Modifier.alpha(rulesAlpha)) {
-                    defaultSources.forEachIndexed { index, source ->
-                        if (index > 0) GroupDivider()
-                        RuleSourceCard(
-                            source = source,
-                            selected = selectedRuleSourceId == source.id,
-                            updating = updatingIds.contains(source.id),
-                            onClick = { onSelectSource(source.id) },
-                            onToggleEnabled = { onToggleEnabled(source.id) },
-                            onRefresh = { onRefreshSource(source.id) },
-                            region = geoRoutingRegion,
-                        )
-                    }
-                }
-            }
-            item {
-                SectionLabel(
-                    text = "自定义规则",
-                    trailing = {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            ChoiceChip(
-                                text = uiText("文本"),
-                                selected = selectedCustomKind == RuleSourceKind.LocalText,
-                                onClick = { selectedCustomKind = RuleSourceKind.LocalText },
-                            )
-                            ChoiceChip(
-                                text = "URL",
-                                selected = selectedCustomKind == RuleSourceKind.RemoteUrl,
-                                onClick = { selectedCustomKind = RuleSourceKind.RemoteUrl },
-                            )
-                        }
-                    },
-                )
-            }
-            item(key = "custom-rules") {
-                if (displayedCustomSources.isEmpty()) {
-                    EmptyRulesCard()
-                } else {
-                    GroupedCard(modifier = Modifier.alpha(rulesAlpha)) {
-                        displayedCustomSources.forEachIndexed { index, source ->
-                            if (index > 0) GroupDivider()
-                            RuleSourceCard(
-                                source = source,
-                                selected = selectedRuleSourceId == source.id,
-                                updating = updatingIds.contains(source.id),
-                                onClick = { onSelectSource(source.id) },
-                                onToggleEnabled = { onToggleEnabled(source.id) },
-                                onRefresh = { onRefreshSource(source.id) },
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 20.dp, bottom = 12.dp + LocalBottomBarInset.current),
-        ) {
-            AddRuleFab(
-                onClick = { showAddRuleMenu = true },
-            )
-            DropdownMenu(
-                expanded = showAddRuleMenu,
-                onDismissRequest = { showAddRuleMenu = false },
-            ) {
-                DropdownMenuItem(
-                    text = { Text(uiText("手动文本规则")) },
-                    onClick = {
-                        showAddRuleMenu = false
-                        onAddTextSource()
-                    },
-                )
-                DropdownMenuItem(
-                    text = { Text(uiText("添加规则 URL")) },
-                    onClick = {
-                        showAddRuleMenu = false
-                        onAddSource()
-                    },
-                )
-            }
-        }
-    }
-}
 
 @Composable
 internal fun RuleSourceDetailScreen(
@@ -504,8 +364,10 @@ internal fun AddRuleSourceScreen(
     servers: List<ServerNode>,
     onBack: () -> Unit,
     onSubmit: (String, String, RuleSourceType, RuleSourceKind, RuleTargetPolicy) -> Unit,
+    /** Editing the top-priority rules: fixed name, and a warning on top. */
+    topPriority: Boolean = false,
 ) {
-    val effectiveKind = editingSource?.sourceKind ?: sourceKind
+    val effectiveKind = if (topPriority) RuleSourceKind.LocalText else editingSource?.sourceKind ?: sourceKind
     val isText = effectiveKind == RuleSourceKind.LocalText
     var name by remember(editingSource?.id) { mutableStateOf(editingSource?.name.orEmpty()) }
     var input by remember(editingSource?.id, effectiveKind) {
@@ -557,10 +419,17 @@ internal fun AddRuleSourceScreen(
     ) {
         item {
             AppTopBar(
-                title = if (editingSource == null) "新增规则源" else "编辑规则源",
+                title = when {
+                    topPriority -> uiText("最高优先级规则", "Top-priority rules", "Правила высшего приоритета")
+                    editingSource == null -> "新增规则源"
+                    else -> "编辑规则源"
+                },
                 subtitle = if (isText) "本地文本规则" else "规则来源",
                 onBack = onBack,
             )
+        }
+        if (topPriority) {
+            item { TopRuleWarning() }
         }
         item {
             ScreenHeader(
@@ -585,7 +454,7 @@ internal fun AddRuleSourceScreen(
                 },
             )
         }
-        item {
+        if (!topPriority || !isText) item {
             SurfaceCard {
                 OutlinedTextField(
                     value = name,
@@ -934,7 +803,11 @@ internal fun AddRuleSourceScreen(
                             else -> null
                         }
                         if (saveError == null) {
-                            val finalName = name.trim().ifBlank { RuleTextHelper.suggestName(input.text) ?: emptyName }
+                            val finalName = if (topPriority) {
+                                "最高优先级规则"
+                            } else {
+                                name.trim().ifBlank { RuleTextHelper.suggestName(input.text) ?: emptyName }
+                            }
                             onSubmit(finalName, input.text, type, effectiveKind, policy)
                         }
                     } else {
@@ -1346,4 +1219,38 @@ private fun InactiveRulesHint() {
         fontSize = TypeScale.Tiny,
         lineHeight = TypeScale.TinyLine,
     )
+}
+
+/** Warning at the top of the top-priority rule editor. */
+@Composable
+private fun TopRuleWarning() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(Warning.copy(alpha = 0.12f))
+            .padding(14.dp),
+    ) {
+        Icon(Icons.Rounded.WarningAmber, contentDescription = null, tint = Warning, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(10.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = uiText("请谨慎设置", "Set with care", "Задавайте осторожно"),
+                color = TextPrimary,
+                fontSize = TypeScale.ListTitle,
+                lineHeight = TypeScale.ListTitleLine,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = uiText(
+                    "这里的规则排在所有规则之前，包括分应用节点、自定义规则、流媒体分流，全局代理模式下也照样生效。连接只要匹配就按这里走，下面的规则不会再看。写错一条，可能让某些网站、App 甚至全部网络无法使用。",
+                    "These rules come before every other rule, per-app nodes, custom rules and media routing included, and they still apply in global mode. A connection that matches goes the way set here, and no rule below is looked at. One wrong line can break some sites, apps or the whole network.",
+                    "Эти правила идут раньше всех остальных, включая узлы приложений, свои правила и медиа-маршрутизацию, и действуют даже в глобальном режиме. Совпавшее соединение идёт так, как задано здесь, правила ниже не проверяются. Одна ошибочная строка может сломать сайты, приложения или всю сеть.",
+                ),
+                color = TextPrimary,
+                fontSize = TypeScale.Meta,
+                lineHeight = TypeScale.MetaLine,
+            )
+        }
+    }
 }

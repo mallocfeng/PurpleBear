@@ -17,6 +17,8 @@ enum class AppScreen {
     Subscriptions,
     RuleSourceDetail,
     AddRuleSource,
+    CustomRules,
+    DefaultRules,
     PerApp,
     Diagnostics,
     Settings,

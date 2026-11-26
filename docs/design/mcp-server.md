@@ -185,14 +185,15 @@ Tailnet 模式下，`:tailscale` 进程里的 tsnet 节点在 Tailnet 地址上�
 | `refresh_subscription` | 控制 | 刷新指定订阅；`cleared_settings` 说明刷新中消失的节点清除了哪些设置（前置代理、备用节点、分应用、流媒体、`NODE:` 规则），没有则为 `null` |
 | `delete_node` / `delete_group` | 危险 | 结果中的 `cleared_settings` 列出因删除而被清除的设置（其他节点的前置代理、备用节点，分应用和流媒体的指定节点），没有则为 `null` |
 | `set_pre_proxy` / `set_fallback` | 修改 | 沿用 App 里同样的校验 |
-| `set_proxy_mode` | 修改 | 规则分流 / 全局代理 |
+| `set_proxy_mode` | 修改 | 规则分流 / 全局代理。全局模式下跳过自定义、流媒体和内置规则，但最高优先级规则和应用单独指定的节点仍然生效 |
 | `set_dns` | 修改 | 系统 / 远端（Cloudflare 1.1.1.1，经代理）/ 自定义；自定义可填 IP 地址（端口只能是 53），或加密 DNS：`https://`（DoH）、`tls://`（DoT）、`quic://`（DoQ），VPN 开着时自动重连 |
 | `set_direct_region`、`set_mtu`、`set_heartbeat` | 修改 | |
 | `set_proxy_quic` | 修改 | 是否允许国外 QUIC（UDP 443）走代理；关闭（默认）时回退到 TCP，发往本地区的 QUIC 始终直连 |
-| `list_rule_sources` / `get_custom_rules` / `set_custom_rules` / `toggle_rule_source` / `refresh_rule_source` | 读 / 修改 | 内置规则源带 `about` 说明；Steam 下载直连、BT Tracker 直连默认开启，可选内置源（广告拦截、屏蔽国内 App 私有 DNS）默认关闭，用 `toggle_rule_source` 开关，从未下载过的会先下载 |
+| `list_rule_sources` / `get_custom_rules` / `set_custom_rules` / `toggle_rule_source` / `refresh_rule_source` | 读 / 修改 | 每个规则源带 `layer`（`top_priority` / `custom` / `default`）和 `priority`。`set_custom_rules` 传 `top_priority: true` 设置最高优先级规则（`rule_top_priority`，排在所有规则之前，全局模式下也生效），确认框带醒目警告；只能这样修改它，用 `source_id` 改会被拒绝。内置规则源带 `about` 说明；Steam 下载直连、BT Tracker 直连默认开启，可选内置源（广告拦截、屏蔽国内 App 私有 DNS）默认关闭，用 `toggle_rule_source` 开关，从未下载过的会先下载 |
+| `analyze_rules` | 读 | 规则分析：按匹配顺序（最高优先级 → 分应用节点 → 自定义 → 流媒体 → 内置 → 局域网直连 → 直连地区 → 其余走主节点）列出每组生效规则的位置、状态（`in_effect` / `partly_overridden` / `overridden` / `duplicate`）、去向，以及被哪些更高的规则抢先（`overridden_by`，带示例）；未生效的规则带原因。域名只和域名比、IP 只和 IP 比 |
 | `add_rule_url` | 修改 | 添加远程规则源：`url` 或常用规则源 `preset`，`policy`（代理 / 直连 / 拦截，用于没写策略的行）。GitHub 网页链接自动转为原始链接；先下载检测，确认框里显示可识别的条数 |
 | `list_streaming_services` / `set_streaming_route` | 读 / 修改 | 例如“奈飞走日本节点”。列表带国家标签，可按 `region` 筛选；只有指定了节点的服务单独分流，`node_id` 为空表示取消单独线路、按普通规则走，`"direct"` 表示直连不走代理；`applied` 表示正在运行的 VPN 是否已按保存的线路分流该服务（VPN 未连接、流媒体分流关闭、全局模式、改了线路未重连或规则下载失败时为 `false`），`active_node_id` 是实际生效的线路，`rules_missing: true` 表示规则下载失败（连接后自动重试一次） |
-| `list_apps` / `set_per_app` | 读 / 修改 | 分应用代理。列表带分类、是否已安装和各应用的节点，可按 `category`、`installed_only` 筛选；`set_per_app` 可用 `nodes` 给应用指定节点（空字符串为默认节点） |
+| `list_apps` / `set_per_app` | 读 / 修改 | 分应用代理。列表带分类、是否已安装和各应用的节点，可按 `category`、`installed_only` 筛选；`set_per_app` 可用 `nodes` 给应用指定节点（空字符串为默认节点）。应用节点排在自定义、流媒体和内置规则之前，只有最高优先级规则比它高；全局模式下所有应用都走 VPN（应用选择暂停），但应用节点仍然生效 |
 
 ### 第三期
 

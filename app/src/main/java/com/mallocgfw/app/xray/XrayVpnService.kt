@@ -412,16 +412,13 @@ class XrayVpnService : VpnService() {
             ?: error("未找到要连接的节点。")
         val vpnMtu = normalizedAppVpnMtu(state.settings.vpnMtu)
         val globalProxyEnabled = state.settings.globalProxyEnabled
-        val ruleRouting = if (globalProxyEnabled) {
-            RuleRoutingSetup()
-        } else {
-            RuleSourceManager.buildRoutingSetup(
-                context = applicationContext,
-                sources = state.ruleSources,
-                servers = state.servers,
-                region = state.settings.geoRoutingRegion,
-            )
-        }
+        val ruleRouting = RuleSourceManager.buildRoutingSetup(
+            context = applicationContext,
+            sources = state.ruleSources,
+            servers = state.servers,
+            region = state.settings.geoRoutingRegion,
+            globalMode = globalProxyEnabled,
+        )
         val streamingRouting = if (globalProxyEnabled) {
             StreamingMediaManager.clearPending()
             StreamingRoutingSetup()
@@ -525,16 +522,13 @@ class XrayVpnService : VpnService() {
         val dnsServer = resolveDnsAddress(applicationContext, state.settings)
         val dnsEndpoint = resolveDnsEndpoint(applicationContext, state.settings)
         val globalProxyEnabled = state.settings.globalProxyEnabled
-        val ruleRouting = if (globalProxyEnabled) {
-            RuleRoutingSetup()
-        } else {
-            RuleSourceManager.buildRoutingSetup(
-                context = applicationContext,
-                sources = state.ruleSources,
-                servers = state.servers,
-                region = state.settings.geoRoutingRegion,
-            )
-        }
+        val ruleRouting = RuleSourceManager.buildRoutingSetup(
+            context = applicationContext,
+            sources = state.ruleSources,
+            servers = state.servers,
+            region = state.settings.geoRoutingRegion,
+            globalMode = globalProxyEnabled,
+        )
         val streamingRouting = if (globalProxyEnabled) {
             StreamingMediaManager.clearPending()
             StreamingRoutingSetup()

@@ -645,12 +645,14 @@ internal fun <T> SegmentedControl(
     selected: T,
     onSelect: (T) -> Unit,
     modifier: Modifier = Modifier,
+    /** Track colour: [SurfaceLow] inside a card; the card colour on the bare page. */
+    trackColor: Color = SurfaceLow,
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(SurfaceLow)
+            .background(trackColor)
             .padding(3.dp),
         horizontalArrangement = Arrangement.spacedBy(3.dp),
     ) {

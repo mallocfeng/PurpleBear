@@ -15,8 +15,28 @@ import org.json.JSONObject
 object RuleSourceManager {
     private const val RULES_DIR = "rule-sources"
     private const val NODE_POLICY_PREFIX = "NODE:"
-    private const val USER_RULE_PRIORITY = 2_000
-    private const val SYSTEM_RULE_PRIORITY = 0
+    const val USER_RULE_PRIORITY = 2_000
+
+    /**
+     * The top-priority rule list (set from the proxy mode card): matched
+     * before every other rule, per-app nodes included, and still applied in
+     * global mode. Stored as a local text source with this fixed id.
+     */
+    const val TOP_RULE_ID = "rule_top_priority"
+    const val TOP_RULE_PRIORITY = 4_000
+
+    fun isTopRule(source: RuleSourceItem): Boolean = source.id == TOP_RULE_ID
+
+    fun priorityOf(source: RuleSourceItem): Int = when {
+        isTopRule(source) -> TOP_RULE_PRIORITY
+        source.systemDefault -> SYSTEM_RULE_PRIORITY
+        else -> USER_RULE_PRIORITY
+    }
+
+    /** A new top-priority list holding [text]. */
+    fun createTopRuleDraft(text: String, requestedType: RuleSourceType): RuleSourceItem =
+        createTextDraft(name = "最高优先级规则", text = text, requestedType = requestedType).copy(id = TOP_RULE_ID)
+    const val SYSTEM_RULE_PRIORITY = 0
     private const val DEFAULT_SHADOWROCKET_ID = "rule_default_shadowrocket"
 
     /** The built-in "home sites direct" list; what it uses depends on the direct region. */
@@ -418,6 +438,8 @@ object RuleSourceManager {
         sources: List<RuleSourceItem>,
         servers: List<ServerNode>,
         region: AppGeoRoutingRegion = AppGeoRoutingRegion.China,
+        /** Global mode: only the top-priority list applies. */
+        globalMode: Boolean = false,
     ): RuleRoutingSetup {
         val outbounds = mutableListOf<XrayNamedOutbound>()
         val missingPolicies = linkedSetOf<String>()
@@ -425,12 +447,12 @@ object RuleSourceManager {
             // Not only Ready: after a failed refresh (or one cut short) the last
             // list that compiled is still on disk and keeps working. Sources
             // never downloaded have no file and are skipped below.
-            .filter { it.enabled && !usesGeoData(it, region) }
+            .filter { it.enabled && !usesGeoData(it, region) && (!globalMode || isTopRule(it)) }
             .flatMap { source ->
                 val compiled = loadCurrentRules(context, source) ?: return@flatMap emptyList()
                 compiled.toRoutingRules(
                     fallbackPolicy = source.policy,
-                    priority = if (source.systemDefault) SYSTEM_RULE_PRIORITY else USER_RULE_PRIORITY,
+                    priority = priorityOf(source),
                     servers = servers,
                     onResolvedNode = { tag, node ->
                         outbounds += XrayNamedOutbound(tag = tag, node = node)
@@ -689,6 +711,12 @@ object RuleSourceManager {
      * used: a local text is compiled again from the saved text, a remote list
      * waits for the next download. Caches written before keys existed are used.
      */
+    /** The list [source] runs with now, without downloading (rule analysis). */
+    fun currentRulesForAnalysis(context: Context, source: RuleSourceItem): CompiledRuleSet? = loadCurrentRules(context, source)
+
+    /** Display name of a NODE: policy, for lines whose node is gone. */
+    fun nodePolicyDisplayName(policy: String): String = nodePolicyLabel(policy)
+
     private fun loadCurrentRules(context: Context, source: RuleSourceItem): CompiledRuleSet? {
         val file = compiledRuleFile(context, source.id)
         if (file.exists()) {

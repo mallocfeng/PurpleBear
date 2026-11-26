@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AddCircle
 import androidx.compose.material.icons.rounded.Place
+import androidx.compose.material.icons.rounded.PriorityHigh
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Storage
@@ -54,6 +55,7 @@ import com.mallocgfw.app.ui.theme.SurfaceHigh
 import com.mallocgfw.app.ui.theme.SurfaceLow
 import com.mallocgfw.app.ui.theme.TextPrimary
 import com.mallocgfw.app.ui.theme.TextSecondary
+import com.mallocgfw.app.ui.theme.Warning
 import com.mallocgfw.app.xray.GeoDataSnapshot
 import com.mallocgfw.app.xray.GeoDataStatus
 
@@ -184,164 +186,7 @@ internal fun RuleSourceCard(
 
 /** Global proxy, Geo region and Geo data folded into one compact card. */
 @Composable
-internal fun RoutingOverviewCard(
-    globalProxyEnabled: Boolean,
-    onGlobalProxyChange: (Boolean) -> Unit,
-    geoDataSnapshot: GeoDataSnapshot,
-    geoDataUpdating: Boolean,
-    geoRoutingRegion: AppGeoRoutingRegion,
-    onGeoRoutingRegionChange: (AppGeoRoutingRegion) -> Unit,
-    onRefreshGeoData: () -> Unit,
-) {
-    var regionMenu by remember { mutableStateOf(false) }
-    GroupedCard {
-        Column(
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Text(
-                text = uiText("代理模式"),
-                color = TextPrimary,
-                fontSize = TypeScale.ListTitle,
-                lineHeight = TypeScale.ListTitleLine,
-                fontWeight = FontWeight.SemiBold,
-            )
-            SegmentedControl(
-                options = listOf(
-                    false to uiText("规则分流"),
-                    true to uiText("全局代理"),
-                ),
-                selected = globalProxyEnabled,
-                onSelect = onGlobalProxyChange,
-            )
-            Text(
-                text = if (globalProxyEnabled) {
-                    uiText("除局域网外，所有流量都走代理。下方规则暂不生效。")
-                } else {
-                    geoRoutingModeDescription(geoRoutingRegion)
-                },
-                color = TextSecondary,
-                fontSize = TypeScale.Meta,
-                lineHeight = TypeScale.MetaLine,
-            )
-        }
-        if (!globalProxyEnabled) {
-            GroupDivider()
-            Box {
-                ListRow(
-                    title = "直连地区",
-                    value = geoRoutingRegionLabel(geoRoutingRegion),
-                    icon = Icons.Rounded.Place,
-                    onClick = { regionMenu = true },
-                )
-                DropdownMenu(expanded = regionMenu, onDismissRequest = { regionMenu = false }) {
-                    AppGeoRoutingRegion.entries.forEach { region ->
-                        DropdownMenuItem(
-                            text = {
-                                Column {
-                                    Text(geoRoutingRegionLabel(region), color = TextPrimary, fontWeight = FontWeight.Medium)
-                                    Text(
-                                        geoRoutingRegionSubtitle(region),
-                                        color = TextSecondary,
-                                        fontSize = TypeScale.Tiny,
-                                        lineHeight = TypeScale.TinyLine,
-                                    )
-                                }
-                            },
-                            onClick = {
-                                regionMenu = false
-                                onGeoRoutingRegionChange(region)
-                            },
-                        )
-                    }
-                }
-            }
-        }
-        GroupDivider(startIndent = 58.dp)
-        ListRow(
-            title = "Geo 数据",
-            subtitle = geoDataSnapshot.lastError?.takeIf { it.isNotBlank() }
-                ?: "geoip ${formatBytes(geoDataSnapshot.geoipBytes)} · geosite ${formatBytes(geoDataSnapshot.geositeBytes)}",
-            icon = Icons.Rounded.Storage,
-            trailing = {
-                TextAction(
-                    text = if (geoDataUpdating) "更新中…" else "更新",
-                    enabled = !geoDataUpdating,
-                    onClick = onRefreshGeoData,
-                )
-            },
-        )
-    }
-}
-
-@Composable
-private fun geoRoutingModeDescription(region: AppGeoRoutingRegion): String {
-    return when (region) {
-        AppGeoRoutingRegion.China -> uiText("国内网站和直连规则不走代理，其余走代理。")
-        AppGeoRoutingRegion.English -> uiText("美国网站和直连规则不走代理，其余走代理。")
-        AppGeoRoutingRegion.Russia -> uiText("俄罗斯网站和直连规则不走代理，其余走代理。")
-    }
-}
-
-@Composable
-private fun GeoRoutingRegionDropdown(
-    selectedRegion: AppGeoRoutingRegion,
-    onRegionChange: (AppGeoRoutingRegion) -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = uiText("Geo 分流国家"),
-            color = TextPrimary,
-            fontWeight = FontWeight.Bold,
-            fontSize = TypeScale.Body,
-            lineHeight = TypeScale.BodyLine,
-        )
-        Text(
-            text = geoRoutingRegionSubtitle(selectedRegion),
-            color = TextSecondary,
-            fontSize = TypeScale.Meta,
-            lineHeight = TypeScale.MetaLine,
-        )
-        Box {
-            Box(modifier = Modifier.clickable { expanded = true }) {
-                OutlinedActionChip(geoRoutingRegionLabel(selectedRegion))
-            }
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-            ) {
-                AppGeoRoutingRegion.entries.forEach { region ->
-                    DropdownMenuItem(
-                        text = {
-                            Column {
-                                Text(
-                                    text = geoRoutingRegionLabel(region),
-                                    color = TextPrimary,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                                Text(
-                                    text = geoRoutingRegionSubtitle(region),
-                                    color = TextSecondary,
-                                    fontSize = TypeScale.Meta,
-                                    lineHeight = TypeScale.MetaLine,
-                                )
-                            }
-                        },
-                        onClick = {
-                            expanded = false
-                            onRegionChange(region)
-                        },
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun geoRoutingRegionLabel(region: AppGeoRoutingRegion): String {
+internal fun geoRoutingRegionLabel(region: AppGeoRoutingRegion): String {
     return when (region) {
         AppGeoRoutingRegion.China -> uiText("中国（CN）")
         AppGeoRoutingRegion.English -> uiText("英语区域（US）")
@@ -350,7 +195,7 @@ private fun geoRoutingRegionLabel(region: AppGeoRoutingRegion): String {
 }
 
 @Composable
-private fun geoRoutingRegionSubtitle(region: AppGeoRoutingRegion): String {
+internal fun geoRoutingRegionSubtitle(region: AppGeoRoutingRegion): String {
     return when (region) {
         AppGeoRoutingRegion.China -> uiText("直连 geosite:cn 与 geoip:cn。")
         AppGeoRoutingRegion.English -> uiText("直连 geoip:us；EN 不是 Geo 国家码。")

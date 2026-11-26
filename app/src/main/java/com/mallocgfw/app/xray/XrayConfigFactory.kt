@@ -6,6 +6,7 @@ import com.mallocgfw.app.model.NodeCompatibility
 import com.mallocgfw.app.model.SsrMihomoConfigFactory
 import com.mallocgfw.app.model.AppGeoRoutingRegion
 import com.mallocgfw.app.model.AppLanguage
+import com.mallocgfw.app.model.RuleSourceManager
 import com.mallocgfw.app.model.RuleTargetPolicy
 import com.mallocgfw.app.model.ServerNode
 import com.mallocgfw.app.model.XrayNamedOutbound
@@ -376,8 +377,13 @@ object XrayConfigFactory {
             )
         }
 
-        // Global mode skips rule sources and media routing, but an app's own node still applies.
-        val effectiveRoutingRules = if (globalProxyEnabled) routingRules.filter { it.processes.isNotEmpty() } else routingRules
+        // Global mode skips rule sources and media routing, but an app's own node
+        // and the top-priority rules still apply.
+        val effectiveRoutingRules = if (globalProxyEnabled) {
+            routingRules.filter { it.processes.isNotEmpty() || it.priority >= RuleSourceManager.TOP_RULE_PRIORITY }
+        } else {
+            routingRules
+        }
 
         effectiveRoutingRules
             .withIndex()

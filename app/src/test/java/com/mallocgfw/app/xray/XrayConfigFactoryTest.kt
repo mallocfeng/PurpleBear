@@ -156,7 +156,7 @@ class XrayConfigFactoryTest {
             target = com.mallocgfw.app.model.RuleTargetPolicy.Proxy,
             domainSuffixes = emptyList(), fullDomains = emptyList(), domainKeywords = emptyList(),
             ipCidrs = emptyList(), ipCidrs6 = emptyList(),
-            outboundTag = "app_0", priority = 2_000, processes = listOf("10154"),
+            outboundTag = "app_0", priority = com.mallocgfw.app.model.PerAppRouting.PRIORITY, processes = listOf("10154"),
         )
         listOf(false, true).forEach { global ->
             val config = JSONObject(
@@ -171,6 +171,78 @@ class XrayConfigFactoryTest {
             val index = rules.indexOfFirstRule { it.optJSONArray("process")?.optString(0) == "10154" }
             assertTrue("process rule missing (global=$global)", index >= 0)
             assertEquals("app_0", rules.getJSONObject(index).optString("outboundTag"))
+        }
+    }
+
+    @Test
+    fun perAppNodeOutranksUserRuleSourceWhateverTheListOrder() {
+        val userRule = com.mallocgfw.app.model.XrayRoutingRule(
+            target = com.mallocgfw.app.model.RuleTargetPolicy.Direct,
+            domainSuffixes = listOf("example.com"), fullDomains = emptyList(), domainKeywords = emptyList(),
+            ipCidrs = emptyList(), ipCidrs6 = emptyList(),
+            priority = 2_000, // user rule source
+        )
+        val appRule = com.mallocgfw.app.model.XrayRoutingRule(
+            target = com.mallocgfw.app.model.RuleTargetPolicy.Proxy,
+            domainSuffixes = emptyList(), fullDomains = emptyList(), domainKeywords = emptyList(),
+            ipCidrs = emptyList(), ipCidrs6 = emptyList(),
+            outboundTag = "app_0", priority = com.mallocgfw.app.model.PerAppRouting.PRIORITY, processes = listOf("10154"),
+        )
+        val config = JSONObject(
+            XrayConfigFactory.buildVpn(
+                node = testNode(),
+                routingRules = listOf(userRule, appRule),
+                geoRoutingRegion = AppGeoRoutingRegion.China,
+            ),
+        )
+        val rules = config.getJSONObject("routing").getJSONArray("rules")
+        val appIndex = rules.indexOfFirstRule { it.optJSONArray("process")?.optString(0) == "10154" }
+        val userIndex = rules.indexOfFirstRule { it.optJSONArray("domain")?.optString(0) == "domain:example.com" }
+        assertTrue("both rules present", appIndex >= 0 && userIndex >= 0)
+        assertTrue("per-app rule must come before the user rule", appIndex < userIndex)
+    }
+
+    @Test
+    fun topPriorityRuleComesFirstAndSurvivesGlobalMode() {
+        val topRule = com.mallocgfw.app.model.XrayRoutingRule(
+            target = com.mallocgfw.app.model.RuleTargetPolicy.Direct,
+            domainSuffixes = listOf("top.example"), fullDomains = emptyList(), domainKeywords = emptyList(),
+            ipCidrs = emptyList(), ipCidrs6 = emptyList(),
+            priority = com.mallocgfw.app.model.RuleSourceManager.TOP_RULE_PRIORITY,
+        )
+        val appRule = com.mallocgfw.app.model.XrayRoutingRule(
+            target = com.mallocgfw.app.model.RuleTargetPolicy.Proxy,
+            domainSuffixes = emptyList(), fullDomains = emptyList(), domainKeywords = emptyList(),
+            ipCidrs = emptyList(), ipCidrs6 = emptyList(),
+            outboundTag = "app_0", priority = com.mallocgfw.app.model.PerAppRouting.PRIORITY, processes = listOf("10154"),
+        )
+        val userRule = com.mallocgfw.app.model.XrayRoutingRule(
+            target = com.mallocgfw.app.model.RuleTargetPolicy.Proxy,
+            domainSuffixes = listOf("user.example"), fullDomains = emptyList(), domainKeywords = emptyList(),
+            ipCidrs = emptyList(), ipCidrs6 = emptyList(),
+            priority = com.mallocgfw.app.model.RuleSourceManager.USER_RULE_PRIORITY,
+        )
+        listOf(false, true).forEach { global ->
+            val config = JSONObject(
+                XrayConfigFactory.buildVpn(
+                    node = testNode(),
+                    routingRules = listOf(appRule, userRule, topRule),
+                    globalProxyEnabled = global,
+                    geoRoutingRegion = AppGeoRoutingRegion.China,
+                ),
+            )
+            val rules = config.getJSONObject("routing").getJSONArray("rules")
+            val topIndex = rules.indexOfFirstRule { it.optJSONArray("domain")?.optString(0) == "domain:top.example" }
+            val appIndex = rules.indexOfFirstRule { it.optJSONArray("process")?.optString(0) == "10154" }
+            val userIndex = rules.indexOfFirstRule { it.optJSONArray("domain")?.optString(0) == "domain:user.example" }
+            assertTrue("top rule missing (global=$global)", topIndex >= 0)
+            assertEquals("direct", rules.getJSONObject(topIndex).optString("outboundTag"))
+            assertTrue("top rule must come before per-app (global=$global)", topIndex < appIndex)
+            if (global) {
+                assertTrue("user rules are skipped in global mode", userIndex < 0)
+            } else {
+                assertTrue("user rule below top rule", userIndex > topIndex)
+            }
         }
     }
 
