@@ -194,7 +194,11 @@ object RuleAnalysisCollector {
             tailscaleEnabled = settings.tailscaleEnabled,
             tailscaleSubnetCount = settings.tailscaleSubnetRoutes.size,
             homeSitesDirect = settings.geoRoutingRegion.geositeCode != null && RuleSourceManager.homeSitesDirect(state.ruleSources),
-            fallback = if (tailscaleExit) RouteTarget(RouteTarget.Kind.Tailscale) else mainTarget,
+            fallback = when {
+                tailscaleExit -> RouteTarget(RouteTarget.Kind.Tailscale)
+                settings.fallbackDirect && !global -> RouteTarget.Direct
+                else -> mainTarget
+            },
             generatedAtMs = System.currentTimeMillis(),
         )
     }

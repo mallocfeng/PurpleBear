@@ -1443,6 +1443,27 @@ fun MallocGfwApp(
         }
     }
 
+    /** Where unmatched traffic goes in rule mode; reconnects a running VPN so it applies. */
+    fun updateFallbackDirect(direct: Boolean) {
+        if (direct == appSettings.fallbackDirect) return
+        AppController.edit { StateOps.setFallbackDirect(it, direct) }
+        val state = if (direct) {
+            tr("其余流量已改为直连", "Everything else now goes direct", "Остальной трафик теперь напрямую")
+        } else {
+            tr("其余流量已改为走代理", "Everything else now uses the proxy", "Остальной трафик теперь через прокси")
+        }
+        val activeServer = resolveServerForSettingsReconnect()
+        if (connectionStatus == ConnectionStatus.Connected && activeServer != null) {
+            ruleMessage = tr("$state，正在重连以生效。", "$state. Reconnecting to apply it.", "$state. Переподключение для применения.")
+            reconnectVpnForSettingsChange(
+                server = activeServer,
+                message = tr("$state，正在重连 VPN…", "$state. Reconnecting VPN…", "$state. Переподключение VPN…"),
+            )
+        } else {
+            ruleMessage = tr("$state，下次连接生效。", "$state. Takes effect on the next connection.", "$state. Вступит в силу при следующем подключении.")
+        }
+    }
+
     fun openLogViewer() {
         logViewerText = AppLogManager.readRecentLogs(context)
         navigateSecondary(AppScreen.LogViewer)
@@ -1543,6 +1564,12 @@ fun MallocGfwApp(
     fun toggleRuleSourceEnabled(sourceId: String) {
         val current = ruleSources.firstOrNull { it.id == sourceId } ?: return
         val enabled = !current.enabled
+        // The top-priority list's stored name is Chinese; say it in the UI language.
+        val name = if (RuleSourceManager.isTopRule(current)) {
+            tr("最高优先级规则", "Top-priority rules", "Правила высшего приоритета")
+        } else {
+            current.name
+        }
         AppController.edit { StateOps.setRuleSourceEnabled(it, sourceId, enabled) }
         // A built-in or added source that was never downloaded has no rules yet.
         if (
@@ -1552,9 +1579,9 @@ fun MallocGfwApp(
             refreshRuleSource(sourceId)
         }
         ruleMessage = if (enabled) {
-            tr("${current.name} 已启用。重新开关代理后生效。", "${current.name} enabled. Takes effect after turning the proxy off and on.", "${current.name}: включено. Вступит в силу после перезапуска прокси.")
+            tr("$name 已启用。重新开关代理后生效。", "$name enabled. Takes effect after turning the proxy off and on.", "$name: включено. Вступит в силу после перезапуска прокси.")
         } else {
-            tr("${current.name} 已停用。重新开关代理后生效。", "${current.name} disabled. Takes effect after turning the proxy off and on.", "${current.name}: отключено. Вступит в силу после перезапуска прокси.")
+            tr("$name 已停用。重新开关代理后生效。", "$name disabled. Takes effect after turning the proxy off and on.", "$name: отключено. Вступит в силу после перезапуска прокси.")
         }
     }
 
@@ -2345,6 +2372,8 @@ fun MallocGfwApp(
                         onToggleEnabled = ::toggleRuleSourceEnabled,
                         onOpenCustomRules = { navigateSecondary(AppScreen.CustomRules) },
                         onOpenDefaultRules = { navigateSecondary(AppScreen.DefaultRules) },
+                        fallbackDirect = appSettings.fallbackDirect,
+                        onFallbackDirectChange = ::updateFallbackDirect,
                         ruleAnalysisInFlight = ruleAnalysisInFlight,
                         ruleAnalysisShowing = ruleAnalysisReport != null,
                         perAppEnabled = proxyMode == ProxyMode.PerApp,

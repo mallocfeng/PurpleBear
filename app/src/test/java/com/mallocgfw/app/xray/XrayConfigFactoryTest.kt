@@ -247,6 +247,29 @@ class XrayConfigFactoryTest {
     }
 
     @Test
+    fun fallbackDirectSendsUnmatchedTrafficDirectInRuleModeOnly() {
+        fun lastOutbound(global: Boolean, direct: Boolean): String {
+            val config = JSONObject(
+                XrayConfigFactory.buildVpn(
+                    node = testNode(),
+                    globalProxyEnabled = global,
+                    fallbackDirect = direct,
+                    geoRoutingRegion = AppGeoRoutingRegion.China,
+                ),
+            )
+            val rules = config.getJSONObject("routing").getJSONArray("rules")
+            return rules.getJSONObject(rules.length() - 1).getString("outboundTag")
+        }
+        assertEquals("proxy", lastOutbound(global = false, direct = false))
+        assertEquals("direct", lastOutbound(global = false, direct = true))
+        // Global mode means everything through the proxy.
+        assertEquals("proxy", lastOutbound(global = true, direct = true))
+        val standalone = JSONObject(XrayConfigFactory.build(node = testNode(), fallbackDirect = true))
+        val rules = standalone.getJSONObject("routing").getJSONArray("rules")
+        assertEquals("direct", rules.getJSONObject(rules.length() - 1).getString("outboundTag"))
+    }
+
+    @Test
     fun standaloneProxyDoesNotGloballyBlockUdp443() {
         val config = JSONObject(XrayConfigFactory.build(node = testNode()))
         val rules = config.getJSONObject("routing").getJSONArray("rules")

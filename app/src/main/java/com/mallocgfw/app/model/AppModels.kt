@@ -439,4 +439,10 @@ data class AppSettings(
     val tailscaleAlwaysUseDerp: Boolean,
     /** Send foreign QUIC (UDP 443) through the proxy instead of making apps fall back to TCP. */
     val proxyQuicEnabled: Boolean = false,
+    /**
+     * Where traffic no rule matched goes in rule mode: false = through the
+     * proxy (default), true = direct. Global mode and a Tailscale exit node
+     * ignore it.
+     */
+    val fallbackDirect: Boolean = false,
 )

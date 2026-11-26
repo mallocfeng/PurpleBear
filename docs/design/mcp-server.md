@@ -188,6 +188,7 @@ Tailnet 模式下，`:tailscale` 进程里的 tsnet 节点在 Tailnet 地址上�
 | `set_proxy_mode` | 修改 | 规则分流 / 全局代理。全局模式下跳过自定义、流媒体和内置规则，但最高优先级规则和应用单独指定的节点仍然生效 |
 | `set_dns` | 修改 | 系统 / 远端（Cloudflare 1.1.1.1，经代理）/ 自定义；自定义可填 IP 地址（端口只能是 53），或加密 DNS：`https://`（DoH）、`tls://`（DoT）、`quic://`（DoQ），VPN 开着时自动重连 |
 | `set_direct_region`、`set_mtu`、`set_heartbeat` | 修改 | |
+| `set_default_route` | 修改 | 规则分流模式下没命中任何规则的流量走代理（默认）还是直连；全局模式始终走代理，Tailscale 出口节点优先。`get_settings` 的 `default_route` 返回当前值 |
 | `set_proxy_quic` | 修改 | 是否允许国外 QUIC（UDP 443）走代理；关闭（默认）时回退到 TCP，发往本地区的 QUIC 始终直连 |
 | `list_rule_sources` / `get_custom_rules` / `set_custom_rules` / `toggle_rule_source` / `refresh_rule_source` | 读 / 修改 | 每个规则源带 `layer`（`top_priority` / `custom` / `default`）和 `priority`。`set_custom_rules` 传 `top_priority: true` 设置最高优先级规则（`rule_top_priority`，排在所有规则之前，全局模式下也生效），确认框带醒目警告；只能这样修改它，用 `source_id` 改会被拒绝。内置规则源带 `about` 说明；Steam 下载直连、BT Tracker 直连默认开启，可选内置源（广告拦截、屏蔽国内 App 私有 DNS）默认关闭，用 `toggle_rule_source` 开关，从未下载过的会先下载 |
 | `analyze_rules` | 读 | 规则分析：按匹配顺序（最高优先级 → 分应用节点 → 自定义 → 流媒体 → 内置 → 局域网直连 → 直连地区 → 其余走主节点）列出每组生效规则的位置、状态（`in_effect` / `partly_overridden` / `overridden` / `duplicate`）、去向，以及被哪些更高的规则抢先（`overridden_by`，带示例）；未生效的规则带原因。域名只和域名比、IP 只和 IP 比 |

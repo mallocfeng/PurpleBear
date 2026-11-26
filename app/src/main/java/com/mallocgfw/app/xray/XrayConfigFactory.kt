@@ -70,6 +70,8 @@ object XrayConfigFactory {
         geoRoutingRegion: AppGeoRoutingRegion = AppGeoRoutingRegion.defaultForLanguage(AppLanguage.System),
         homeSitesDirect: Boolean = true,
         tailscale: TailscaleRouting? = null,
+        /** Rule mode: send traffic no rule matched direct instead of through the proxy. */
+        fallbackDirect: Boolean = false,
         localProxy: LocalProxyAllocation = LocalProxyRuntime.current() ?: LocalProxyAllocation.ephemeral(),
     ): String {
         return JSONObject().apply {
@@ -123,6 +125,7 @@ object XrayConfigFactory {
                             geoRoutingRegion = geoRoutingRegion,
                             homeSitesDirect = homeSitesDirect,
                             tailscale = tailscale,
+                            fallbackDirect = fallbackDirect,
                         ),
                     )
                 },
@@ -147,6 +150,8 @@ object XrayConfigFactory {
         tailscale: TailscaleRouting? = null,
         /** Let foreign QUIC go through the proxy (good for UDP nodes such as Hysteria2 and TUIC). */
         proxyQuicEnabled: Boolean = false,
+        /** Rule mode: send traffic no rule matched direct instead of through the proxy. */
+        fallbackDirect: Boolean = false,
         /** The DNS server Android was given (bare IP); its port-53 traffic is pinned, see [dnsRules]. */
         dnsServer: String? = null,
         /** Remote DNS: send it as DNS-over-TCP through the proxy, so nodes without UDP still resolve. */
@@ -233,6 +238,7 @@ object XrayConfigFactory {
                             dnsServer = dnsServer,
                             dnsOverProxy = dnsOverProxy,
                             encryptedDns = encryptedDns,
+                            fallbackDirect = fallbackDirect,
                         ),
                     )
                 },
@@ -258,6 +264,7 @@ object XrayConfigFactory {
         dnsServer: String? = null,
         dnsOverProxy: Boolean = false,
         encryptedDns: DnsInput.EncryptedDns? = null,
+        fallbackDirect: Boolean = false,
     ): JSONArray {
         val rules = JSONArray()
 
@@ -480,7 +487,15 @@ object XrayConfigFactory {
             JSONObject().apply {
                 put("type", "field")
                 put("network", "tcp,udp")
-                put("outboundTag", if (tailscale?.routeAllTraffic == true) "tailscale" else "proxy")
+                put(
+                    "outboundTag",
+                    when {
+                        tailscale?.routeAllTraffic == true -> "tailscale"
+                        // Global mode means everything through the proxy.
+                        fallbackDirect && !globalProxyEnabled -> "direct"
+                        else -> "proxy"
+                    },
+                )
             },
         )
 

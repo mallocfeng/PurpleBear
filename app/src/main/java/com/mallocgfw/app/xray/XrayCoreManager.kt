@@ -98,6 +98,7 @@ object XrayCoreManager {
                 geoRoutingRegion = settings.geoRoutingRegion,
                 homeSitesDirect = RuleSourceManager.homeSitesDirect(state.ruleSources),
                 tailscale = TailscaleRuntimeManager.snapshot.value.routing(settings),
+                fallbackDirect = settings.fallbackDirect,
                 localProxy = localProxy,
             )
         }
@@ -141,6 +142,7 @@ object XrayCoreManager {
                 geoRoutingRegion = settings.geoRoutingRegion,
                 homeSitesDirect = RuleSourceManager.homeSitesDirect(state.ruleSources),
                 tailscale = TailscaleRuntimeManager.snapshot.value.routing(settings),
+                fallbackDirect = settings.fallbackDirect,
                 proxyQuicEnabled = settings.proxyQuicEnabled,
                 dnsServer = dnsServer,
                 dnsOverProxy = dnsOverProxy,

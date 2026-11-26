@@ -72,6 +72,7 @@ object DiagnosticsManager {
                 geoRoutingRegion = settings.geoRoutingRegion,
                 homeSitesDirect = RuleSourceManager.homeSitesDirect(ruleSources),
                 proxyQuicEnabled = settings.proxyQuicEnabled,
+                fallbackDirect = settings.fallbackDirect,
             )
             JSONObject(config)
         }.fold(

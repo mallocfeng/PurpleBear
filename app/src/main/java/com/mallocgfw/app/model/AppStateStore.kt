@@ -52,6 +52,7 @@ object AppStateStore {
             tailscaleExitNodeId = "",
             tailscaleAlwaysUseDerp = false,
             proxyQuicEnabled = false,
+            fallbackDirect = false,
         )
     }
 
@@ -430,6 +431,7 @@ object AppStateStore {
                 put("tailscaleExitNodeId", state.settings.tailscaleExitNodeId)
                 put("tailscaleAlwaysUseDerp", state.settings.tailscaleAlwaysUseDerp)
                 put("proxyQuicEnabled", state.settings.proxyQuicEnabled)
+                put("fallbackDirect", state.settings.fallbackDirect)
                 put("streamingSelections", JSONArray().apply {
                     state.settings.streamingSelections.forEach { selection ->
                         put(JSONObject().apply {
@@ -474,6 +476,7 @@ object AppStateStore {
             tailscaleExitNodeId = optString("tailscaleExitNodeId", defaults.tailscaleExitNodeId),
             tailscaleAlwaysUseDerp = optBoolean("tailscaleAlwaysUseDerp", defaults.tailscaleAlwaysUseDerp),
             proxyQuicEnabled = optBoolean("proxyQuicEnabled", defaults.proxyQuicEnabled),
+            fallbackDirect = optBoolean("fallbackDirect", defaults.fallbackDirect),
         )
     }
 

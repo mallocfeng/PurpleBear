@@ -941,6 +941,9 @@ object StateOps {
     fun setProxyQuic(state: PersistedAppState, enabled: Boolean): PersistedAppState =
         state.copy(settings = state.settings.copy(proxyQuicEnabled = enabled))
 
+    fun setFallbackDirect(state: PersistedAppState, direct: Boolean): PersistedAppState =
+        state.copy(settings = state.settings.copy(fallbackDirect = direct))
+
     fun setHeartbeat(state: PersistedAppState, minutes: Int): PersistedAppState =
         state.copy(settings = state.settings.copy(heartbeatIntervalMinutes = minutes.takeIf { it in HeartbeatOptionsMinutes } ?: 5))
 

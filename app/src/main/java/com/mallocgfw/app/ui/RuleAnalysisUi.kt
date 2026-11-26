@@ -570,7 +570,7 @@ private fun HighlightsSection(report: RuleAnalysisReport) {
             HighlightRow(
                 icon = Icons.Rounded.Info,
                 color = Error,
-                text = "「${entryTitle(entry)}」" + inactiveReasonText(entry.input.inactiveReason!!),
+                text = quoted(entryTitle(entry)) + inactiveReasonText(entry.input.inactiveReason!!),
             )
         }
     }
@@ -1206,6 +1206,10 @@ private fun regionText(report: RuleAnalysisReport): String = when (report.region
     com.mallocgfw.app.model.AppGeoRoutingRegion.Russia -> uiText("俄罗斯", "Russia", "Россия")
     com.mallocgfw.app.model.AppGeoRoutingRegion.English -> uiText("美国", "US", "США")
 }
+
+/** A name in the UI language's quotes, followed by the space that language needs. */
+@Composable
+private fun quoted(name: String): String = uiText("「$name」", "“$name” ", "«$name» ")
 
 private fun orderOf(report: RuleAnalysisReport, id: String): Int = report.entries.firstOrNull { it.input.id == id }?.order ?: 0
 

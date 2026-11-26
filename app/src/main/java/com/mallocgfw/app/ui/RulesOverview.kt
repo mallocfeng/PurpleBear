@@ -19,6 +19,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForwardIos
 import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Inventory
 import androidx.compose.material.icons.rounded.LiveTv
@@ -86,6 +88,8 @@ internal fun RulesScreen(
     onOpenCustomRules: () -> Unit,
     onOpenMediaRouting: () -> Unit,
     onOpenDefaultRules: () -> Unit,
+    fallbackDirect: Boolean,
+    onFallbackDirectChange: (Boolean) -> Unit,
 ) {
     val topRule = ruleSources.firstOrNull(RuleSourceManager::isTopRule)
     val customSources = ruleSources.filterNot { it.systemDefault || RuleSourceManager.isTopRule(it) }
@@ -142,7 +146,7 @@ internal fun RulesScreen(
                         topRule == null -> ChainValue(uiText("未设置", "Not set", "Не задано"))
                         !topRule.enabled -> ChainValue(uiText("已停用", "Off", "Выкл."))
                         topRule.hasProblem() -> ChainValue(uiText("有错误", "Error", "Ошибка"), Error)
-                        else -> ChainValue(uiText("${topRule.convertedRules} 条", "${topRule.convertedRules}", "${topRule.convertedRules}"), Warning)
+                        else -> ChainValue(uiText("${topRule.convertedRules} 条", "${topRule.convertedRules} rules", "Правил: ${topRule.convertedRules}"), Warning)
                     },
                     onClick = onOpenTopRule,
                     trailing = topRule?.let { rule -> { TogglePill(checked = rule.enabled, onClick = { onToggleEnabled(rule.id) }) } },
@@ -190,11 +194,10 @@ internal fun RulesScreen(
                     onRegionChange = onGeoRoutingRegionChange,
                 )
                 ChainDivider()
-                ChainRow(
-                    icon = Icons.Rounded.VpnLock,
-                    title = uiText("其余流量", "Everything else", "Остальное"),
-                    value = ChainValue(uiText("走代理", "Proxy", "Прокси"), Primary),
-                    onClick = null,
+                FallbackChainRow(
+                    direct = fallbackDirect,
+                    globalProxyEnabled = globalProxyEnabled,
+                    onChange = onFallbackDirectChange,
                 )
             }
         }
@@ -330,6 +333,56 @@ private fun RegionChainRow(
                     onClick = {
                         menu = false
                         onRegionChange(option)
+                    },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Where traffic no rule matched goes: proxy or direct, picked from a menu.
+ * Global mode sends everything through the proxy, so there is nothing to pick.
+ */
+@Composable
+private fun FallbackChainRow(
+    direct: Boolean,
+    globalProxyEnabled: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    var menu by remember { mutableStateOf(false) }
+    val proxyText = uiText("走代理", "Proxy", "Прокси")
+    val directText = uiText("直连", "Direct", "Напрямую")
+    val showDirect = direct && !globalProxyEnabled
+    Box {
+        ChainRow(
+            icon = if (showDirect) Icons.Rounded.Home else Icons.Rounded.VpnLock,
+            iconTint = if (showDirect) Success else Primary,
+            title = uiText("其余流量", "Everything else", "Остальное"),
+            value = if (showDirect) ChainValue(directText, Success) else ChainValue(proxyText, Primary),
+            onClick = if (globalProxyEnabled) null else ({ menu = true }),
+        )
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            listOf(
+                false to Triple(proxyText, uiText("没命中规则的连接走代理（主节点）", "Unmatched connections use the proxy (main node)", "Несовпавшие соединения идут через прокси"), Icons.Rounded.VpnLock),
+                true to Triple(directText, uiText("没命中规则的连接直接联网", "Unmatched connections go direct", "Несовпавшие соединения идут напрямую"), Icons.Rounded.Home),
+            ).forEach { (value, item) ->
+                DropdownMenuItem(
+                    leadingIcon = { Icon(item.third, contentDescription = null, tint = if (value) Success else Primary) },
+                    text = {
+                        Column {
+                            Text(item.first, color = TextPrimary, fontWeight = if (value == direct) FontWeight.SemiBold else FontWeight.Medium)
+                            Text(item.second, color = TextSecondary, fontSize = TypeScale.Tiny, lineHeight = TypeScale.TinyLine)
+                        }
+                    },
+                    trailingIcon = if (value == direct) {
+                        { Icon(Icons.Rounded.Check, contentDescription = null, tint = Primary, modifier = Modifier.size(18.dp)) }
+                    } else {
+                        null
+                    },
+                    onClick = {
+                        menu = false
+                        if (value != direct) onChange(value)
                     },
                 )
             }

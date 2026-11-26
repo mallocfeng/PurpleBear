@@ -58,7 +58,7 @@ object McpTools {
     private const val TOP_ID = RuleSourceManager.TOP_RULE_ID
     private const val MATCHING_ORDER_NOTE =
         "Matching order, first match wins: top-priority rules, per-app nodes, custom rules, media routing, built-in rules, " +
-            "local network direct, direct region (sites and IPs), then everything else through the main node."
+            "local network direct, direct region (sites and IPs), then everything else (through the main node by default, or direct: see set_default_route)."
 
     fun all(context: Context, config: McpConfig): List<McpTool> = Tools(context.applicationContext, config).list()
 
@@ -70,7 +70,7 @@ object McpTools {
             switchNode(), getSettings(), getLogs(), runDiagnostics(),
             // ---- phase 2: changes
             importNodes(), refreshSubscription(), deleteNode(), deleteGroup(), setPreProxy(), setFallback(),
-            setProxyMode(), setDns(), setDirectRegion(), setMtu(), setHeartbeat(), setProxyQuic(),
+            setProxyMode(), setDns(), setDirectRegion(), setMtu(), setHeartbeat(), setProxyQuic(), setDefaultRoute(),
             listRuleSources(), analyzeRules(), getCustomRules(), setCustomRules(), addRuleUrl(), toggleRuleSource(), refreshRuleSource(),
             listStreamingServices(), setStreamingRoute(), listApps(), setPerApp(),
             // ---- phase 3: Tailscale
@@ -216,6 +216,7 @@ object McpTools {
                     .put("mtu", st.vpnMtu)
                     .put("mtu_options", JSONArray(AppVpnMtuOptions))
                     .put("proxy_quic", st.proxyQuicEnabled)
+                    .put("default_route", if (st.fallbackDirect) "direct" else "proxy")
                     .put("direct_region", regionName(st.geoRoutingRegion))
                     .put("media_routing_enabled", st.streamingRoutingEnabled)
                     .put("media_routes", JSONArray().also { arr -> st.streamingSelections.forEach { arr.put(JSONObject().put("service_id", it.serviceId).put("node_id", if (it.serverId == StreamingMediaManager.DIRECT) "direct" else it.serverId)) } })
@@ -589,6 +590,25 @@ object McpTools {
             PreparedCall(tr("备用节点心跳改为每 $minutes 分钟", "Set the fallback check to every $minutes min", "Проверка резервного узла каждые $minutes мин")) {
                 AppController.update { StateOps.setHeartbeat(it, minutes) }
                 ToolResult(JSONObject().put("minutes", minutes), "Fallback check every $minutes minutes.")
+            }
+        }
+
+        private fun setDefaultRoute() = tool(
+            "set_default_route", "Set where unmatched traffic goes", ToolLevel.Modify,
+            "In rule mode, where connections that no rule matched go: proxy (default, through the main node) or direct. " +
+                "Global mode always uses the proxy and a Tailscale exit node takes precedence. Reconnects if the VPN is on.",
+            schema("route" to str("proxy or direct.", listOf("proxy", "direct")), required = listOf("route")),
+        ) { args ->
+            val route = args.reqStr("route")
+            if (route !in listOf("proxy", "direct")) throw ToolError("route must be proxy or direct.")
+            val direct = route == "direct"
+            PreparedCall(
+                if (direct) tr("其余流量改为直连", "Send everything else direct", "Остальной трафик — напрямую")
+                else tr("其余流量改为走代理", "Send everything else through the proxy", "Остальной трафик — через прокси"),
+            ) {
+                AppController.update { StateOps.setFallbackDirect(it, direct) }
+                val reconnected = AppController.reconnectIfRunning("其余流量的去向已更新，正在重连 VPN…")
+                ToolResult(JSONObject().put("default_route", route).put("reconnected", reconnected), "Unmatched traffic: $route.")
             }
         }
 
