@@ -47,6 +47,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -144,6 +145,9 @@ internal fun PerAppScreen(
         )
     }
     val grouped = tab == PER_APP_TAB_ALL || tab == PER_APP_TAB_INSTALLED || normalizedSearch.isNotBlank()
+    // Switched off, the selection below does nothing: grey it out. It stays
+    // editable so apps can be picked before turning the switch on.
+    val listModifier = if (proxyMode == ProxyMode.PerApp) Modifier else Modifier.alpha(0.4f)
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -205,15 +209,17 @@ internal fun PerAppScreen(
             item { PendingApplyCard(onApply = onApplyChanges) }
         }
         item {
-            SearchField(
-                search = search,
-                placeholder = "搜索应用名称或分类…",
-                onValueChange = onSearchChange,
-            )
+            Box(modifier = listModifier) {
+                SearchField(
+                    search = search,
+                    placeholder = "搜索应用名称或分类…",
+                    onValueChange = onSearchChange,
+                )
+            }
         }
         item {
             Row(
-                modifier = Modifier
+                modifier = listModifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -238,7 +244,7 @@ internal fun PerAppScreen(
         }
         item {
             Row(
-                modifier = Modifier
+                modifier = listModifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
                     .background(Primary.copy(alpha = 0.10f))
@@ -268,7 +274,7 @@ internal fun PerAppScreen(
             item(key = "header_$category") {
                 val allOn = sectionApps.all { it.enabled }
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                    modifier = listModifier.fillMaxWidth().padding(top = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -291,7 +297,7 @@ internal fun PerAppScreen(
                     else -> serverNames[app.serverId]?.let { uiText("节点：$it", "Node: $it", "Узел: $it") }
                         ?: uiText("默认节点（原节点已删除）", "Default node (its node was deleted)", "Узел по умолчанию (свой удалён)")
                 }
-                SurfaceCard(modifier = Modifier.clickable { onOpenApp(app.id) }) {
+                SurfaceCard(modifier = listModifier.clickable { onOpenApp(app.id) }) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -430,14 +436,13 @@ internal fun SettingsScreen(
     onProxyQuicChange: (Boolean) -> Unit,
     onDailyAutoUpdateChange: (Boolean) -> Unit,
     onUpdateNotificationsChange: (Boolean) -> Unit,
-    onOpenUpdates: () -> Unit,
     updateBadge: Boolean = false,
     onSyncNow: () -> Unit,
     onDnsChange: (AppDnsMode, String) -> Unit,
     onLogLevelChange: (AppLogLevel) -> Unit,
     onAddQuickSettingsTile: () -> Unit,
     onViewLogs: () -> Unit,
-    onOpenLicenses: () -> Unit,
+    onOpenAbout: () -> Unit,
     onOpenMcp: () -> Unit,
     onOpenSystemVpnSettings: () -> Unit = {},
     onExportBackup: () -> Unit = {},
@@ -548,14 +553,6 @@ internal fun SettingsScreen(
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 SettingActionRow(
-                    title = "检查更新",
-                    subtitle = "查看 GitHub Release 最新版本。",
-                    actionText = "进入",
-                    onAction = onOpenUpdates,
-                    badge = updateBadge,
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                SettingActionRow(
                     title = "规则资源同步",
                     subtitle = if (syncInFlight) {
                         "正在后台同步。"
@@ -636,12 +633,20 @@ internal fun SettingsScreen(
                         append(appVersion)
                     },
                 )
-                Spacer(modifier = Modifier.height(12.dp))
+            }
+        }
+        item {
+            SettingsGroup(title = uiText("关于", "About", "О приложении")) {
                 SettingActionRow(
-                    title = "开源许可",
-                    subtitle = "查看 Xray、mihomo 与 GPL-3.0 说明。",
-                    actionText = "查看",
-                    onAction = onOpenLicenses,
+                    title = uiText("关于 $APP_BRAND_NAME", "About $APP_BRAND_NAME", "О $APP_BRAND_NAME"),
+                    subtitle = uiText(
+                        "版本 $appVersion · 检查更新、开源许可",
+                        "Version $appVersion · updates, licenses",
+                        "Версия $appVersion · обновления, лицензии",
+                    ),
+                    actionText = uiText("查看", "Open", "Открыть"),
+                    onAction = onOpenAbout,
+                    badge = updateBadge,
                 )
             }
         }
@@ -1132,8 +1137,11 @@ internal fun MediaRoutingScreen(
                 val shown = region?.let { tab ->
                     services.filter { tab in it.regions }.sortedBy { if (it.regions.first() == tab) 0 else 1 }
                 } ?: services
+                // Switched off, the list does nothing: grey it out like the
+                // per-app list.
+                val listModifier = if (enabled) Modifier else Modifier.alpha(0.4f)
                 Row(
-                    modifier = Modifier
+                    modifier = listModifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1157,6 +1165,7 @@ internal fun MediaRoutingScreen(
                 Spacer(modifier = Modifier.height(12.dp))
                 shown.forEachIndexed { index, service ->
                     MediaRoutingServiceRow(
+                        modifier = listModifier,
                         service = service,
                         enabled = enabled,
                         selectedNodeLabel = mediaRoutingSelectionLabel(

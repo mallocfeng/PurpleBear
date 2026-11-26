@@ -57,13 +57,13 @@ object DiagnosticsManager {
             buildVpnStep(connectionStatus, vpnSnapshot, server),
             buildDnsStep(server),
             buildReachabilityStep(context, server),
-            buildProxyStep(connectionStatus),
+            buildProxyStep(connectionStatus, server),
         )
     }
 
     private fun buildConfigStep(server: ServerNode?, settings: AppSettings, ruleSources: List<RuleSourceItem>): DiagnosticStep {
         if (server == null) {
-            return fail("config", "配置解析", tr("当前没有可诊断的节点，请先导入并选择一个节点。", "No node to diagnose. Import and select a node first.", "Нет узла для диагностики. Сначала импортируйте и выберите узел."))
+            return noNode("config", "配置解析", tr("当前没有可诊断的节点，请先导入并选择一个节点。", "No node to diagnose. Import and select a node first.", "Нет узла для диагностики. Сначала импортируйте и выберите узел."))
         }
         return runCatching {
             val config = XrayConfigFactory.buildVpn(
@@ -152,6 +152,9 @@ object DiagnosticsManager {
         snapshot: VpnRuntimeSnapshot,
         server: ServerNode?,
     ): DiagnosticStep {
+        if (server == null && connectionStatus == ConnectionStatus.Disconnected) {
+            return noNode("vpn", "VPN 建立", tr("还没有节点，导入节点后才能连接。", "No node yet; import one to connect.", "Узлов пока нет; импортируйте узел, чтобы подключиться."))
+        }
         return when (connectionStatus) {
             ConnectionStatus.Connected -> success(
                 "vpn",
@@ -173,7 +176,7 @@ object DiagnosticsManager {
 
     private fun buildDnsStep(server: ServerNode?): DiagnosticStep {
         if (server == null) {
-            return fail("dns", "DNS 解析", tr("当前没有可检测的节点域名。", "No node domain to check.", "Нет домена узла для проверки."))
+            return noNode("dns", "DNS 解析", tr("当前没有可检测的节点域名。", "No node domain to check.", "Нет домена узла для проверки."))
         }
         if (!looksLikeHostname(server.address)) {
             return success("dns", "DNS 解析", tr("当前节点使用 IP 地址，无需额外 DNS 解析。", "The current node uses an IP address; no DNS lookup needed.", "Текущий узел использует IP-адрес, DNS-запрос не нужен."))
@@ -202,7 +205,7 @@ object DiagnosticsManager {
 
     private suspend fun buildReachabilityStep(context: Context, server: ServerNode?): DiagnosticStep {
         if (server == null) {
-            return fail("reachability", tr("节点连通性", "Node reachability", "Доступность узла"), tr("当前没有可检测的节点。", "No node to check.", "Нет узла для проверки."))
+            return noNode("reachability", tr("节点连通性", "Node reachability", "Доступность узла"), tr("当前没有可检测的节点。", "No node to check.", "Нет узла для проверки."))
         }
         return runCatching {
             NodeLatencyTester.measure(context, server)
@@ -234,7 +237,10 @@ object DiagnosticsManager {
         )
     }
 
-    private fun buildProxyStep(connectionStatus: ConnectionStatus): DiagnosticStep {
+    private fun buildProxyStep(connectionStatus: ConnectionStatus, server: ServerNode?): DiagnosticStep {
+        if (server == null && connectionStatus != ConnectionStatus.Connected) {
+            return noNode("proxy", tr("代理出口", "Proxy exit", "Выход через прокси"), tr("还没有节点，暂不检测代理出口。", "No node yet, so the proxy exit isn't checked.", "Узлов пока нет, поэтому выход через прокси не проверяется."))
+        }
         if (connectionStatus != ConnectionStatus.Connected) {
             return fail("proxy", tr("代理出口", "Proxy exit", "Выход через прокси"), tr("当前未连接 VPN，无法验证代理出口链路。", "VPN isn't connected, so the proxy exit can't be checked.", "VPN не подключён, поэтому выход через прокси проверить нельзя."))
         }
@@ -280,6 +286,10 @@ object DiagnosticsManager {
 
     private fun success(key: String, title: String, detail: String): DiagnosticStep {
         return DiagnosticStep(key = key, title = title, detail = detail, status = DiagnosticStatus.Success)
+    }
+
+    private fun noNode(key: String, title: String, detail: String): DiagnosticStep {
+        return DiagnosticStep(key = key, title = title, detail = detail, status = DiagnosticStatus.NoNode)
     }
 
     private fun fail(key: String, title: String, detail: String): DiagnosticStep {

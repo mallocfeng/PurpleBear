@@ -171,16 +171,20 @@ fun MallocGfwApp(
     val ruleSources: List<RuleSourceItem> by AppStateView { it.ruleSources }
     val recentImports: List<String> by AppStateView { it.recentImports }
     val protectedApps: List<ProtectedApp> by AppStateView { it.protectedApps }
-    val initialExpandedGroupIds = remember(initialState) {
-        buildSet {
-            add(ImportParser.LOCAL_GROUP_ID)
-            initialState.servers.firstOrNull { it.id == initialState.selectedServerId }?.groupId?.let(::add)
+    // Nodes tab: only the group holding the node in use starts expanded (Local
+    // when nothing is in use yet, so its "add a node" hint shows). Fixed at
+    // launch, so picking a node never folds a group under the finger; groups
+    // the user opens or closes keep that.
+    val initialExpandedGroupId = remember(initialState) {
+        val inUseId = initialState.selectedServerId.ifBlank {
+            initialState.servers.firstOrNull { !it.hiddenUnsupported }?.id.orEmpty()
         }
+        initialState.servers.firstOrNull { it.id == inUseId }?.groupId ?: ImportParser.LOCAL_GROUP_ID
     }
     val expandedGroups = remember {
         mutableStateMapOf<String, Boolean>().apply {
             initialState.serverGroups.forEach { group ->
-                put(group.id, group.id in initialExpandedGroupIds)
+                put(group.id, group.id == initialExpandedGroupId)
             }
         }
     }
@@ -221,6 +225,9 @@ fun MallocGfwApp(
     var ruleAnalysisReport by remember { mutableStateOf<RuleAnalysisReport?>(null) }
     var ruleAnalysisInFlight by remember { mutableStateOf(false) }
     var blockingReconnectMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    // The service still reports Connected for a moment after a reconnect is
+    // asked for: only a Connected seen after it went down ends the dialog.
+    var blockingReconnectSawDrop by rememberSaveable { mutableStateOf(false) }
     var pendingProtectedAppsApply by rememberSaveable { mutableStateOf(false) }
     var pendingStreamingRoutingApply by rememberSaveable { mutableStateOf(false) }
     var disconnectInFlight by rememberSaveable { mutableStateOf(false) }
@@ -318,7 +325,7 @@ fun MallocGfwApp(
             AppScreen.PerApp, AppScreen.PerAppNodePicker, AppScreen.MediaRouting, AppScreen.MediaRoutingNodePicker -> MainTab.Rules
             AppScreen.Import, AppScreen.ConfirmImport, AppScreen.Subscriptions -> MainTab.Import
             AppScreen.Me, AppScreen.Diagnostics, AppScreen.Settings, AppScreen.Permission,
-            AppScreen.OpenSourceLicenses, AppScreen.Mcp, AppScreen.LogViewer,
+            AppScreen.OpenSourceLicenses, AppScreen.About, AppScreen.Mcp, AppScreen.LogViewer,
             AppScreen.Tailscale -> MainTab.Me
             else -> mainTab
         }
@@ -350,7 +357,7 @@ fun MallocGfwApp(
             AppScreen.PerApp, AppScreen.PerAppNodePicker, AppScreen.MediaRouting, AppScreen.MediaRoutingNodePicker -> MainTab.Rules
             AppScreen.Import, AppScreen.ConfirmImport, AppScreen.Subscriptions -> MainTab.Import
             AppScreen.Me, AppScreen.Diagnostics, AppScreen.Settings, AppScreen.Permission,
-            AppScreen.OpenSourceLicenses, AppScreen.Mcp, AppScreen.LogViewer,
+            AppScreen.OpenSourceLicenses, AppScreen.About, AppScreen.Mcp, AppScreen.LogViewer,
             AppScreen.Tailscale -> MainTab.Me
             else -> MainTab.Home
         }
@@ -374,6 +381,7 @@ fun MallocGfwApp(
         pendingReconnectMessage = message
         blockingReconnectInFlight = true
         blockingReconnectMessage = message
+        blockingReconnectSawDrop = !disconnectFirst
         runtimeMessage = message
         if (disconnectFirst) {
             disconnectInFlight = true
@@ -466,6 +474,8 @@ fun MallocGfwApp(
             disconnectInFlight = false
             connectionStatus = ConnectionStatus.Disconnected
             runtimeMessage = "未授予 VPN 权限。"
+            blockingReconnectInFlight = false
+            blockingReconnectMessage = null
             appSettings = appSettings.copy(resumeConnectionOnLaunch = false)
         }
     }
@@ -670,7 +680,6 @@ fun MallocGfwApp(
             connectionStatus == ConnectionStatus.Connected ||
             connectionStatus == ConnectionStatus.Connecting ||
             connectionStatus == ConnectionStatus.Disconnecting
-        ruleMessage = if (shouldReconnect) "正在重新连接以应用新模式…" else null
         val reconnectServer = resolveServerForSettingsReconnect()
         if (shouldReconnect && reconnectServer != null) {
             reconnectVpnForSettingsChange(
@@ -698,8 +707,7 @@ fun MallocGfwApp(
             connectionStatus == ConnectionStatus.Connected ||
             connectionStatus == ConnectionStatus.Connecting ||
             connectionStatus == ConnectionStatus.Disconnecting
-        // The mode card already explains each mode; only report the reconnect.
-        ruleMessage = if (shouldReconnect) "正在重新连接以应用新模式…" else null
+        // A running VPN reconnects behind the blocking dialog; no inline line.
         val reconnectServer = resolveServerForSettingsReconnect()
         if (shouldReconnect && reconnectServer != null) {
             reconnectVpnForSettingsChange(
@@ -877,12 +885,12 @@ fun MallocGfwApp(
         }
     }
 
+    /** A group with no state yet (e.g. after restoring a backup): open only if it holds the node in use. */
+    fun isServerGroupExpanded(groupId: String): Boolean = expandedGroups[groupId]
+        ?: (groupId == (servers.firstOrNull { it.id == selectedServerId }?.groupId ?: ImportParser.LOCAL_GROUP_ID))
+
     fun onBack() {
-        if (screen == AppScreen.Launch) return
-        if (screen == AppScreen.Onboarding) {
-            screen = AppScreen.Launch
-            return
-        }
+        if (screen == AppScreen.Launch || screen == AppScreen.Onboarding) return
         // Import is still a main "tab" internally but is opened from another page
         // (Nodes "+", or Home with no nodes), so go back there; previousMainTab
         // would be Import itself.
@@ -1173,16 +1181,16 @@ fun MallocGfwApp(
                 }
                 ruleMessage = when {
                     refreshEditedVersion -> tr(
-                        "${source.name} 在更新期间已修改，正在按新内容更新…",
-                        "${source.name} was changed while updating; updating the new version…",
-                        "${source.name} изменён во время обновления; обновляется новая версия…",
+                        "${RuleSourceManager.displayName(source)} 在更新期间已修改，正在按新内容更新…",
+                        "${RuleSourceManager.displayName(source)} was changed while updating; updating the new version…",
+                        "${RuleSourceManager.displayName(source)} изменён во время обновления; обновляется новая версия…",
                     )
                     commit.stored == null -> tr(
-                        "${source.name} 在更新期间已修改或删除，本次结果未保存。",
-                        "${source.name} was changed or deleted while updating; this result wasn't saved.",
-                        "${source.name} изменён или удалён во время обновления; результат не сохранён.",
+                        "${RuleSourceManager.displayName(source)} 在更新期间已修改或删除，本次结果未保存。",
+                        "${RuleSourceManager.displayName(source)} was changed or deleted while updating; this result wasn't saved.",
+                        "${RuleSourceManager.displayName(source)} изменён или удалён во время обновления; результат не сохранён.",
                     )
-                    result != null -> tr("${result.source.name} 已更新，转换 ${result.compiled.convertedRules} 条。", "${result.source.name} updated, ${result.compiled.convertedRules} rules converted.", "${result.source.name}: обновлено, преобразовано правил: ${result.compiled.convertedRules}.")
+                    result != null -> tr("${RuleSourceManager.displayName(result.source)} 已更新，转换 ${result.compiled.convertedRules} 条。", "${RuleSourceManager.displayName(result.source)} updated, ${result.compiled.convertedRules} rules converted.", "${RuleSourceManager.displayName(result.source)}: обновлено, преобразовано правил: ${result.compiled.convertedRules}.")
                     else -> commit.error?.message ?: "规则更新失败。"
                 }
             } catch (error: Exception) {
@@ -1454,13 +1462,10 @@ fun MallocGfwApp(
         }
         val activeServer = resolveServerForSettingsReconnect()
         if (connectionStatus == ConnectionStatus.Connected && activeServer != null) {
-            ruleMessage = tr("$state，正在重连以生效。", "$state. Reconnecting to apply it.", "$state. Переподключение для применения.")
             reconnectVpnForSettingsChange(
                 server = activeServer,
                 message = tr("$state，正在重连 VPN…", "$state. Reconnecting VPN…", "$state. Переподключение VPN…"),
             )
-        } else {
-            ruleMessage = tr("$state，下次连接生效。", "$state. Takes effect on the next connection.", "$state. Вступит в силу при следующем подключении.")
         }
     }
 
@@ -1592,7 +1597,7 @@ fun MallocGfwApp(
         if (selectedRuleSourceId == sourceId && !source.systemDefault) {
             selectedRuleSourceId = ruleSources.firstOrNull()?.id.orEmpty()
         }
-        ruleMessage = tr("${source.name} 已移除。", "${source.name} removed.", "${source.name}: удалено.")
+        ruleMessage = tr("${RuleSourceManager.displayName(source)} 已移除。", "${RuleSourceManager.displayName(source)} removed.", "${RuleSourceManager.displayName(source)}: удалено.")
     }
 
     fun toggleCore(server: ServerNode?, navigateHomeAfterStart: Boolean = false) {
@@ -1958,18 +1963,14 @@ fun MallocGfwApp(
             disconnectInFlight = false
         }
         if (blockingReconnectInFlight) {
+            if (vpnSnapshot.status != ConnectionStatus.Connected) blockingReconnectSawDrop = true
             when (vpnSnapshot.status) {
-                ConnectionStatus.Connected -> {
+                ConnectionStatus.Connected -> if (blockingReconnectSawDrop) {
                     blockingReconnectInFlight = false
                     blockingReconnectMessage = null
                 }
-                ConnectionStatus.Disconnected -> {
-                    val reconnectPending = !pendingReconnectServerId.isNullOrBlank() || disconnectInFlight
-                    if (!reconnectPending && !VpnServiceController.isRunning()) {
-                        blockingReconnectInFlight = false
-                        blockingReconnectMessage = null
-                    }
-                }
+                // Disconnected is only the gap between the old service and the
+                // new one; failures, a missing node and the timeout end it instead.
                 else -> Unit
             }
         }
@@ -2018,6 +2019,8 @@ fun MallocGfwApp(
         val message = pendingReconnectMessage
         pendingReconnectMessage = null
         if (server == null) {
+            blockingReconnectInFlight = false
+            blockingReconnectMessage = null
             runtimeMessage = "原线路已不存在，无法自动重连。"
             return@LaunchedEffect
         }
@@ -2060,10 +2063,6 @@ fun MallocGfwApp(
                 vpnSnapshot.status == ConnectionStatus.Disconnected
             ) {
                 disconnectInFlight = false
-                if (blockingReconnectInFlight && pendingReconnectServerId.isNullOrBlank()) {
-                    blockingReconnectInFlight = false
-                    blockingReconnectMessage = null
-                }
                 connectionStatus = ConnectionStatus.Disconnected
             }
             else -> Unit
@@ -2071,11 +2070,29 @@ fun MallocGfwApp(
         xraySnapshot.message?.let { runtimeMessage = it }
     }
 
+    // Safety net: never leave the app blocked if the service doesn't report back.
+    LaunchedEffect(blockingReconnectInFlight) {
+        if (!blockingReconnectInFlight) return@LaunchedEffect
+        delay(BLOCKING_RECONNECT_TIMEOUT_MS)
+        if (blockingReconnectInFlight) {
+            blockingReconnectInFlight = false
+            blockingReconnectMessage = null
+        }
+    }
+
     // Reconnecting after a dropped connection is the VPN service's job
     // (XrayVpnService.scheduleAutoReconnect): it works with these screens gone,
     // and two retry loops would race each other.
 
-    BackHandler(enabled = screen !in setOf(AppScreen.Home, AppScreen.Servers, AppScreen.Rules, AppScreen.Import, AppScreen.Me)) {
+    // Splash and onboarding are the first screens: Back leaves the app there.
+    // (Back from onboarding used to show the splash again, which only moves on
+    // once at launch, so the app was stuck on it.)
+    BackHandler(
+        enabled = screen !in setOf(
+            AppScreen.Home, AppScreen.Servers, AppScreen.Rules, AppScreen.Import, AppScreen.Me,
+            AppScreen.Launch, AppScreen.Onboarding,
+        ),
+    ) {
         onBack()
     }
     // Import is opened from the "+" on Nodes, so Back returns there instead of leaving the app
@@ -2334,7 +2351,7 @@ fun MallocGfwApp(
                         padding = padding,
                         listState = serversListState,
                         sections = serverSections,
-                        expandedGroups = expandedGroups,
+                        isGroupExpanded = ::isServerGroupExpanded,
                         selectedServerId = selectedServerId,
                         filter = serverFilter,
                         search = serverSearch,
@@ -2343,7 +2360,7 @@ fun MallocGfwApp(
                         onSelectServer = ::selectServerForUi,
                         onOpenServerDetail = ::openNodeDetailForServer,
                         onToggleGroup = { groupId ->
-                            expandedGroups[groupId] = !(expandedGroups[groupId] ?: true)
+                            expandedGroups[groupId] = !isServerGroupExpanded(groupId)
                         },
                         onToggleFavorite = { id ->
                             AppController.edit { StateOps.toggleFavorite(it, id) }
@@ -2663,7 +2680,6 @@ fun MallocGfwApp(
                             }
                         },
                         onUpdateNotificationsChange = ::setUpdateNotificationsEnabled,
-                        onOpenUpdates = ::openUpdateScreen,
                         updateBadge = updateBadge,
                         onSyncNow = ::syncAllResources,
                         onDnsChange = ::updateDnsSettings,
@@ -2673,8 +2689,22 @@ fun MallocGfwApp(
                         },
                         onAddQuickSettingsTile = ::requestQuickSettingsTile,
                         onViewLogs = ::openLogViewer,
-                        onOpenLicenses = { navigateSecondary(AppScreen.OpenSourceLicenses) },
+                        onOpenAbout = { navigateSecondary(AppScreen.About) },
                         onOpenMcp = { navigateSecondary(AppScreen.Mcp) },
+                    )
+
+                    AppScreen.About -> AboutScreen(
+                        padding = padding,
+                        appVersion = APP_DISPLAY_VERSION,
+                        coreVersion = xraySnapshot.version,
+                        systemVersion = "Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})",
+                        updateBadge = updateBadge,
+                        onBack = ::onBack,
+                        onOpenUpdates = ::openUpdateScreen,
+                        onOpenLicenses = { navigateSecondary(AppScreen.OpenSourceLicenses) },
+                        onOpenFailed = {
+                            runtimeMessage = tr("没有可以打开链接的浏览器。", "No browser available to open the link.", "Нет браузера, чтобы открыть ссылку.")
+                        },
                     )
 
                     AppScreen.Tailscale -> TailscaleScreen(
@@ -2856,6 +2886,7 @@ fun MallocGfwApp(
                         onOpenSettings = { navigateSecondary(AppScreen.Settings) },
                         onOpenTailscale = { navigateSecondary(AppScreen.Tailscale) },
                         onOpenPermission = { navigateSecondary(AppScreen.Permission) },
+                        tailscaleEnabled = appSettings.tailscaleEnabled,
                         vpnPermissionGranted = vpnPermissionGranted,
                         updateBadge = updateBadge,
                     )
@@ -3090,3 +3121,4 @@ fun MallocGfwApp(
 
 /** How long a confirmation notice stays at the top of Settings / Rules. */
 private const val NOTICE_VISIBLE_MS = 4_000L
+private const val BLOCKING_RECONNECT_TIMEOUT_MS = 20_000L

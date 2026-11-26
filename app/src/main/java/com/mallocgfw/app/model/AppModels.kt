@@ -24,6 +24,7 @@ enum class AppScreen {
     Settings,
     Tailscale,
     OpenSourceLicenses,
+    About,
     Mcp,
     Update,
     MediaRouting,
@@ -364,6 +365,8 @@ enum class DiagnosticStatus {
     Success,
     Pending,
     Failed,
+    /** Not checked because there is no node yet: nothing is wrong. */
+    NoNode,
 }
 
 data class DiagnosticStep(

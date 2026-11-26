@@ -1,5 +1,6 @@
 package com.mallocgfw.app.ui
 
+import androidx.activity.compose.BackHandler
 import android.graphics.BitmapFactory
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -166,7 +167,7 @@ internal fun LaunchScreen(onSkip: () -> Unit) {
 }
 
 @Composable
-private fun BrandLogo(size: Dp) {
+internal fun BrandLogo(size: Dp) {
     val context = LocalContext.current
     val logo = remember(context) {
         BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher_foreground)?.asImageBitmap()
@@ -213,6 +214,10 @@ internal fun OnboardingScreen(
     val pagerState = rememberPagerState(pageCount = { pages.size })
     val scope = rememberCoroutineScope()
     val lastPage = pagerState.currentPage == pages.lastIndex
+    // Back steps through the pages; on the first one it leaves the app.
+    BackHandler(enabled = pagerState.currentPage > 0) {
+        scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
+    }
 
     Column(
         modifier = Modifier

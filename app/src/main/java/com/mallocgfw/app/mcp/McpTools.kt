@@ -723,7 +723,7 @@ object McpTools {
                     if (refreshed.status != RuleSourceStatus.Ready) {
                         throw ToolError("Saved, but the rules didn't parse: ${Redactor.text(refreshed.lastError ?: "unknown error")}")
                     }
-                    val reconnected = AppController.reconnectIfRunning("最高优先级规则已更新，正在重连 VPN…")
+                    val reconnected = AppController.reconnectIfRunning(tr("最高优先级规则已更新，正在重连 VPN…", "Top-priority rules updated. Reconnecting VPN…", "Правила высшего приоритета обновлены. Переподключение VPN…"))
                     ToolResult(ruleJson(refreshed).put("reconnected", reconnected), "Saved ${refreshed.convertedRules} top-priority rules.")
                 }
             }

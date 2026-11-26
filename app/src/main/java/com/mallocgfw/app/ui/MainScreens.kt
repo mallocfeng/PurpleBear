@@ -46,6 +46,19 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.ui.draw.clip
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.Color
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.LinearEasing
+import com.mallocgfw.app.ui.theme.PrimaryStrong
 import androidx.compose.ui.draw.scale
 import com.mallocgfw.app.ui.theme.Error
 import com.mallocgfw.app.ui.theme.IsLightTheme
@@ -205,18 +218,48 @@ internal fun HomeScreen(
         }
         if (connected) {
             item(key = "home-stats") {
-                HomeStatsCard(
-                    downloadRate = downloadRate,
-                    downloadSubtitle = downloadSubtitle,
-                    uploadRate = uploadRate,
-                    uploadSubtitle = uploadSubtitle,
-                    latencyTesting = latencyTesting,
-                    onRefresh = onRetestLatency,
-                )
+                // Eases in on connect: fades in while settling down from just
+                // above and growing to full size; the node card below slides
+                // down to make room (animateItem), and it fades out on disconnect.
+                val appear = remember { Animatable(0f) }
+                LaunchedEffect(Unit) {
+                    // Let the node card start moving first, so the two never overlap.
+                    delay(100)
+                    appear.animateTo(1f, spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessLow))
+                }
+                Box(
+                    modifier = Modifier
+                        .animateItem(
+                            fadeInSpec = null,
+                            placementSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                            fadeOutSpec = tween(durationMillis = 220),
+                        )
+                        .graphicsLayer {
+                            val p = appear.value
+                            alpha = p.coerceIn(0f, 1f)
+                            translationY = (1f - p) * -18.dp.toPx()
+                            val scale = 0.94f + 0.06f * p
+                            scaleX = scale
+                            scaleY = scale
+                            transformOrigin = TransformOrigin(0.5f, 0f)
+                        },
+                ) {
+                    HomeStatsCard(
+                        downloadRate = downloadRate,
+                        downloadSubtitle = downloadSubtitle,
+                        uploadRate = uploadRate,
+                        uploadSubtitle = uploadSubtitle,
+                        latencyTesting = latencyTesting,
+                        onRefresh = onRetestLatency,
+                    )
+                }
             }
         }
         item(key = "home-current-node-card") {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.animateItem(placementSpec = spring(stiffness = Spring.StiffnessMediumLow)),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 SectionLabel("当前节点")
                 pendingServer?.let { server ->
                     PendingSwitchBanner(serverName = server.name, onClick = onOpenServers)
@@ -250,14 +293,58 @@ private fun ConnectHero(
         animationSpec = tween(durationMillis = 420),
         label = "connect-halo",
     )
+    // Backdrop: a faint glow and two hairline rings, a touch stronger when
+    // connected, plus one slow ripple then. Kept quiet so the button leads.
+    val glowAlpha by animateFloatAsState(
+        targetValue = when {
+            connected -> if (IsLightTheme) 0.16f else 0.20f
+            else -> if (IsLightTheme) 0.09f else 0.10f
+        },
+        animationSpec = tween(durationMillis = 420),
+        label = "connect-glow",
+    )
+    val ripple = if (connected) {
+        rememberInfiniteTransition(label = "connect-ripple").animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(durationMillis = 2800, easing = LinearEasing)),
+            label = "connect-ripple-progress",
+        ).value
+    } else {
+        null
+    }
+    val accent = Primary
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 18.dp, bottom = 6.dp),
+            .padding(top = 30.dp, bottom = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
-            modifier = Modifier.size(212.dp),
+            modifier = Modifier
+                .size(212.dp)
+                .drawBehind {
+                    val glowRadius = 150.dp.toPx()
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(accent.copy(alpha = glowAlpha), Color.Transparent),
+                            center = center,
+                            radius = glowRadius,
+                        ),
+                        radius = glowRadius,
+                    )
+                    val hairline = 1.dp.toPx()
+                    drawCircle(accent.copy(alpha = glowAlpha * 0.9f), radius = 116.dp.toPx(), style = Stroke(hairline))
+                    drawCircle(accent.copy(alpha = glowAlpha * 0.5f), radius = 130.dp.toPx(), style = Stroke(hairline))
+                    if (ripple != null) {
+                        val radius = 84.dp.toPx() + (130.dp.toPx() - 84.dp.toPx()) * ripple
+                        drawCircle(
+                            accent.copy(alpha = 0.35f * (1f - ripple)),
+                            radius = radius,
+                            style = Stroke(1.5.dp.toPx()),
+                        )
+                    }
+                },
             contentAlignment = Alignment.Center,
         ) {
             Box(
@@ -275,16 +362,23 @@ private fun ConnectHero(
                     strokeWidth = 3.dp,
                 )
             }
+            // A soft top-to-bottom gradient instead of a flat face.
+            val face = when {
+                connected -> Brush.linearGradient(listOf(Secondary, PrimaryStrong))
+                IsLightTheme -> Brush.verticalGradient(listOf(Color.White, Color(0xFFEFEBFF)))
+                else -> Brush.verticalGradient(listOf(SurfaceHigh, SurfaceTone))
+            }
             Surface(
                 shape = CircleShape,
-                color = if (connected) Primary else SurfaceTone,
+                color = Color.Transparent,
                 shadowElevation = if (connected || !IsLightTheme) 0.dp else 8.dp,
+                border = if (connected) null else BorderStroke(1.dp, Primary.copy(alpha = if (IsLightTheme) 0.14f else 0.22f)),
                 modifier = Modifier
                     .size(160.dp)
                     .clip(CircleShape)
                     .clickable(enabled = !busy, onClick = onToggleConnection),
             ) {
-                Box(contentAlignment = Alignment.Center) {
+                Box(modifier = Modifier.fillMaxSize().background(face), contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = Icons.Rounded.PowerSettingsNew,
                         contentDescription = uiText(if (connected) "断开连接" else "连接"),
@@ -294,7 +388,7 @@ private fun ConnectHero(
                 }
             }
         }
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(26.dp))
         Text(
             text = uiText(
                 when (connectionStatus) {
@@ -578,7 +672,7 @@ internal fun ServersScreen(
     padding: PaddingValues,
     listState: LazyListState,
     sections: List<ServerSection>,
-    expandedGroups: Map<String, Boolean>,
+    isGroupExpanded: (String) -> Boolean,
     selectedServerId: String,
     filter: String,
     search: String,
@@ -617,7 +711,7 @@ internal fun ServersScreen(
         items(sections, key = { it.group.id }) { section ->
             GroupSectionCard(
                 section = section,
-                expanded = expandedGroups[section.group.id] ?: true,
+                expanded = isGroupExpanded(section.group.id),
                 selectedServerId = selectedServerId,
                 onToggleGroup = { onToggleGroup(section.group.id) },
                 onSelectServer = onSelectServer,

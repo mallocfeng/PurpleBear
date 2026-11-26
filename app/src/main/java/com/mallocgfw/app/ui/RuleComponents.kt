@@ -195,15 +195,6 @@ internal fun geoRoutingRegionLabel(region: AppGeoRoutingRegion): String {
 }
 
 @Composable
-internal fun geoRoutingRegionSubtitle(region: AppGeoRoutingRegion): String {
-    return when (region) {
-        AppGeoRoutingRegion.China -> uiText("直连 geosite:cn 与 geoip:cn。")
-        AppGeoRoutingRegion.English -> uiText("直连 geoip:us；EN 不是 Geo 国家码。")
-        AppGeoRoutingRegion.Russia -> uiText("直连 geosite:category-ru 与 geoip:ru。")
-    }
-}
-
-@Composable
 internal fun EmptyRulesCard() {
     SurfaceCard {
         Text(

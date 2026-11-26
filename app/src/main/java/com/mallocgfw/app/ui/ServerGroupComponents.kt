@@ -1,5 +1,23 @@
 package com.mallocgfw.app.ui
 
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.draw.rotate
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -22,7 +40,6 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Cloud
@@ -78,18 +95,28 @@ internal fun GroupSectionCard(
     val isLocal = section.group.type == ServerGroupType.Local
     val fastestLatency = section.servers.mapNotNull { it.latencyMs.takeIf { ms -> ms > 0 } }.minOrNull()
     var menuOpen by remember { mutableStateOf(false) }
+    // Pressing the header tints the card's whole coloured area (header and the
+    // frame round the node panel) instead of a ripple that stops in a straight
+    // line where the panel starts.
+    val headerInteraction = remember { MutableInteractionSource() }
+    val headerPressed by headerInteraction.collectIsPressedAsState()
+    val cardColor by animateColorAsState(
+        targetValue = if (headerPressed) GroupCardPressedColor else GroupCardColor,
+        animationSpec = tween(durationMillis = if (headerPressed) 90 else 260),
+        label = "group-card-press",
+    )
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(CardRadius))
-            .background(GroupCardColor),
+            .background(cardColor),
     ) {
         // Group header: a rounded-square type icon, bold name and a full-width
         // divider set it apart from the round-avatar node rows it contains.
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onToggleGroup)
+                .clickable(interactionSource = headerInteraction, indication = null, onClick = onToggleGroup)
                 .padding(start = 14.dp, end = 4.dp, top = 14.dp, bottom = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -98,13 +125,13 @@ internal fun GroupSectionCard(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(Primary.copy(alpha = if (IsLightTheme) 0.12f else 0.22f)),
+                    .background(Primary),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     imageVector = if (isLocal) Icons.Rounded.PhoneAndroid else Icons.Rounded.Cloud,
                     contentDescription = null,
-                    tint = Primary,
+                    tint = AccentContentColor,
                     modifier = Modifier.size(22.dp),
                 )
             }
@@ -123,14 +150,14 @@ internal fun GroupSectionCard(
                     if (containsSelectedServer) {
                         Text(
                             text = uiText("使用中", "In use"),
-                            color = Primary,
+                            color = AccentContentColor,
                             fontSize = TypeScale.Tiny,
                             lineHeight = TypeScale.TinyLine,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(6.dp))
-                                .background(Primary.copy(alpha = if (IsLightTheme) 0.10f else 0.18f))
+                                .background(Primary)
                                 .padding(horizontal = 6.dp, vertical = 1.dp),
                         )
                     }
@@ -161,6 +188,10 @@ internal fun GroupSectionCard(
                     onClick = {
                         section.servers.forEach { server -> onTestLatency(server.id) }
                     },
+                    // A collapsed group hides its results, so testing it would
+                    // only spend traffic: the icon dims and ignores taps until
+                    // the group is expanded.
+                    enabled = expanded,
                 )
             }
             // Group actions live in a menu, so "delete group" is never a stray
@@ -189,17 +220,50 @@ internal fun GroupSectionCard(
                     }
                 }
             }
+            // The chevron turns over with the panel instead of swapping icons.
+            val chevronTurn by animateFloatAsState(
+                targetValue = if (expanded) 180f else 0f,
+                animationSpec = spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessMediumLow),
+                label = "group-chevron",
+            )
             Icon(
-                imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                imageVector = Icons.Rounded.ExpandMore,
                 contentDescription = null,
                 tint = TextSecondary,
                 modifier = Modifier
                     .padding(end = 6.dp)
-                    .size(24.dp),
+                    .size(24.dp)
+                    .rotate(chevronTurn),
             )
         }
 
-        if (expanded) {
+        // The node panel unfolds with a soft spring (a little settle at the end)
+        // while fading and growing in from the top; folding away is quicker and
+        // without the bounce.
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically(
+                animationSpec = spring(
+                    dampingRatio = 0.8f,
+                    stiffness = 280f,
+                    visibilityThreshold = IntSize.VisibilityThreshold,
+                ),
+                expandFrom = Alignment.Top,
+            ) + fadeIn(tween(durationMillis = 320, delayMillis = 40, easing = LinearOutSlowInEasing)) +
+                scaleIn(
+                    animationSpec = spring(dampingRatio = 0.8f, stiffness = 280f),
+                    initialScale = 0.96f,
+                    transformOrigin = TransformOrigin(0.5f, 0f),
+                ),
+            exit = shrinkVertically(
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMediumLow,
+                    visibilityThreshold = IntSize.VisibilityThreshold,
+                ),
+                shrinkTowards = Alignment.Top,
+            ) + fadeOut(tween(durationMillis = 160, easing = FastOutLinearInEasing)),
+        ) {
             // The nodes sit in an inset panel inside the group card.
             Column(
                 modifier = Modifier

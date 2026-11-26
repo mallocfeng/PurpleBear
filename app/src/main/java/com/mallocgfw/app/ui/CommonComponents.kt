@@ -85,6 +85,7 @@ internal fun DiagnosticCard(step: DiagnosticStep) {
         DiagnosticStatus.Success -> Success
         DiagnosticStatus.Pending -> Primary
         DiagnosticStatus.Failed -> Error
+        DiagnosticStatus.NoNode -> TextSecondary
     }
     SurfaceCard {
         Row(
@@ -112,6 +113,7 @@ internal fun DiagnosticCard(step: DiagnosticStep) {
                     DiagnosticStatus.Success -> uiText("通过")
                     DiagnosticStatus.Pending -> uiText("检测中")
                     DiagnosticStatus.Failed -> uiText("失败")
+                    DiagnosticStatus.NoNode -> uiText("暂无节点")
                 },
                 color = accent,
                 background = accent.copy(alpha = 0.14f),
@@ -215,6 +217,7 @@ internal fun ListRow(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     value: String? = null,
+    valueColor: Color = TextSecondary,
     icon: ImageVector? = null,
     iconTint: Color = Primary,
     titleColor: Color = TextPrimary,
@@ -259,7 +262,7 @@ internal fun ListRow(
         if (!value.isNullOrBlank()) {
             Text(
                 text = uiText(value),
-                color = TextSecondary,
+                color = valueColor,
                 fontSize = TypeScale.Body,
                 lineHeight = TypeScale.BodyLine,
                 maxLines = 1,
@@ -446,9 +449,10 @@ internal fun MediaRoutingServiceRow(
     enabled: Boolean,
     selectedNodeLabel: String,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(ControlSurfaceColor)
@@ -1277,18 +1281,19 @@ internal fun CompactIconAction(
     icon: ImageVector,
     tint: Color,
     onClick: () -> Unit,
+    enabled: Boolean = true,
 ) {
     Box(
         modifier = Modifier
             .size(34.dp)
             .clip(CircleShape)
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             icon,
             contentDescription = null,
-            tint = tint,
+            tint = if (enabled) tint else tint.copy(alpha = tint.alpha * 0.35f),
             modifier = Modifier.size(19.dp),
         )
     }

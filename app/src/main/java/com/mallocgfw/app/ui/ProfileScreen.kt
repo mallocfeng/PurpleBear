@@ -51,6 +51,7 @@ internal fun MeScreen(
     onOpenSettings: () -> Unit,
     onOpenTailscale: () -> Unit,
     onOpenPermission: () -> Unit,
+    tailscaleEnabled: Boolean = false,
     vpnPermissionGranted: Boolean = true,
     updateBadge: Boolean = false,
 ) {
@@ -120,7 +121,14 @@ internal fun MeScreen(
             GroupedCard {
                 ListRow(title = "订阅管理", icon = Icons.Rounded.Inventory2, onClick = onOpenSubscriptions)
                 GroupDivider(startIndent = 58.dp)
-                ListRow(title = "Tailscale", icon = Icons.Rounded.DeviceHub, onClick = onOpenTailscale)
+                // Same on/off wording and colours as the media routing row on the Rules tab.
+                ListRow(
+                    title = "Tailscale",
+                    value = if (tailscaleEnabled) uiText("已启用", "On", "Вкл.") else uiText("关闭", "Off", "Выкл."),
+                    valueColor = if (tailscaleEnabled) Success else TextSecondary,
+                    icon = Icons.Rounded.DeviceHub,
+                    onClick = onOpenTailscale,
+                )
             }
         }
         item {

@@ -27,6 +27,10 @@ object RuleSourceManager {
 
     fun isTopRule(source: RuleSourceItem): Boolean = source.id == TOP_RULE_ID
 
+    /** Name for messages: the top list's stored name is always Chinese, so translate it. */
+    fun displayName(source: RuleSourceItem): String =
+        if (isTopRule(source)) tr("最高优先级规则", "Top-priority rules", "Правила высшего приоритета") else source.name
+
     fun priorityOf(source: RuleSourceItem): Int = when {
         isTopRule(source) -> TOP_RULE_PRIORITY
         source.systemDefault -> SYSTEM_RULE_PRIORITY

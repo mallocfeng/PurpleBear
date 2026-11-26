@@ -19,7 +19,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForwardIos
 import androidx.compose.material.icons.rounded.Apps
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Inventory
@@ -27,10 +26,13 @@ import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.PriorityHigh
 import androidx.compose.material.icons.rounded.VpnLock
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.rounded.EditNote
+import androidx.compose.material.icons.rounded.Link
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -192,6 +194,10 @@ internal fun RulesScreen(
                     region = geoRoutingRegion,
                     skipped = globalProxyEnabled,
                     onRegionChange = onGeoRoutingRegionChange,
+                    geoData = geoDataSnapshot,
+                    geoDataUpdating = geoDataUpdating,
+                    geoDataJustUpdated = geoDataUpdatedNotice,
+                    onRefreshGeoData = onRefreshGeoData,
                 )
                 ChainDivider()
                 FallbackChainRow(
@@ -200,14 +206,6 @@ internal fun RulesScreen(
                     onChange = onFallbackDirectChange,
                 )
             }
-        }
-        item(key = "geo-data") {
-            GeoDataFooter(
-                snapshot = geoDataSnapshot,
-                updating = geoDataUpdating,
-                justUpdated = geoDataUpdatedNotice,
-                onRefresh = onRefreshGeoData,
-            )
         }
     }
 }
@@ -299,49 +297,75 @@ private fun ChainRow(
     }
 }
 
-/** The direct region: matched after the rule lists; tap to pick another. */
+/**
+ * The direct region: matched after the rule lists; tap to pick another in a
+ * sheet. The Geo data it is built from lives at the bottom of that sheet.
+ */
 @Composable
 private fun RegionChainRow(
     region: AppGeoRoutingRegion,
     skipped: Boolean,
     onRegionChange: (AppGeoRoutingRegion) -> Unit,
+    geoData: GeoDataSnapshot,
+    geoDataUpdating: Boolean,
+    geoDataJustUpdated: Boolean,
+    onRefreshGeoData: () -> Unit,
 ) {
-    var menu by remember { mutableStateOf(false) }
-    Box {
-        ChainRow(
-            icon = Icons.Rounded.Place,
-            iconTint = Success,
+    var sheet by remember { mutableStateOf(false) }
+    ChainRow(
+        icon = Icons.Rounded.Place,
+        iconTint = Success,
+        title = uiText("直连地区", "Direct region", "Регион напрямую"),
+        value = ChainValue(geoRoutingRegionLabel(region)),
+        onClick = { sheet = true },
+        skipped = skipped,
+    )
+    if (sheet) {
+        OptionSheet(
             title = uiText("直连地区", "Direct region", "Регион напрямую"),
-            value = ChainValue(geoRoutingRegionLabel(region)),
-            onClick = { menu = true },
-            skipped = skipped,
-        )
-        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-            AppGeoRoutingRegion.entries.forEach { option ->
-                DropdownMenuItem(
-                    text = {
-                        Column {
-                            Text(geoRoutingRegionLabel(option), color = TextPrimary, fontWeight = FontWeight.Medium)
-                            Text(
-                                geoRoutingRegionSubtitle(option),
-                                color = TextSecondary,
-                                fontSize = TypeScale.Tiny,
-                                lineHeight = TypeScale.TinyLine,
-                            )
-                        }
-                    },
-                    onClick = {
-                        menu = false
-                        onRegionChange(option)
-                    },
+            subtitle = uiText(
+                "这个地区的网站和 IP 不走代理，直接联网。",
+                "Sites and IPs in this region skip the proxy and connect directly.",
+                "Сайты и IP этого региона идут напрямую, без прокси.",
+            ),
+            options = AppGeoRoutingRegion.entries.map { option ->
+                SheetOption(
+                    value = option,
+                    title = geoRoutingRegionLabel(option),
+                    description = regionDescription(option),
+                    emoji = regionFlag(option),
                 )
-            }
-        }
+            },
+            selected = region,
+            onDismiss = { sheet = false },
+            onSelect = onRegionChange,
+            footer = {
+                GeoDataCard(
+                    snapshot = geoData,
+                    updating = geoDataUpdating,
+                    justUpdated = geoDataJustUpdated,
+                    onRefresh = onRefreshGeoData,
+                )
+            },
+        )
     }
 }
 
+@Composable
+private fun regionDescription(region: AppGeoRoutingRegion): String = when (region) {
+    AppGeoRoutingRegion.China -> uiText("中国大陆的网站和 IP 直连", "Sites and IPs in mainland China go direct", "Сайты и IP Китая идут напрямую")
+    AppGeoRoutingRegion.English -> uiText("美国的 IP 直连", "IPs in the United States go direct", "IP США идут напрямую")
+    AppGeoRoutingRegion.Russia -> uiText("俄罗斯的网站和 IP 直连", "Sites and IPs in Russia go direct", "Сайты и IP России идут напрямую")
+}
+
+private fun regionFlag(region: AppGeoRoutingRegion): String = when (region) {
+    AppGeoRoutingRegion.China -> "\uD83C\uDDE8\uD83C\uDDF3"
+    AppGeoRoutingRegion.English -> "\uD83C\uDDFA\uD83C\uDDF8"
+    AppGeoRoutingRegion.Russia -> "\uD83C\uDDF7\uD83C\uDDFA"
+}
+
 /**
- * Where traffic no rule matched goes: proxy or direct, picked from a menu.
+ * Where traffic no rule matched goes: proxy or direct, picked in a sheet.
  * Global mode sends everything through the proxy, so there is nothing to pick.
  */
 @Composable
@@ -350,80 +374,113 @@ private fun FallbackChainRow(
     globalProxyEnabled: Boolean,
     onChange: (Boolean) -> Unit,
 ) {
-    var menu by remember { mutableStateOf(false) }
+    var sheet by remember { mutableStateOf(false) }
     val proxyText = uiText("走代理", "Proxy", "Прокси")
     val directText = uiText("直连", "Direct", "Напрямую")
     val showDirect = direct && !globalProxyEnabled
-    Box {
-        ChainRow(
-            icon = if (showDirect) Icons.Rounded.Home else Icons.Rounded.VpnLock,
-            iconTint = if (showDirect) Success else Primary,
+    ChainRow(
+        icon = if (showDirect) Icons.Rounded.Home else Icons.Rounded.VpnLock,
+        iconTint = if (showDirect) Success else Primary,
+        title = uiText("其余流量", "Everything else", "Остальное"),
+        value = if (showDirect) ChainValue(directText, Success) else ChainValue(proxyText, Primary),
+        onClick = if (globalProxyEnabled) null else ({ sheet = true }),
+    )
+    if (sheet) {
+        OptionSheet(
             title = uiText("其余流量", "Everything else", "Остальное"),
-            value = if (showDirect) ChainValue(directText, Success) else ChainValue(proxyText, Primary),
-            onClick = if (globalProxyEnabled) null else ({ menu = true }),
+            subtitle = uiText(
+                "上面的规则都没命中的连接，最后走这里。",
+                "Connections that no rule above matched end up here.",
+                "Сюда попадают соединения, не совпавшие ни с одним правилом выше.",
+            ),
+            options = listOf(
+                SheetOption(
+                    value = false,
+                    title = proxyText,
+                    description = uiText("通过当前节点访问", "Go through the current node", "Через текущий узел"),
+                    icon = Icons.Rounded.VpnLock,
+                ),
+                SheetOption(
+                    value = true,
+                    title = directText,
+                    description = uiText("不经过代理，直接联网", "Connect directly, without the proxy", "Напрямую, без прокси"),
+                    icon = Icons.Rounded.Home,
+                    iconTint = Success,
+                ),
+            ),
+            selected = direct,
+            onDismiss = { sheet = false },
+            onSelect = onChange,
         )
-        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-            listOf(
-                false to Triple(proxyText, uiText("没命中规则的连接走代理（主节点）", "Unmatched connections use the proxy (main node)", "Несовпавшие соединения идут через прокси"), Icons.Rounded.VpnLock),
-                true to Triple(directText, uiText("没命中规则的连接直接联网", "Unmatched connections go direct", "Несовпавшие соединения идут напрямую"), Icons.Rounded.Home),
-            ).forEach { (value, item) ->
-                DropdownMenuItem(
-                    leadingIcon = { Icon(item.third, contentDescription = null, tint = if (value) Success else Primary) },
-                    text = {
-                        Column {
-                            Text(item.first, color = TextPrimary, fontWeight = if (value == direct) FontWeight.SemiBold else FontWeight.Medium)
-                            Text(item.second, color = TextSecondary, fontSize = TypeScale.Tiny, lineHeight = TypeScale.TinyLine)
-                        }
-                    },
-                    trailingIcon = if (value == direct) {
-                        { Icon(Icons.Rounded.Check, contentDescription = null, tint = Primary, modifier = Modifier.size(18.dp)) }
-                    } else {
-                        null
-                    },
-                    onClick = {
-                        menu = false
-                        if (value != direct) onChange(value)
-                    },
-                )
-            }
-        }
     }
 }
 
-/** Geo data size and update, as a quiet line under the list. */
+/** Geo data size, update state and button, at the bottom of the region sheet. */
 @Composable
-private fun GeoDataFooter(snapshot: GeoDataSnapshot, updating: Boolean, justUpdated: Boolean, onRefresh: () -> Unit) {
+private fun GeoDataCard(snapshot: GeoDataSnapshot, updating: Boolean, justUpdated: Boolean, onRefresh: () -> Unit) {
+    val error = snapshot.lastError?.takeIf { it.isNotBlank() }
+    val sizes = "geoip ${formatBytes(snapshot.geoipBytes)} · geosite ${formatBytes(snapshot.geositeBytes)}"
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 6.dp, end = 2.dp),
+            .padding(top = 8.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(ControlSurfaceColor.copy(alpha = 0.55f))
+            .padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        val error = snapshot.lastError?.takeIf { it.isNotBlank() }
-        val sizes = "geoip ${formatBytes(snapshot.geoipBytes)} · geosite ${formatBytes(snapshot.geositeBytes)}"
-        // Results of an update stay on this line: a short "updated" note, or the error.
-        Text(
-            text = when {
-                error != null -> error
-                justUpdated -> uiText("Geo 数据已更新", "Geo data updated", "Geo-данные обновлены") + " · " + sizes
-                else -> "Geo · $sizes"
-            },
-            color = when {
-                error != null -> Error
-                justUpdated -> Success
-                else -> TextSecondary
-            },
-            fontSize = TypeScale.Tiny,
-            lineHeight = TypeScale.TinyLine,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
-        TextAction(
-            text = if (updating) "更新中…" else "更新",
-            enabled = !updating,
-            onClick = onRefresh,
-        )
+        RowIcon(icon = Icons.Rounded.Storage, tint = TextSecondary)
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = uiText("Geo 数据", "Geo data", "Geo-данные"),
+                color = TextPrimary,
+                fontSize = TypeScale.Body,
+                lineHeight = TypeScale.BodyLine,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                text = when {
+                    // A failed update keeps the data already on the phone.
+                    error != null -> uiText(
+                        "更新失败，继续使用现有数据",
+                        "Update failed; the current data stays in use",
+                        "Не удалось обновить; используются текущие данные",
+                    ) + " · " + sizes
+                    justUpdated -> uiText("已更新", "Updated", "Обновлено") + " · " + sizes
+                    else -> sizes
+                },
+                color = when {
+                    error != null -> Error
+                    justUpdated -> Success
+                    else -> TextSecondary
+                },
+                fontSize = TypeScale.Tiny,
+                lineHeight = TypeScale.TinyLine,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Row(
+            modifier = Modifier
+                .clip(CircleShape)
+                .background(Primary.copy(alpha = if (updating) 0.08f else 0.16f))
+                .clickable(enabled = !updating, onClick = onRefresh)
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            if (updating) {
+                CircularProgressIndicator(color = Primary, strokeWidth = 2.dp, modifier = Modifier.size(14.dp))
+            }
+            Text(
+                text = if (updating) uiText("更新中…") else uiText("更新"),
+                color = Primary,
+                fontSize = TypeScale.Meta,
+                lineHeight = TypeScale.MetaLine,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
     }
 }
 
@@ -484,23 +541,28 @@ internal fun CustomRulesScreen(
                 .padding(end = 20.dp, bottom = 12.dp + LocalBottomBarInset.current),
         ) {
             AddRuleFab(onClick = { addMenu = true })
-            DropdownMenu(expanded = addMenu, onDismissRequest = { addMenu = false }) {
-                DropdownMenuItem(
-                    text = { Text(uiText("手动文本规则")) },
-                    onClick = {
-                        addMenu = false
-                        onAddTextSource()
-                    },
-                )
-                DropdownMenuItem(
-                    text = { Text(uiText("添加规则 URL")) },
-                    onClick = {
-                        addMenu = false
-                        onAddSource()
-                    },
-                )
-            }
         }
+    }
+    if (addMenu) {
+        OptionSheet(
+            title = uiText("添加自定义规则", "Add custom rules", "Добавить правила"),
+            options = listOf(
+                SheetOption(
+                    value = false,
+                    title = uiText("手动文本规则"),
+                    description = uiText("直接输入或粘贴规则", "Type or paste rules yourself", "Ввести или вставить правила"),
+                    icon = Icons.Rounded.EditNote,
+                ),
+                SheetOption(
+                    value = true,
+                    title = uiText("添加规则 URL"),
+                    description = uiText("订阅远程规则列表，可以随时更新", "Subscribe to a remote rule list you can update", "Подписка на удалённый список правил"),
+                    icon = Icons.Rounded.Link,
+                ),
+            ),
+            onDismiss = { addMenu = false },
+            onSelect = { url -> if (url) onAddSource() else onAddTextSource() },
+        )
     }
 }
 

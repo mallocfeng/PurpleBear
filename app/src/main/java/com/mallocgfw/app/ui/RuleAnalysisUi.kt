@@ -346,7 +346,7 @@ private fun ReportHeader(report: RuleAnalysisReport, onDismiss: () -> Unit) {
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = uiText("规则分析报告", "Rule analysis", "Анализ правил"),
+                text = uiText("规则分析", "Rule analysis", "Анализ правил"),
                 color = TextPrimary,
                 fontSize = TypeScale.SectionTitle,
                 lineHeight = TypeScale.SectionTitleLine,
@@ -382,8 +382,7 @@ private fun modeLine(report: RuleAnalysisReport): String {
         report.perAppMode -> uiText("分应用模式", "Per-app mode", "Режим по приложениям")
         else -> uiText("规则分流", "Rule-based routing", "Маршрутизация по правилам")
     }
-    val node = report.mainNodeName?.let { uiText("主节点：", "Main node: ", "Основной узел: ") + it }
-        ?: uiText("未选择主节点", "No main node", "Основной узел не выбран")
+    val node = report.mainNodeName ?: uiText("未选节点", "No node", "Узел не выбран")
     return "$mode · $node"
 }
 
@@ -395,34 +394,11 @@ private fun SummarySection(report: RuleAnalysisReport) {
     val effective = active.count { it.status == RuleEntryStatus.Effective || it.status == RuleEntryStatus.Redundant }
     val partly = active.count { it.status == RuleEntryStatus.Partial || it.status == RuleEntryStatus.Overridden }
     val idle = report.inactive.size
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            StatTile(effective.toString(), uiText("完全生效", "Fully in effect", "Действуют"), Success, Icons.Rounded.CheckCircle, Modifier.weight(1f))
+            StatTile(effective.toString(), uiText("生效", "In effect", "Действуют"), Success, Icons.Rounded.CheckCircle, Modifier.weight(1f))
             StatTile(partly.toString(), uiText("被覆盖", "Overridden", "Перекрыты"), Warning, Icons.Rounded.WarningAmber, Modifier.weight(1f))
             StatTile(idle.toString(), uiText("未生效", "Not in effect", "Не действуют"), TextSecondary, Icons.Rounded.Info, Modifier.weight(1f))
-        }
-        val totals = active.fold(Triple(0, 0, 0)) { acc, entry ->
-            Triple(acc.first + entry.effectiveCount, acc.second + entry.overriddenCount, acc.third + entry.redundantCount)
-        }
-        val all = totals.first + totals.second + totals.third
-        if (all > 0) {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    text = uiText("全部匹配项（域名 / IP / 应用）", "All entries (domains / IPs / apps)", "Все записи (домены / IP / приложения)") + " · " + fmt(all),
-                    color = TextSecondary,
-                    fontSize = TypeScale.Tiny,
-                    lineHeight = TypeScale.TinyLine,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                ProportionBar(
-                    parts = listOf(totals.first to Success, totals.second to Warning, totals.third to TextSecondary.copy(alpha = 0.5f)),
-                )
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    LegendDot(Success, uiText("生效", "In effect", "Действуют") + " " + fmt(totals.first))
-                    LegendDot(Warning, uiText("被抢先改道", "Taken by a higher rule", "Перехвачены выше") + " " + fmt(totals.second))
-                    LegendDot(TextSecondary.copy(alpha = 0.5f), uiText("重复（去向相同）", "Duplicates (same way)", "Дубли (тот же путь)") + " " + fmt(totals.third))
-                }
-            }
         }
         VerdictBox(report, partly)
     }
@@ -449,8 +425,8 @@ private fun ProportionBar(parts: List<Pair<Int, Color>>) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(10.dp)
-            .clip(RoundedCornerShape(5.dp))
+            .height(6.dp)
+            .clip(RoundedCornerShape(3.dp))
             .background(ControlSurfaceTrackColor),
     ) {
         parts.filter { it.first > 0 }.forEach { (count, color) ->
@@ -464,57 +440,49 @@ private fun ProportionBar(parts: List<Pair<Int, Color>>) {
     }
 }
 
-@Composable
-private fun LegendDot(color: Color, text: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(8.dp).clip(CircleShape).background(color))
-        Spacer(Modifier.width(5.dp))
-        Text(text, color = TextSecondary, fontSize = TypeScale.Tiny, lineHeight = TypeScale.TinyLine)
-    }
-}
-
+/** One line: the state of things at a glance. */
 @Composable
 private fun VerdictBox(report: RuleAnalysisReport, overriddenEntries: Int) {
+    val brokenLists = report.inactive.count { it.input.inactiveReason == InactiveReason.NotDownloaded }
+    val brokenNodes = report.inactive.count { it.input.inactiveReason == InactiveReason.NodeMissing } +
+        report.active.count { it.input.missingNodes.isNotEmpty() }
     val (color, icon, text) = when {
         report.globalMode -> Triple(
             Primary,
             Icons.Rounded.Public,
-            uiText(
-                "全局代理已开启：自定义规则、流媒体分流和内置规则都被跳过，除局域网、最高优先级规则和分应用节点外，所有流量都走主节点。",
-                "Global proxy is on: custom rules, media routing and built-in rules are skipped. Apart from the local network, top-priority rules and per-app nodes, everything goes through the main node.",
-                "Глобальный прокси включён: свои правила, медиа-маршрутизация и встроенные правила пропускаются. Кроме локальной сети, правил высшего приоритета и узлов приложений, весь трафик идёт через основной узел.",
-            ),
+            uiText("全局代理：分流规则已跳过", "Global proxy: routing rules are skipped", "Глобальный прокси: правила маршрутизации пропущены"),
         )
         overriddenEntries > 0 -> Triple(
             Warning,
             Icons.Rounded.WarningAmber,
             uiText(
-                "有 $overriddenEntries 组规则的部分内容被排在前面的规则抢先匹配了，那部分不会按它自己的设置走。详情见下方“需要注意”。",
-                "$overriddenEntries rule groups are partly matched first by rules above them; that part doesn't follow their own setting. See “Worth a look” below.",
-                "У $overriddenEntries групп правил часть записей перехватывают правила выше; эта часть идёт не по их настройке. Подробнее в разделе «Обратите внимание».",
+                "$overriddenEntries 组规则有冲突",
+                if (overriddenEntries == 1) "1 rule group conflicts" else "$overriddenEntries rule groups conflict",
+                "Конфликтуют групп правил: $overriddenEntries",
             ),
+        )
+        brokenLists + brokenNodes > 0 -> Triple(
+            Error,
+            Icons.Rounded.Info,
+            uiText("${brokenLists + brokenNodes} 项未能生效", "${brokenLists + brokenNodes} not working", "Не работают: ${brokenLists + brokenNodes}"),
         )
         else -> Triple(
             Success,
             Icons.Rounded.CheckCircle,
-            uiText(
-                "没有冲突：每条开启的规则都按你的设置在起作用。",
-                "No conflicts: every rule that's on works the way you set it.",
-                "Конфликтов нет: каждое включённое правило работает так, как настроено.",
-            ),
+            uiText("没有冲突", "No conflicts", "Конфликтов нет"),
         )
     }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(14.dp))
             .background(color.copy(alpha = 0.10f))
-            .padding(12.dp),
-        verticalAlignment = Alignment.Top,
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(20.dp))
+        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(10.dp))
-        Text(text, color = TextPrimary, fontSize = TypeScale.Meta, lineHeight = TypeScale.MetaLine)
+        Text(text, color = TextPrimary, fontSize = TypeScale.Body, lineHeight = TypeScale.BodyLine, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -524,10 +492,7 @@ private fun VerdictBox(report: RuleAnalysisReport, overriddenEntries: Int) {
 private fun HighlightsSection(report: RuleAnalysisReport) {
     val conflicted = report.active.filter { it.lostTo.isNotEmpty() }
     val missingNodes = report.active.filter { it.input.missingNodes.isNotEmpty() }
-    val broken = report.inactive.filter {
-        it.input.inactiveReason == InactiveReason.NotDownloaded || it.input.inactiveReason == InactiveReason.NodeMissing
-    }
-    if (conflicted.isEmpty() && missingNodes.isEmpty() && broken.isEmpty() && !report.perAppMode) return
+    if (conflicted.isEmpty() && missingNodes.isEmpty() && !report.perAppMode) return
 
     ReportSection(title = uiText("需要注意", "Worth a look", "Обратите внимание")) {
         if (report.perAppMode) {
@@ -535,9 +500,9 @@ private fun HighlightsSection(report: RuleAnalysisReport) {
                 icon = Icons.Rounded.Apps,
                 color = Primary,
                 text = uiText(
-                    "分应用模式：只有选中的 ${report.vpnAppNames.size} 个应用经过 VPN，其他应用直接上网，下面的规则对它们都不起作用。",
-                    "Per-app mode: only the ${report.vpnAppNames.size} selected apps use the VPN. Other apps connect directly and no rule below applies to them.",
-                    "Режим по приложениям: через VPN идут только ${report.vpnAppNames.size} выбранных приложений. Остальные подключаются напрямую, и правила ниже на них не действуют.",
+                    "仅 ${report.vpnAppNames.size} 个应用走 VPN",
+                    "Only ${report.vpnAppNames.size} apps use the VPN",
+                    "Через VPN только приложений: ${report.vpnAppNames.size}",
                 ),
             )
         }
@@ -547,10 +512,11 @@ private fun HighlightsSection(report: RuleAnalysisReport) {
                     icon = Icons.Rounded.WarningAmber,
                     color = Warning,
                     text = uiText(
-                        "「${entryTitle(entry)}」有 ${fmt(conflict.count)} 条被 #${orderOf(report, conflict.winnerId)}「${conflict.winnerName}」抢先，实际走 ${targetText(conflict.winnerTarget)}，而不是 ${targetText(conflict.loserTarget)}。",
-                        "${fmt(conflict.count)} entries of “${entryTitle(entry)}” are matched first by #${orderOf(report, conflict.winnerId)} “${conflict.winnerName}” and go ${targetText(conflict.winnerTarget)} instead of ${targetText(conflict.loserTarget)}.",
-                        "${fmt(conflict.count)} записей «${entryTitle(entry)}» раньше перехватывает #${orderOf(report, conflict.winnerId)} «${conflict.winnerName}»: они идут ${targetText(conflict.winnerTarget)}, а не ${targetText(conflict.loserTarget)}.",
+                        "「${entryTitle(entry)}」${fmt(conflict.count)} 条被 #${orderOf(report, conflict.winnerId)} 抢先，走",
+                        "“${entryTitle(entry)}”: ${fmt(conflict.count)} taken by #${orderOf(report, conflict.winnerId)}, go",
+                        "«${entryTitle(entry)}»: ${fmt(conflict.count)} перехватывает #${orderOf(report, conflict.winnerId)}, идут",
                     ),
+                    target = conflict.winnerTarget,
                     examples = conflict.examples,
                 )
             }
@@ -560,24 +526,23 @@ private fun HighlightsSection(report: RuleAnalysisReport) {
                 icon = Icons.Rounded.Dns,
                 color = Error,
                 text = uiText(
-                    "「${entry.input.name}」里指定的节点 ${entry.input.missingNodes.joinToString("、")} 已不存在，这些行改按规则源的默认策略走。",
-                    "Nodes named in “${entry.input.name}” are gone (${entry.input.missingNodes.joinToString(", ")}); those lines use the source's default policy.",
-                    "Узлы из «${entry.input.name}» удалены (${entry.input.missingNodes.joinToString(", ")}); эти строки идут по политике источника по умолчанию.",
+                    "「${entry.input.name}」节点已删除：${entry.input.missingNodes.joinToString("、")}",
+                    "“${entry.input.name}”: node gone: ${entry.input.missingNodes.joinToString(", ")}",
+                    "«${entry.input.name}»: узел удалён: ${entry.input.missingNodes.joinToString(", ")}",
                 ),
-            )
-        }
-        broken.forEach { entry ->
-            HighlightRow(
-                icon = Icons.Rounded.Info,
-                color = Error,
-                text = quoted(entryTitle(entry)) + inactiveReasonText(entry.input.inactiveReason!!),
             )
         }
     }
 }
 
 @Composable
-private fun HighlightRow(icon: ImageVector, color: Color, text: String, examples: List<String> = emptyList()) {
+private fun HighlightRow(
+    icon: ImageVector,
+    color: Color,
+    text: String,
+    target: RouteTarget? = null,
+    examples: List<String> = emptyList(),
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -588,7 +553,14 @@ private fun HighlightRow(icon: ImageVector, color: Color, text: String, examples
         Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(10.dp))
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(text, color = TextPrimary, fontSize = TypeScale.Meta, lineHeight = TypeScale.MetaLine)
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(text, color = TextPrimary, fontSize = TypeScale.Meta, lineHeight = TypeScale.MetaLine)
+                target?.let { TargetChip(it) }
+            }
             if (examples.isNotEmpty()) ExampleChips(examples)
         }
     }
@@ -597,8 +569,7 @@ private fun HighlightRow(icon: ImageVector, color: Color, text: String, examples
 @Composable
 private fun ExampleChips(examples: List<String>) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(uiText("例：", "e.g.", "напр.:"), color = TextSecondary, fontSize = TypeScale.Tiny, lineHeight = TypeScale.TinyLine)
-        examples.forEach { example ->
+        examples.take(3).forEach { example ->
             Text(
                 text = example,
                 color = TextPrimary,
@@ -633,11 +604,7 @@ private fun ChainSection(report: RuleAnalysisReport) {
     val steps = buildChainSteps(report)
     ReportSection(
         title = uiText("匹配顺序", "Matching order", "Порядок проверки"),
-        subtitle = uiText(
-            "每个连接从上往下逐条比对，命中第一条就按它走，后面的不再看。",
-            "Each connection is checked from the top down; the first rule that matches decides, the rest are not looked at.",
-            "Каждое соединение проверяется сверху вниз: решает первое совпавшее правило, остальные не смотрятся.",
-        ),
+        subtitle = uiText("从上往下，先命中先生效", "Top down; first match wins", "Сверху вниз; решает первое совпадение"),
     ) {
         Column {
             steps.forEachIndexed { index, step ->
@@ -655,40 +622,32 @@ private fun buildChainSteps(report: RuleAnalysisReport): List<ChainStep> = build
             ChainStep(
                 icon = Icons.Rounded.Smartphone,
                 color = Primary,
-                title = uiText("VPN 入口", "VPN entry", "Вход в VPN"),
-                description = uiText(
-                    "只有这些应用进入 VPN，其余应用直接联网：",
-                    "Only these apps enter the VPN; the rest connect directly:",
-                    "В VPN входят только эти приложения, остальные подключаются напрямую:",
-                ),
+                title = uiText("走 VPN 的应用", "Apps on the VPN", "Приложения в VPN"),
+                description = "",
                 chips = report.vpnAppNames,
             ),
         )
     }
-    val systemLines = buildList {
-        add(uiText("DNS 查询走专用通道，保证解析可用", "DNS queries take their own path so lookups keep working", "DNS-запросы идут своим путём, чтобы разрешение имён работало"))
+    val systemChips = buildList {
+        add("DNS")
         if (report.tailscaleEnabled) {
             add(
-                uiText("Tailscale：*.ts.net、100.64.0.0/10", "Tailscale: *.ts.net, 100.64.0.0/10", "Tailscale: *.ts.net, 100.64.0.0/10") +
-                    if (report.tailscaleSubnetCount > 0) uiText(" 及 ${report.tailscaleSubnetCount} 个子网", " and ${report.tailscaleSubnetCount} subnets", " и ${report.tailscaleSubnetCount} подсетей") else "",
+                "Tailscale" + if (report.tailscaleSubnetCount > 0) {
+                    uiText(" + ${report.tailscaleSubnetCount} 个子网", " + ${report.tailscaleSubnetCount} subnets", " + подсетей: ${report.tailscaleSubnetCount}")
+                } else {
+                    ""
+                },
             )
         }
-        if (report.quicBlocked) {
-            add(
-                uiText(
-                    "拦截境外 QUIC（UDP 443），应用会自动改用 TCP",
-                    "Foreign QUIC (UDP 443) is blocked; apps fall back to TCP",
-                    "Зарубежный QUIC (UDP 443) блокируется; приложения переходят на TCP",
-                ),
-            )
-        }
+        if (report.quicBlocked) add(uiText("拦截境外 QUIC", "Foreign QUIC blocked", "Зарубежный QUIC заблокирован"))
     }
     add(
         ChainStep(
             icon = Icons.Rounded.Security,
             color = TextSecondary,
-            title = uiText("系统保留规则", "System rules", "Системные правила"),
-            description = systemLines.joinToString("\n") { "• $it" },
+            title = uiText("系统规则", "System rules", "Системные правила"),
+            description = "",
+            chips = systemChips,
         ),
     )
     if (active.any { it.input.layer == RuleLayer.Top }) add(layerStep(RuleLayer.Top, active, report))
@@ -700,8 +659,8 @@ private fun buildChainSteps(report: RuleAnalysisReport): List<ChainStep> = build
         ChainStep(
             icon = Icons.Rounded.Lan,
             color = Success,
-            title = uiText("局域网直连", "Local network direct", "Локальная сеть напрямую"),
-            description = uiText("路由器、NAS、内网地址（geoip:private）", "Router, NAS and private addresses (geoip:private)", "Роутер, NAS и частные адреса (geoip:private)"),
+            title = uiText("局域网", "Local network", "Локальная сеть"),
+            description = "",
             target = RouteTarget.Direct,
         ),
     )
@@ -710,12 +669,12 @@ private fun buildChainSteps(report: RuleAnalysisReport): List<ChainStep> = build
         ChainStep(
             icon = Icons.Rounded.Flag,
             color = Success,
-            title = uiText("本地区直连", "Home region direct", "Свой регион напрямую"),
-            description = when {
-                report.globalMode -> uiText("全局模式下跳过", "Skipped in global mode", "Пропускается в глобальном режиме")
-                report.homeSitesDirect -> uiText("${regionName}网站（geosite）和${regionName} IP（geoip）", "$regionName sites (geosite) and $regionName IPs (geoip)", "Сайты ($regionName, geosite) и IP ($regionName, geoip)")
-                else -> uiText("${regionName} IP（geoip）", "$regionName IPs (geoip)", "IP ($regionName, geoip)")
+            title = if (report.homeSitesDirect) {
+                uiText("${regionName}网站和 IP", "$regionName sites and IPs", "Сайты и IP: $regionName")
+            } else {
+                uiText("${regionName} IP", "$regionName IPs", "IP: $regionName")
             },
+            description = if (report.globalMode) skippedText() else "",
             target = RouteTarget.Direct,
             dimmed = report.globalMode,
         ),
@@ -724,58 +683,62 @@ private fun buildChainSteps(report: RuleAnalysisReport): List<ChainStep> = build
         ChainStep(
             icon = Icons.Rounded.VpnLock,
             color = Primary,
-            title = uiText("其余所有流量", "Everything else", "Весь остальной трафик"),
-            description = uiText("上面都没命中的连接", "Connections nothing above matched", "Соединения, которым ничего выше не подошло"),
+            title = uiText("其余流量", "Everything else", "Всё остальное"),
+            description = "",
             target = report.fallback,
         ),
     )
 }
 
 @Composable
+private fun skippedText(): String = uiText("全局模式跳过", "Skipped in global mode", "Пропуск в глобальном режиме")
+
+@Composable
 private fun layerStep(layer: RuleLayer, active: List<RuleEntryResult>, report: RuleAnalysisReport): ChainStep {
     val entries = active.filter { it.input.layer == layer }
     val skippedByGlobal = report.globalMode && layer != RuleLayer.PerApp && layer != RuleLayer.Top
+    val none = if (skippedByGlobal) skippedText() else uiText("无", "None", "Нет")
     return when (layer) {
         RuleLayer.Top -> ChainStep(
             icon = Icons.Rounded.PriorityHigh,
             color = Warning,
             title = uiText("最高优先级规则", "Top-priority rules", "Правила высшего приоритета"),
-            description = uiText("排在所有规则之前，全局模式下也生效", "Before every other rule, global mode included", "Раньше всех правил, и в глобальном режиме тоже"),
+            description = "",
             entries = entries,
         )
         RuleLayer.PerApp -> ChainStep(
             icon = Icons.Rounded.Apps,
             color = Primary,
             title = uiText("分应用节点", "Per-app nodes", "Узлы приложений"),
-            description = uiText("指定了节点的应用：整个应用的流量都走该节点", "Apps with their own node: all of the app's traffic uses it", "Приложения со своим узлом: весь их трафик идёт через него"),
+            description = "",
             entries = entries,
-            emptyText = uiText("没有生效的应用节点", "No per-app node in effect", "Нет действующих узлов приложений"),
+            emptyText = none,
         )
         RuleLayer.Custom -> ChainStep(
             icon = Icons.Rounded.Description,
             color = Primary,
             title = uiText("自定义规则", "Custom rules", "Свои правила"),
-            description = uiText("你添加的文本 / URL 规则，按列表顺序", "Your text / URL rules, in list order", "Ваши текстовые / URL-правила по порядку списка"),
+            description = "",
             entries = entries,
-            emptyText = if (skippedByGlobal) uiText("全局模式下跳过", "Skipped in global mode", "Пропускается в глобальном режиме") else uiText("没有生效的自定义规则", "No custom rule in effect", "Нет действующих своих правил"),
+            emptyText = none,
             dimmed = skippedByGlobal,
         )
         RuleLayer.Streaming -> ChainStep(
             icon = Icons.Rounded.LiveTv,
             color = Primary,
             title = uiText("流媒体分流", "Media routing", "Медиа-маршрутизация"),
-            description = uiText("选了节点或直连的流媒体服务", "Media services with a node or direct chosen", "Сервисы с выбранным узлом или напрямую"),
+            description = "",
             entries = entries,
-            emptyText = if (skippedByGlobal) uiText("全局模式下跳过", "Skipped in global mode", "Пропускается в глобальном режиме") else uiText("没有生效的流媒体分流", "No media route in effect", "Нет действующих медиа-маршрутов"),
+            emptyText = none,
             dimmed = skippedByGlobal,
         )
         RuleLayer.Default -> ChainStep(
             icon = Icons.Rounded.Inventory,
             color = Primary,
             title = uiText("内置规则", "Built-in rules", "Встроенные правила"),
-            description = uiText("默认规则列表", "The default rule lists", "Списки правил по умолчанию"),
+            description = "",
             entries = entries,
-            emptyText = if (skippedByGlobal) uiText("全局模式下跳过", "Skipped in global mode", "Пропускается в глобальном режиме") else uiText("没有生效的内置规则", "No built-in rule in effect", "Нет действующих встроенных правил"),
+            emptyText = none,
             dimmed = skippedByGlobal,
         )
     }
@@ -811,9 +774,11 @@ private fun ChainStepRow(number: Int, step: ChainStep, last: Boolean, report: Ru
         Column(
             modifier = Modifier
                 .weight(1f)
-                .padding(bottom = if (last) 0.dp else 16.dp),
+                .padding(bottom = if (last) 0.dp else 14.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
+            // The title keeps its full width on one line; the chip (which may
+            // carry a long node name) gets what is left and shortens itself.
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
                 Text(
                     text = "$number. ${step.title}",
@@ -821,21 +786,28 @@ private fun ChainStepRow(number: Int, step: ChainStep, last: Boolean, report: Ru
                     fontSize = TypeScale.ListTitle,
                     lineHeight = TypeScale.ListTitleLine,
                     fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                step.target?.let { TargetChip(it) }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 8.dp),
+                    contentAlignment = Alignment.CenterEnd,
+                ) {
+                    step.target?.let { TargetChip(it) }
+                    if (step.entries.isEmpty() && step.target == null) {
+                        step.emptyText?.let {
+                            Text(it, color = TextSecondary, fontSize = TypeScale.Tiny, lineHeight = TypeScale.TinyLine, maxLines = 1)
+                        }
+                    }
+                }
             }
             if (step.description.isNotBlank()) {
                 Text(step.description, color = TextSecondary, fontSize = TypeScale.Meta, lineHeight = TypeScale.MetaLine)
             }
             if (step.chips.isNotEmpty()) AppChips(step.chips)
-            if (step.entries.isEmpty()) {
-                step.emptyText?.let {
-                    Text(it, color = TextSecondary.copy(alpha = 0.8f), fontSize = TypeScale.Tiny, lineHeight = TypeScale.TinyLine)
-                }
-            } else {
-                step.entries.forEach { EntryCard(it, report) }
-            }
+            step.entries.forEach { EntryCard(it, report) }
         }
     }
 }
@@ -923,94 +895,42 @@ private fun EntryCard(entry: RuleEntryResult, report: RuleAnalysisReport) {
             }
         }
 
-        if (entry.matcherCount > 0 && entry.input.layer != RuleLayer.PerApp) {
-            ProportionBar(
-                parts = listOf(
-                    entry.effectiveCount to Success,
-                    entry.overriddenCount to Warning,
-                    entry.redundantCount to TextSecondary.copy(alpha = 0.5f),
-                ),
-            )
-            Text(
-                text = buildString {
-                    append(uiText("共 ${fmt(entry.matcherCount)} 条 · 生效 ${fmt(entry.effectiveCount)}", "${fmt(entry.matcherCount)} entries · ${fmt(entry.effectiveCount)} in effect", "${fmt(entry.matcherCount)} записей · действуют ${fmt(entry.effectiveCount)}"))
-                    if (entry.overriddenCount > 0) append(uiText(" · 被抢先 ${fmt(entry.overriddenCount)}", " · ${fmt(entry.overriddenCount)} taken", " · перехвачено ${fmt(entry.overriddenCount)}"))
-                    if (entry.redundantCount > 0) append(uiText(" · 重复 ${fmt(entry.redundantCount)}", " · ${fmt(entry.redundantCount)} duplicates", " · дублей ${fmt(entry.redundantCount)}"))
-                },
-                color = TextSecondary,
-                fontSize = TypeScale.Tiny,
-                lineHeight = TypeScale.TinyLine,
-            )
-        }
-
-        entry.lostTo.forEach { conflict -> ConflictLine(conflict, report) }
-        if (entry.redundantCount > 0 && entry.lostTo.isEmpty() && entry.status == RuleEntryStatus.Redundant) {
-            Text(
-                uiText(
-                    "这些内容已被前面的规则以同样的去向覆盖，删掉它也不影响结果。",
-                    "Rules above already send all of this the same way; removing it changes nothing.",
-                    "Правила выше уже направляют всё это так же; удаление ничего не изменит.",
-                ),
-                color = TextSecondary,
-                fontSize = TypeScale.Tiny,
-                lineHeight = TypeScale.TinyLine,
-            )
+        if (entry.matcherCount > 0 && entry.input.layer != RuleLayer.PerApp && entry.status != RuleEntryStatus.Effective) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) {
+                    ProportionBar(
+                        parts = listOf(
+                            entry.effectiveCount to Success,
+                            entry.overriddenCount to Warning,
+                            entry.redundantCount to TextSecondary.copy(alpha = 0.5f),
+                        ),
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = uiText(
+                        "${fmt(entry.effectiveCount)}/${fmt(entry.matcherCount)} 生效",
+                        "${fmt(entry.effectiveCount)}/${fmt(entry.matcherCount)} in effect",
+                        "${fmt(entry.effectiveCount)}/${fmt(entry.matcherCount)} действуют",
+                    ),
+                    color = TextSecondary,
+                    fontSize = TypeScale.Tiny,
+                    lineHeight = TypeScale.TinyLine,
+                )
+            }
         }
         if (entry.input.missingNodes.isNotEmpty()) {
             Text(
                 uiText(
-                    "⚠ 节点 ${entry.input.missingNodes.joinToString("、")} 不存在，对应行改走默认策略",
-                    "⚠ Node ${entry.input.missingNodes.joinToString(", ")} is gone; those lines use the default policy",
-                    "⚠ Узел ${entry.input.missingNodes.joinToString(", ")} удалён; эти строки идут по политике по умолчанию",
+                    "节点已删除：${entry.input.missingNodes.joinToString("、")}",
+                    "Node gone: ${entry.input.missingNodes.joinToString(", ")}",
+                    "Узел удалён: ${entry.input.missingNodes.joinToString(", ")}",
                 ),
                 color = Error,
                 fontSize = TypeScale.Tiny,
                 lineHeight = TypeScale.TinyLine,
             )
         }
-        if (entry.unanalyzedCount > 0) {
-            Text(
-                uiText(
-                    "${fmt(entry.unanalyzedCount)} 条正则规则无法判断是否被覆盖，按生效计算",
-                    "${fmt(entry.unanalyzedCount)} regex entries can't be checked for overlap; counted as in effect",
-                    "${fmt(entry.unanalyzedCount)} regex-записей нельзя проверить на перекрытие; считаются действующими",
-                ),
-                color = TextSecondary,
-                fontSize = TypeScale.Tiny,
-                lineHeight = TypeScale.TinyLine,
-            )
-        }
-    }
-}
-
-@Composable
-private fun ConflictLine(conflict: RuleConflict, report: RuleAnalysisReport) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(Warning.copy(alpha = 0.10f))
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.WarningAmber, contentDescription = null, tint = Warning, modifier = Modifier.size(14.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(
-                text = uiText(
-                    "${fmt(conflict.count)} 条被 #${orderOf(report, conflict.winnerId)}「${conflict.winnerName}」抢先 →",
-                    "${fmt(conflict.count)} taken by #${orderOf(report, conflict.winnerId)} “${conflict.winnerName}” →",
-                    "${fmt(conflict.count)} перехватывает #${orderOf(report, conflict.winnerId)} «${conflict.winnerName}» →",
-                ),
-                color = TextPrimary,
-                fontSize = TypeScale.Tiny,
-                lineHeight = TypeScale.TinyLine,
-                modifier = Modifier.weight(1f, fill = false),
-            )
-            Spacer(Modifier.width(6.dp))
-            TargetChip(conflict.winnerTarget)
-        }
-        if (conflict.examples.isNotEmpty()) ExampleChips(conflict.examples)
     }
 }
 
@@ -1050,9 +970,11 @@ private fun statusColor(status: RuleEntryStatus): Color = when (status) {
 @Composable
 private fun TargetChip(target: RouteTarget, suffix: String? = null) {
     val (icon, color) = targetStyle(target)
+    // A long node name shortens with "…"; the count after it always shows.
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
+            .widthIn(max = 240.dp)
             .clip(RoundedCornerShape(50))
             .background(color.copy(alpha = 0.13f))
             .padding(start = 6.dp, end = 8.dp, top = 2.dp, bottom = 2.dp),
@@ -1060,15 +982,25 @@ private fun TargetChip(target: RouteTarget, suffix: String? = null) {
         Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(13.dp))
         Spacer(Modifier.width(4.dp))
         Text(
-            text = targetText(target) + (suffix?.let { " · $it" } ?: ""),
+            text = targetText(target),
             color = color,
             fontSize = TypeScale.Tiny,
             lineHeight = TypeScale.TinyLine,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.widthIn(max = 200.dp),
+            modifier = Modifier.weight(1f, fill = false),
         )
+        suffix?.let {
+            Text(
+                text = " · $it",
+                color = color,
+                fontSize = TypeScale.Tiny,
+                lineHeight = TypeScale.TinyLine,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+        }
     }
 }
 
@@ -1098,8 +1030,7 @@ private fun InactiveSection(report: RuleAnalysisReport) {
     val inactive = report.inactive
     if (inactive.isEmpty()) return
     ReportSection(
-        title = uiText("未生效的规则", "Rules not in effect", "Недействующие правила"),
-        subtitle = uiText("这些规则现在不参与匹配：", "These rules take no part in matching right now:", "Эти правила сейчас не участвуют в проверке:"),
+        title = uiText("未生效", "Not in effect", "Не действуют"),
     ) {
         Column(
             modifier = Modifier
@@ -1110,28 +1041,32 @@ private fun InactiveSection(report: RuleAnalysisReport) {
             inactive.forEachIndexed { index, entry ->
                 if (index > 0) GroupDivider(startIndent = 44.dp)
                 Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    val reason = entry.input.inactiveReason!!
+                    val problem = reason == InactiveReason.NotDownloaded || reason == InactiveReason.NodeMissing
                     Icon(layerIcon(entry.input.layer), contentDescription = null, tint = TextSecondary, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            entryTitle(entry),
-                            color = TextPrimary,
-                            fontSize = TypeScale.Meta,
-                            lineHeight = TypeScale.MetaLine,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            layerName(entry.input.layer) + " · " + inactiveReasonText(entry.input.inactiveReason!!),
-                            color = TextSecondary,
-                            fontSize = TypeScale.Tiny,
-                            lineHeight = TypeScale.TinyLine,
-                        )
-                    }
+                    Text(
+                        entryTitle(entry),
+                        color = TextPrimary,
+                        fontSize = TypeScale.Meta,
+                        lineHeight = TypeScale.MetaLine,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        inactiveReasonText(reason),
+                        color = if (problem) Error else TextSecondary,
+                        fontSize = TypeScale.Tiny,
+                        lineHeight = TypeScale.TinyLine,
+                        fontWeight = if (problem) FontWeight.SemiBold else FontWeight.Normal,
+                        maxLines = 1,
+                    )
                 }
             }
         }
@@ -1143,9 +1078,9 @@ private fun FooterNote(report: RuleAnalysisReport) {
     val time = remember(report.generatedAtMs) { DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(report.generatedAtMs)) }
     Text(
         text = uiText(
-            "分析时间 $time。按当前保存的设置和手机上已下载的规则列表计算；改过设置后需重新连接 VPN 才会生效。域名只和域名比、IP 只和 IP 比，无法预知某个域名会解析到哪个 IP。",
-            "Analyzed at $time, from the saved settings and the rule lists on this phone. Changes apply after the VPN reconnects. Domains are compared with domains and IPs with IPs; which IP a domain resolves to can't be known in advance.",
-            "Анализ в $time по сохранённым настройкам и спискам правил на телефоне. Изменения вступают в силу после переподключения VPN. Домены сравниваются с доменами, IP — с IP; в какой IP разрешится домен, заранее неизвестно.",
+            "分析于 $time · 按已保存的设置",
+            "Analyzed at $time · from saved settings",
+            "Анализ в $time · по сохранённым настройкам",
         ),
         color = TextSecondary,
         fontSize = TypeScale.Tiny,
@@ -1172,15 +1107,6 @@ private fun entryTitle(entry: RuleEntryResult): String = when (entry.input.layer
     RuleLayer.Streaming -> entry.input.name
 }
 
-@Composable
-private fun layerName(layer: RuleLayer): String = when (layer) {
-    RuleLayer.Top -> uiText("最高优先级规则", "Top-priority rules", "Правила высшего приоритета")
-    RuleLayer.PerApp -> uiText("分应用节点", "Per-app node", "Узел приложения")
-    RuleLayer.Custom -> uiText("自定义规则", "Custom rule", "Своё правило")
-    RuleLayer.Streaming -> uiText("流媒体分流", "Media routing", "Медиа-маршрут")
-    RuleLayer.Default -> uiText("内置规则", "Built-in rule", "Встроенное правило")
-}
-
 private fun layerIcon(layer: RuleLayer): ImageVector = when (layer) {
     RuleLayer.Top -> Icons.Rounded.PriorityHigh
     RuleLayer.PerApp -> Icons.Rounded.Apps
@@ -1191,13 +1117,13 @@ private fun layerIcon(layer: RuleLayer): ImageVector = when (layer) {
 
 @Composable
 private fun inactiveReasonText(reason: InactiveReason): String = when (reason) {
-    InactiveReason.Disabled -> uiText("已关闭", "switched off", "выключено")
-    InactiveReason.GlobalMode -> uiText("全局模式下跳过", "skipped in global mode", "пропускается в глобальном режиме")
-    InactiveReason.NotDownloaded -> uiText("规则列表还没下载成功，暂不生效", "its list isn't downloaded yet, so it has no effect", "список ещё не загружен, поэтому не действует")
-    InactiveReason.NodeMissing -> uiText("选择的节点不存在或无法运行，暂不生效", "its node is gone or can't run, so it has no effect", "узел удалён или не может работать, поэтому не действует")
-    InactiveReason.NotPerAppMode -> uiText("只在分应用模式下生效", "only applies in per-app mode", "действует только в режиме по приложениям")
-    InactiveReason.ReplacedByGeoData -> uiText("当前地区改用内置 Geo 数据（见“本地区直连”）", "this region uses the bundled Geo data instead (see “Home region direct”)", "для этого региона используются встроенные Geo-данные (см. «Свой регион напрямую»)")
-    InactiveReason.StreamingOff -> uiText("流媒体分流总开关已关闭", "media routing is switched off", "медиа-маршрутизация выключена")
+    InactiveReason.Disabled -> uiText("已关闭", "Off", "Выкл.")
+    InactiveReason.GlobalMode -> uiText("全局模式跳过", "Skipped (global)", "Пропуск (глоб.)")
+    InactiveReason.NotDownloaded -> uiText("列表未下载", "Not downloaded", "Не загружен")
+    InactiveReason.NodeMissing -> uiText("节点不可用", "Node unavailable", "Узел недоступен")
+    InactiveReason.NotPerAppMode -> uiText("需分应用模式", "Needs per-app mode", "Нужен режим приложений")
+    InactiveReason.ReplacedByGeoData -> uiText("由直连地区代替", "Covered by region", "Заменено регионом")
+    InactiveReason.StreamingOff -> uiText("总开关已关", "Switched off", "Выключено")
 }
 
 @Composable
@@ -1206,10 +1132,6 @@ private fun regionText(report: RuleAnalysisReport): String = when (report.region
     com.mallocgfw.app.model.AppGeoRoutingRegion.Russia -> uiText("俄罗斯", "Russia", "Россия")
     com.mallocgfw.app.model.AppGeoRoutingRegion.English -> uiText("美国", "US", "США")
 }
-
-/** A name in the UI language's quotes, followed by the space that language needs. */
-@Composable
-private fun quoted(name: String): String = uiText("「$name」", "“$name” ", "«$name» ")
 
 private fun orderOf(report: RuleAnalysisReport, id: String): Int = report.entries.firstOrNull { it.input.id == id }?.order ?: 0
 

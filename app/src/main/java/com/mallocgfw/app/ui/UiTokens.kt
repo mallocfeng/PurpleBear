@@ -28,9 +28,11 @@ internal val BottomBarSurfaceColor: Color get() = if (IsLightTheme) Color(0xF7FF
 internal val FixedTopBarSurfaceColor: Color get() = if (IsLightTheme) Color(0xF2F2F2F7) else Color(0xF20C0C10)
 internal val CardOutlineColor: Color get() = if (IsLightTheme) Color(0x0F16151B) else Color(0x14FFFFFF)
 /** Shade under a group's node rows, so they read as its contents. */
-// Nodes tab: each group is a lavender "folder" card; its nodes sit in an inset
-// panel of a different shade, so groups and the nodes in them read apart.
-internal val GroupCardColor: Color get() = if (IsLightTheme) Color(0xFFECE8FA) else Color(0xFF262238)
+// Nodes tab: each group is a lavender "folder" card with a solid purple icon
+// tile; its nodes sit in an inset panel of a different shade, so groups and
+// the nodes in them read apart without a big colour block.
+internal val GroupCardColor: Color get() = if (IsLightTheme) Color(0xFFE1DAF8) else Color(0xFF2D2843)
+internal val GroupCardPressedColor: Color get() = if (IsLightTheme) Color(0xFFD2C8F4) else Color(0xFF3A3354)
 internal val GroupPanelColor: Color get() = if (IsLightTheme) Color(0xFFFFFFFF) else Color(0xFF15141B)
 internal val DividerColor: Color get() = if (IsLightTheme) Color(0x1416151B) else Color(0x1AFFFFFF)
 internal val PromoGradientStartColor: Color get() = if (IsLightTheme) Color(0xFFEFEAFF) else Color(0xFF221D38)
