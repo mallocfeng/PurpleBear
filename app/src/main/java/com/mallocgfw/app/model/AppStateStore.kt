@@ -32,6 +32,7 @@ object AppStateStore {
             dailyAutoUpdate = false,
             showUpdateNotifications = false,
             lightThemeEnabled = false,
+            followSystemTheme = true,
             onboardingCompleted = false,
             dnsMode = AppDnsMode.System,
             customDnsValue = "",
@@ -357,6 +358,7 @@ object AppStateStore {
                         put("status", subscription.status)
                         put("autoUpdate", subscription.autoUpdate)
                         putOpt("sourceUrl", subscription.sourceUrl)
+                        putOpt("webPageUrl", subscription.webPageUrl)
                         subscription.usage?.let { usage ->
                             put("usage", JSONObject().apply {
                                 putOpt("upload", usage.uploadBytes)
@@ -412,6 +414,10 @@ object AppStateStore {
                 put("dailyAutoUpdate", state.settings.dailyAutoUpdate)
                 put("showUpdateNotifications", state.settings.showUpdateNotifications)
                 put("lightThemeEnabled", state.settings.lightThemeEnabled)
+                put("followSystemTheme", state.settings.followSystemTheme)
+                put("subscriptionReminders", state.settings.subscriptionReminders)
+                put("bypassAppsEnabled", state.settings.bypassAppsEnabled)
+                put("bypassApps", JSONArray(state.settings.bypassApps))
                 put("onboardingCompleted", state.settings.onboardingCompleted)
                 put("dnsMode", state.settings.dnsMode.name)
                 put("customDnsValue", state.settings.customDnsValue)
@@ -454,6 +460,11 @@ object AppStateStore {
             dailyAutoUpdate = optBoolean("dailyAutoUpdate", defaults.dailyAutoUpdate),
             showUpdateNotifications = optBoolean("showUpdateNotifications", defaults.showUpdateNotifications),
             lightThemeEnabled = optBoolean("lightThemeEnabled", defaults.lightThemeEnabled),
+            // Missing: saved before the app followed the system, so the saved theme stands.
+            followSystemTheme = optBoolean("followSystemTheme", false),
+            subscriptionReminders = optBoolean("subscriptionReminders", defaults.subscriptionReminders),
+            bypassAppsEnabled = optBoolean("bypassAppsEnabled", defaults.bypassAppsEnabled),
+            bypassApps = optJSONArray("bypassApps")?.let { list -> List(list.length()) { list.optString(it) }.filter(String::isNotBlank).distinct() }.orEmpty(),
             onboardingCompleted = optBoolean("onboardingCompleted", defaults.onboardingCompleted),
             dnsMode = optString("dnsMode").toEnumOrDefault(defaults.dnsMode),
             customDnsValue = optString("customDnsValue", defaults.customDnsValue),
@@ -544,6 +555,7 @@ object AppStateStore {
                     fun field(name: String) = if (usage.has(name) && !usage.isNull(name)) usage.optLong(name) else null
                     SubscriptionUsage(field("upload"), field("download"), field("total"), field("expire"))
                 },
+                webPageUrl = item.optNullableString("webPageUrl"),
             )
         }
     }

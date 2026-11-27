@@ -249,7 +249,7 @@ object TailscaleRuntimeManager {
         }
     }
 
-    /** Accepts tailnet connections on [TailscaleForward.tailnetPort] for the MCP server. */
+    /** Accepts tailnet connections on [TailscaleForward.tailnetPort] for the MCP server or the remote panel. */
     suspend fun serveForward(context: Context, forward: TailscaleForward): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val config = JSONObject()
@@ -261,6 +261,15 @@ object TailscaleRuntimeManager {
         }
     }
 
+    /** Closes the tailnet listener on [tailnetPort]; the others keep running. */
+    suspend fun stopForward(context: Context, tailnetPort: Int) = withContext(Dispatchers.IO) {
+        runCatching {
+            val config = JSONObject().put("tailnetPort", tailnetPort).put("stop", true)
+            nativeValue(TailscaleBridgeClient.serveForward(context, config.toString()))
+        }.onFailure { Log.w(TAG, "Unable to stop the tailnet forward on $tailnetPort", it) }
+    }
+
+    /** Closes every tailnet listener. */
     suspend fun stopForward(context: Context) = withContext(Dispatchers.IO) {
         runCatching { nativeValue(TailscaleBridgeClient.stopForward(context)) }
             .onFailure { Log.w(TAG, "Unable to stop the tailnet forward", it) }

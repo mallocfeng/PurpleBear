@@ -551,7 +551,7 @@ private fun McpTextDialog(
     )
 }
 
-private fun copyToClipboard(context: Context, text: String, sensitive: Boolean) {
+internal fun copyToClipboard(context: Context, text: String, sensitive: Boolean) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     val clip = ClipData.newPlainText("PurpleBear MCP", text)
     if (sensitive && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

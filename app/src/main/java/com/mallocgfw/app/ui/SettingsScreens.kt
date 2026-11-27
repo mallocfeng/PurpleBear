@@ -39,6 +39,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -109,6 +112,11 @@ internal fun PerAppScreen(
     /** Always-on VPN with "Block connections without VPN" is on for this app. */
     lockdownActive: Boolean = false,
     globalProxyEnabled: Boolean = false,
+    /** Bypass mode: every app uses the VPN except [bypassApps]. */
+    bypassMode: Boolean = false,
+    bypassApps: Set<String> = emptySet(),
+    onBypassModeChange: (Boolean) -> Unit = {},
+    onToggleBypassApp: (String) -> Unit = {},
 ) {
     val language = LocalAppLanguage.current
     val context = LocalContext.current
@@ -148,6 +156,10 @@ internal fun PerAppScreen(
     // Switched off, the selection below does nothing: grey it out. It stays
     // editable so apps can be picked before turning the switch on.
     val listModifier = if (proxyMode == ProxyMode.PerApp) Modifier else Modifier.alpha(0.4f)
+    // Read off the main thread, once the bypass list is shown.
+    val launchableApps by produceState<List<LaunchableApp>?>(initialValue = null, bypassMode) {
+        if (bypassMode) value = withContext(Dispatchers.IO) { runCatching { loadLaunchableApps(context) }.getOrDefault(emptyList()) }
+    }
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -159,7 +171,7 @@ internal fun PerAppScreen(
         item {
             AppTopBar(title = "分应用代理", subtitle = "应用选择", onBack = onBack)
         }
-        if (lockdownActive && proxyMode == ProxyMode.PerApp) {
+        if (lockdownActive && (proxyMode == ProxyMode.PerApp || bypassMode)) {
             item {
                 SurfaceCard {
                     Text(
@@ -187,19 +199,22 @@ internal fun PerAppScreen(
             }
         }
         item {
-            // One switch, like media routing: on = only the selected apps use the VPN.
-            SettingsGroup(title = "总开关") {
+            // Two ways, at most one on: only the picked apps use the VPN, or all but the picked ones.
+            SettingsGroup(title = "模式") {
                 SettingToggleRow(
-                    title = "启用分应用代理",
-                    subtitle = if (proxyMode == ProxyMode.PerApp) {
-                        "仅选中的应用进入 VPN，其余应用直接联网。"
-                    } else {
-                        "开启后只代理下方选中的应用。"
-                    },
+                    title = "只代理选中的应用",
+                    subtitle = "仅选中的应用进入 VPN，其余应用直接联网。",
                     checked = proxyMode == ProxyMode.PerApp,
                     onToggle = {
                         onModeChange(if (proxyMode == ProxyMode.PerApp) ProxyMode.Smart else ProxyMode.PerApp)
                     },
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                SettingToggleRow(
+                    title = "选中的应用不走 VPN",
+                    subtitle = "适合银行、支付和游戏等应用：选中的应用直接联网，其余应用照常代理。全局代理下也生效。",
+                    checked = bypassMode,
+                    onToggle = { onBypassModeChange(!bypassMode) },
                 )
             }
         }
@@ -208,6 +223,16 @@ internal fun PerAppScreen(
         if (applyEnabled) {
             item { PendingApplyCard(onApply = onApplyChanges) }
         }
+        if (bypassMode) {
+            item {
+                SearchField(
+                    search = search,
+                    placeholder = "搜索应用名称或分类…",
+                    onValueChange = onSearchChange,
+                )
+            }
+            bypassAppItems(launchableApps, bypassApps, search, onToggleBypassApp)
+        } else {
         item {
             Box(modifier = listModifier) {
                 SearchField(
@@ -371,6 +396,7 @@ internal fun PerAppScreen(
                 NoteBox(text = "没有匹配到应用。")
             }
         }
+        }
     }
 }
 
@@ -436,6 +462,7 @@ internal fun SettingsScreen(
     onProxyQuicChange: (Boolean) -> Unit,
     onDailyAutoUpdateChange: (Boolean) -> Unit,
     onUpdateNotificationsChange: (Boolean) -> Unit,
+    onSubscriptionRemindersChange: (Boolean) -> Unit,
     updateBadge: Boolean = false,
     onSyncNow: () -> Unit,
     onDnsChange: (AppDnsMode, String) -> Unit,
@@ -444,6 +471,7 @@ internal fun SettingsScreen(
     onViewLogs: () -> Unit,
     onOpenAbout: () -> Unit,
     onOpenMcp: () -> Unit,
+    onOpenWifiRules: () -> Unit = {},
     onOpenSystemVpnSettings: () -> Unit = {},
     onExportBackup: () -> Unit = {},
     onImportBackup: () -> Unit = {},
@@ -515,6 +543,13 @@ internal fun SettingsScreen(
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 SettingActionRow(
+                    title = uiText("按 Wi-Fi 自动连接或断开", "Auto by Wi-Fi", "Авто по Wi-Fi"),
+                    subtitle = wifiRulesSummary(),
+                    actionText = uiText("设置", "Set up", "Настроить"),
+                    onAction = onOpenWifiRules,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                SettingActionRow(
                     title = "备用节点心跳",
                     subtitle = settings.heartbeatSummary(),
                     actionText = "设置",
@@ -569,6 +604,13 @@ internal fun SettingsScreen(
                     subtitle = "订阅和规则同步完成后，在通知栏提示结果。",
                     checked = settings.showUpdateNotifications,
                     onToggle = { onUpdateNotificationsChange(!settings.showUpdateNotifications) },
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                SettingToggleRow(
+                    title = "订阅到期提醒",
+                    subtitle = "订阅 3 天内到期或流量用了 90% 时，在通知栏提醒。",
+                    checked = settings.subscriptionReminders,
+                    onToggle = { onSubscriptionRemindersChange(!settings.subscriptionReminders) },
                 )
             }
         }
@@ -676,6 +718,7 @@ internal fun SettingsScreen(
         DnsSettingsDialog(
             initialMode = settings.dnsMode,
             initialCustomDns = settings.customDnsValue,
+            region = settings.geoRoutingRegion,
             onDismiss = { showDnsDialog = false },
             onConfirm = { dnsMode, customDns ->
                 onDnsChange(dnsMode, customDns)

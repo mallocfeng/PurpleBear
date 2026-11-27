@@ -1,6 +1,7 @@
 package com.mallocgfw.app.core
 
 import com.mallocgfw.app.model.AppStateStore
+import com.mallocgfw.app.model.ImportParser
 import com.mallocgfw.app.model.ImportPreview
 import com.mallocgfw.app.model.ManualNodeFactory
 import com.mallocgfw.app.model.PersistedAppState
@@ -467,6 +468,25 @@ class StateOpsTest {
         assertNull(StateOps.setSubscriptionAutoUpdate(base, "missing", enabled = false))
         val fileImport = base.copy(subscriptions = base.subscriptions.map { it.copy(sourceUrl = null) })
         assertNull(StateOps.setSubscriptionAutoUpdate(fileImport, "sub1", enabled = true))
+    }
+
+    @Test
+    fun aRefreshThatNamesNoProviderKeepsTheSubscriptionsName() {
+        val base = state(node("a", "local"), node("s1", "sub1", name = "HK 01"), selected = "a")
+        val url = sub.sourceUrl!!
+        val hostNamed = ImportPreview(
+            input = url, group = sub.copy(name = ImportParser.defaultSubscriptionName(url)),
+            nodes = listOf(node("n1", "sub1", name = "JP 01")),
+            subscription = base.subscriptions.single().copy(name = ImportParser.defaultSubscriptionName(url)), summary = "",
+        )
+        val kept = StateOps.applySubscriptionRefresh(base, "sub1", url, hostNamed, 100L, null)!!.state
+        assertEquals("Airport", kept.subscriptions.single().name)
+        assertEquals("Airport", kept.serverGroups.single { it.id == "sub1" }.name)
+        // A provider name replaces it.
+        val named = ImportParser.withDisplayName(hostNamed, "Fast Air")
+        val renamed = StateOps.applySubscriptionRefresh(kept, "sub1", url, named, 200L, null)!!.state
+        assertEquals("Fast Air", renamed.subscriptions.single().name)
+        assertEquals("Fast Air", renamed.servers.single { it.groupId == "sub1" }.subscription)
     }
 
     @Test

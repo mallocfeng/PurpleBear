@@ -357,6 +357,29 @@ object ImportParser {
         }
     }
 
+    /**
+     * Shows [preview] as [name]: the subscription group, its entry and the
+     * label on its nodes. Unchanged for a blank name or a single node.
+     */
+    fun withDisplayName(preview: ImportPreview, name: String?): ImportPreview {
+        val label = name?.trim()?.takeIf { it.isNotEmpty() } ?: return preview
+        if (preview.group.type != ServerGroupType.Subscription) return preview
+        return preview.copy(
+            group = preview.group.copy(name = label),
+            subscription = preview.subscription?.copy(name = label),
+            nodes = preview.nodes.map { it.copy(subscription = label) },
+        )
+    }
+
+    /** The name the app gives a subscription it has no other name for (see [withProviderProfile]). */
+    fun defaultSubscriptionName(sourceUrl: String): String = sourceUrl.toHostLabel()
+
+    private fun withProviderProfile(preview: ImportPreview, profile: ProviderProfile): ImportPreview {
+        val named = withDisplayName(preview, profile.title)
+        val site = profile.webPageUrl ?: return named
+        return named.copy(subscription = named.subscription?.copy(webPageUrl = site))
+    }
+
     const val PLAIN_HTTP_NOTE = " 此订阅使用未加密的 HTTP 链接，节点信息在传输中可能被他人看到或篡改，建议向服务商索取 https 链接。"
 
     private suspend fun fetchSubscriptionPreview(sourceUrl: String): ImportPreview {
@@ -382,24 +405,28 @@ object ImportParser {
         // Traffic and expiry, from whichever response carried them: panels send
         // the header to the clients they know, so one of the two may lack it.
         var reportedUsage: SubscriptionUsage? = null
+        // The provider's own name and website, the same way.
+        var reportedProfile: ProviderProfile? = null
         fun withUsage(preview: ImportPreview): ImportPreview {
-            val usage = reportedUsage ?: return preview
-            val subscription = preview.subscription ?: return preview
-            return if (subscription.usage != null) preview else preview.copy(subscription = subscription.copy(usage = usage))
+            val withProfile = reportedProfile?.let { withProviderProfile(preview, it) } ?: preview
+            val usage = reportedUsage ?: return withProfile
+            val subscription = withProfile.subscription ?: return withProfile
+            return if (subscription.usage != null) withProfile else withProfile.copy(subscription = subscription.copy(usage = usage))
         }
         suspend fun attempt(profile: ResourceFetchClient.RequestProfile) = runCatching {
             val response = fetch(profile)
             val usage = SubscriptionUsage.parse(response.headers["subscription-userinfo"])
             if (usage != null && reportedUsage == null) reportedUsage = usage
+            if (reportedProfile == null) reportedProfile = ProviderProfile.parse(response.headers)
             if (looksLikeWebPage(response.text)) error(WEB_PAGE_ERROR)
             preview(response.text).let { built ->
                 built.copy(subscription = built.subscription?.copy(usage = usage))
             }
         }
         val first = attempt(requestProfile)
-        if (requestProfile != ResourceFetchClient.RequestProfile.DEFAULT) return first.getOrThrow()
+        if (requestProfile != ResourceFetchClient.RequestProfile.DEFAULT) return withUsage(first.getOrThrow())
         // One-time (signed snapshot) links can't be fetched twice.
-        if (!autoUpdate && first.isSuccess) return first.getOrThrow()
+        if (!autoUpdate && first.isSuccess) return withUsage(first.getOrThrow())
         // Panels pick the format from the User-Agent: unknown clients often get a
         // reduced base64 list (no TUIC, AnyTLS…), a web page or an error, while
         // Clash Meta clients get the full list. Ask both ways, keep the fuller one.

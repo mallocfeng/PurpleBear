@@ -1,5 +1,6 @@
 package com.mallocgfw.app.xray
 
+import com.mallocgfw.app.stats.ConnectionMonitor
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -494,6 +495,19 @@ class XrayVpnService : VpnService() {
             } catch (_: PackageManager.NameNotFoundException) {
                 Log.w(TAG, "Unable to disallow self ($packageName) from VPN")
             }
+            // Per-app bypass: the picked apps go online directly, in global mode too.
+            if (state.settings.bypassAppsEnabled && state.proxyMode != ProxyMode.PerApp) {
+                state.settings.bypassApps.distinct().filter { it != packageName }.forEach { pkg ->
+                    try {
+                        builder.addDisallowedApplication(pkg)
+                    } catch (_: PackageManager.NameNotFoundException) {
+                        Log.w(TAG, "Bypassed package not installed: $pkg")
+                    }
+                }
+                if (state.settings.bypassApps.isNotEmpty() && manualDisconnectBlocked()) {
+                    AppLogManager.append(applicationContext, TAG, "系统已开启“屏蔽未使用 VPN 的连接”：不走 VPN 的应用会被系统断网")
+                }
+            }
         }
 
         // If a previous Xray instance is still alive (re-entry of ACTION_CONNECT,
@@ -584,7 +598,10 @@ class XrayVpnService : VpnService() {
                 vpnMtu = vpnMtu,
                 magicDnsUpstream = activeMagicDnsUpstream,
                 dnsServer = dnsServer,
-                dnsOverProxy = settings.dnsMode == AppDnsMode.Remote,
+                // Remote DNS, or a foreign public resolver (8.8.8.8 …) from China,
+                // where it can't be reached directly.
+                dnsOverProxy = settings.dnsMode == AppDnsMode.Remote ||
+                    (dnsServer != null && encryptedDnsOf(settings) == null && DnsInput.needsProxy(dnsServer, settings.geoRoutingRegion)),
                 encryptedDns = encryptedDnsOf(settings),
             )
         routedFallbackNotice = null
@@ -635,6 +652,7 @@ class XrayVpnService : VpnService() {
             streamingRouting.copy(appliedRoutes = streamingRouting.appliedRoutes.filterValues { it !in droppedIds }),
         )
         TunnelNodes.record(runServer, installed, servers)
+        ConnectionMonitor.start(applicationContext)
     }
 
     private suspend fun disconnect(
@@ -676,6 +694,8 @@ class XrayVpnService : VpnService() {
         val stopXrayStartedAt = System.currentTimeMillis()
         runCatching { XrayCoreManager.stopNow() }
             .onFailure { Log.w(TAG, "Unable to stop Xray cleanly", it) }
+        runCatching { ConnectionMonitor.stop(applicationContext) }
+            .onFailure { Log.w(TAG, "Unable to stop the connection monitor", it) }
         Log.d(TAG, "disconnectNow stopXray phase took ${System.currentTimeMillis() - stopXrayStartedAt} ms")
         val resetDnsStartedAt = System.currentTimeMillis()
         runCatching { LibXray.resetDNS() }

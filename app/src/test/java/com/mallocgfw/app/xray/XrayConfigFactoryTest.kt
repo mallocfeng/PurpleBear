@@ -1,7 +1,10 @@
 package com.mallocgfw.app.xray
 
 import com.mallocgfw.app.model.AppGeoRoutingRegion
+import com.mallocgfw.app.model.RuleTargetPolicy
 import com.mallocgfw.app.model.ServerNode
+import com.mallocgfw.app.model.XrayRoutingRule
+import com.mallocgfw.app.stats.RuleTags
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -9,6 +12,39 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class XrayConfigFactoryTest {
+    @Test
+    fun everyRoutingRuleHasAUniqueTagNamingItsSource() {
+        val listRule = { domain: String ->
+            XrayRoutingRule(
+                target = RuleTargetPolicy.Proxy,
+                domainSuffixes = listOf(domain),
+                fullDomains = emptyList(),
+                domainKeywords = emptyList(),
+                ipCidrs = listOf("203.0.113.0/24"),
+                ipCidrs6 = emptyList(),
+                ruleTag = RuleTags.tag(RuleTags.Kind.Rule, "My list"),
+            )
+        }
+        val config = JSONObject(
+            XrayConfigFactory.buildVpn(
+                node = testNode(),
+                routingRules = listOf(listRule("example.com"), listRule("example.org")),
+                geoRoutingRegion = AppGeoRoutingRegion.China,
+                dnsServer = "1.1.1.1",
+            ),
+        )
+        val rules = config.getJSONObject("routing").getJSONArray("rules")
+        val tags = List(rules.length()) { rules.getJSONObject(it).optString("ruleTag") }
+        assertTrue("every rule is tagged: $tags", tags.none { it.isEmpty() })
+        // Xray refuses duplicate tags.
+        assertEquals(tags.size, tags.toSet().size)
+        val listTags = tags.filter { RuleTags.parse(it)?.second == "My list" }
+        assertEquals(4, listTags.size) // two lists × (domains, IPs)
+        assertTrue(listTags.all { RuleTags.parse(it)?.first == RuleTags.Kind.Rule })
+        assertEquals(RuleTags.Kind.Final, RuleTags.parse(tags.last())?.first)
+        assertTrue(tags.any { RuleTags.parse(it)?.first == RuleTags.Kind.Dns })
+    }
+
     @Test
     fun vpnConfigForcesGooglePlayDownloadsThroughProxyBeforeGeoDirectRules() {
         val config = JSONObject(
@@ -21,7 +57,7 @@ class XrayConfigFactoryTest {
 
         val rules = config.getJSONObject("routing").getJSONArray("rules")
         val playUdp443BlockIndex = rules.indexOfFirstRule { rule ->
-            rule.optString("outboundTag") == "block" &&
+            rule.optString("outboundTag") == XrayConfigFactory.QUIC_FALLBACK_TAG &&
                 rule.optString("network") == "udp" &&
                 rule.optString("port") == "443" &&
                 rule.domainValues().contains("domain:play.googleapis.com")
@@ -51,6 +87,99 @@ class XrayConfigFactoryTest {
     }
 
     @Test
+    fun vpnConfigDropsQuicThroughItsOwnBlackhole() {
+        val config = JSONObject(
+            XrayConfigFactory.buildVpn(
+                node = testNode(),
+                geoRoutingRegion = AppGeoRoutingRegion.China,
+                globalProxyEnabled = false,
+            ),
+        )
+        val outbounds = config.getJSONArray("outbounds")
+        val protocols = (0 until outbounds.length()).map { outbounds.getJSONObject(it) }
+            .associate { it.optString("tag") to it.optString("protocol") }
+        assertEquals("blackhole", protocols["block"])
+        assertEquals("blackhole", protocols[XrayConfigFactory.QUIC_FALLBACK_TAG])
+        val rules = config.getJSONObject("routing").getJSONArray("rules")
+        val quicToBlock = (0 until rules.length()).map { rules.getJSONObject(it) }.any {
+            it.optString("outboundTag") == "block" && it.optString("port") == "443" && it.optString("network") == "udp"
+        }
+        assertTrue("QUIC drops should not count as rule blocks", !quicToBlock)
+    }
+
+    @Test
+    fun foreignEncryptedDnsGoesThroughTheNodeFromChina() {
+        val viaNode = { raw: String, region: AppGeoRoutingRegion ->
+            val dns = com.mallocgfw.app.model.DnsInput.encryptedOf(raw)!!
+            val config = JSONObject(
+                XrayConfigFactory.buildVpn(
+                    node = testNode(),
+                    geoRoutingRegion = region,
+                    dnsServer = XrayConfigFactory.ENCRYPTED_DNS_ADDRESS,
+                    encryptedDns = dns,
+                ),
+            )
+            val rules = config.getJSONObject("routing").getJSONArray("rules")
+            (0 until rules.length()).map { rules.getJSONObject(it) }.firstOrNull {
+                it.optString("outboundTag") == "proxy" && it.optString("port") == dns.port.toString() &&
+                    (it.domainValues().contains("full:${dns.host}") || it.optJSONArray("ip")?.optString(0) == dns.host)
+            }
+        }
+        assertTrue(viaNode("https://dns.google/dns-query", AppGeoRoutingRegion.China) != null)
+        assertTrue(viaNode("tls://one.one.one.one", AppGeoRoutingRegion.China) != null)
+        assertTrue(viaNode("https://1.1.1.1/dns-query", AppGeoRoutingRegion.China) != null)
+        assertTrue(viaNode("https://dns.alidns.com/dns-query", AppGeoRoutingRegion.China) == null)
+        assertTrue(viaNode("https://dns.google/dns-query", AppGeoRoutingRegion.English) == null)
+    }
+
+    @Test
+    fun quicWithAKnownDomainIsDroppedBeforeEveryRuleThatUsesANode() {
+        val rule = { target: com.mallocgfw.app.model.RuleTargetPolicy, domain: String ->
+            com.mallocgfw.app.model.XrayRoutingRule(
+                target = target,
+                domainSuffixes = listOf(domain), fullDomains = emptyList(), domainKeywords = emptyList(),
+                ipCidrs = emptyList(), ipCidrs6 = emptyList(),
+            )
+        }
+        val build = { proxyQuic: Boolean, fallbackDirect: Boolean ->
+            val config = JSONObject(
+                XrayConfigFactory.buildVpn(
+                    node = testNode(),
+                    routingRules = listOf(
+                        rule(com.mallocgfw.app.model.RuleTargetPolicy.Proxy, "proxied.example"),
+                        rule(com.mallocgfw.app.model.RuleTargetPolicy.Direct, "direct.example"),
+                    ),
+                    geoRoutingRegion = AppGeoRoutingRegion.China,
+                    globalProxyEnabled = false,
+                    proxyQuicEnabled = proxyQuic,
+                    fallbackDirect = fallbackDirect,
+                ),
+            )
+            val rules = config.getJSONObject("routing").getJSONArray("rules")
+            (0 until rules.length()).map { rules.getJSONObject(it) }
+        }
+        val isQuicDrop = { r: JSONObject ->
+            r.optString("outboundTag") == XrayConfigFactory.QUIC_FALLBACK_TAG &&
+                r.optString("network") == "udp" && r.optString("port") == "443"
+        }
+
+        val rules = build(false, false)
+        val proxied = rules.indexOfFirst { it.optString("outboundTag") == "proxy" && it.domainValues().contains("domain:proxied.example") }
+        val guard = rules[proxied - 1]
+        assertTrue("QUIC to a proxied domain is dropped first", isQuicDrop(guard))
+        assertEquals(listOf("domain:proxied.example"), guard.domainValues())
+        val direct = rules.indexOfFirst { it.domainValues().contains("domain:direct.example") }
+        assertTrue("direct rules keep their QUIC", !isQuicDrop(rules[direct - 1]))
+        assertTrue("a proxy fallback drops QUIC first", isQuicDrop(rules[rules.size - 2]) && !rules[rules.size - 2].has("domain"))
+
+        assertTrue("a direct fallback keeps QUIC", !isQuicDrop(build(false, true).let { it[it.size - 2] }))
+        assertTrue(
+            "QUIC through the proxy keeps only the Play drop",
+            build(true, false).none { isQuicDrop(it) && !it.optString("ruleTag").startsWith("play") },
+        )
+    }
+
+    @Test
     fun vpnConfigBlocksOnlyForeignQuicBeforeUserRules() {
         val config = JSONObject(
             XrayConfigFactory.buildVpn(
@@ -62,7 +191,7 @@ class XrayConfigFactoryTest {
         val rules = config.getJSONObject("routing").getJSONArray("rules")
 
         val udp443BlockIndex = rules.indexOfFirstRule { rule ->
-            rule.optString("outboundTag") == "block" &&
+            rule.optString("outboundTag") == XrayConfigFactory.QUIC_FALLBACK_TAG &&
                 rule.optString("network") == "udp" &&
                 rule.optString("port") == "443" &&
                 rule.optJSONArray("domain") == null
@@ -91,7 +220,7 @@ class XrayConfigFactoryTest {
         )
         val rules = config.getJSONObject("routing").getJSONArray("rules")
         val udp443BlockIndex = rules.indexOfFirstRule { rule ->
-            rule.optString("outboundTag") == "block" &&
+            rule.optString("outboundTag") == XrayConfigFactory.QUIC_FALLBACK_TAG &&
                 rule.optString("network") == "udp" &&
                 rule.optString("port") == "443" &&
                 rule.optJSONArray("domain") == null &&
@@ -112,12 +241,12 @@ class XrayConfigFactoryTest {
         )
         val rules = config.getJSONObject("routing").getJSONArray("rules")
         val generalUdp443BlockIndex = rules.indexOfFirstRule { rule ->
-            rule.optString("outboundTag") == "block" &&
+            rule.optString("outboundTag") == XrayConfigFactory.QUIC_FALLBACK_TAG &&
                 rule.optString("port") == "443" &&
                 rule.optJSONArray("domain") == null
         }
         val playUdp443BlockIndex = rules.indexOfFirstRule { rule ->
-            rule.optString("outboundTag") == "block" &&
+            rule.optString("outboundTag") == XrayConfigFactory.QUIC_FALLBACK_TAG &&
                 rule.optString("port") == "443" &&
                 rule.domainValues().contains("domain:play.googleapis.com")
         }
@@ -168,7 +297,9 @@ class XrayConfigFactoryTest {
                 ),
             )
             val rules = config.getJSONObject("routing").getJSONArray("rules")
-            val index = rules.indexOfFirstRule { it.optJSONArray("process")?.optString(0) == "10154" }
+            val index = rules.indexOfFirstRule {
+                it.optJSONArray("process")?.optString(0) == "10154" && it.optString("outboundTag") != XrayConfigFactory.QUIC_FALLBACK_TAG
+            }
             assertTrue("process rule missing (global=$global)", index >= 0)
             assertEquals("app_0", rules.getJSONObject(index).optString("outboundTag"))
         }
@@ -275,7 +406,7 @@ class XrayConfigFactoryTest {
         val rules = config.getJSONObject("routing").getJSONArray("rules")
 
         val globalUdp443BlockIndex = rules.indexOfFirstRule { rule ->
-            rule.optString("outboundTag") == "block" &&
+            rule.optString("outboundTag") == XrayConfigFactory.QUIC_FALLBACK_TAG &&
                 rule.optString("network") == "udp" &&
                 rule.optString("port") == "443" &&
                 rule.optJSONArray("domain") == null

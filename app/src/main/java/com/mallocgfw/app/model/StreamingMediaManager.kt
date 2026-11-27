@@ -1,5 +1,6 @@
 package com.mallocgfw.app.model
 
+import com.mallocgfw.app.stats.RuleTags
 import android.content.Context
 import com.mallocgfw.app.xray.ResourceFetchClient
 import java.io.File
@@ -259,6 +260,7 @@ object StreamingMediaManager {
                     ipCidrs6 = compiled.ipCidrs6,
                     outboundTag = outboundTag,
                     priority = STREAMING_RULE_PRIORITY,
+                    ruleTag = RuleTags.tag(RuleTags.Kind.Media, service.name),
                 )
                 rules += rule
                 if (rule.hasEntries()) applied[service.id] = node?.id ?: DIRECT

@@ -15,6 +15,14 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Auto by Wi-Fi (wifi/WifiRuleService): Android gives Wi-Fi names only
+         to apps with location access, in the background with "Allow all the time". -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- Per-app proxy presets (FakeRepository.protectedApps): lets Android 11+ show
          whether they are installed and add them to the VPN. Keep the two lists in sync. -->
@@ -114,6 +122,11 @@
         <package android:name="com.devhd.feedly" />
         <package android:name="com.nytimes.android" />
         <package android:name="bbc.mobile.news.ww" />
+        <!-- Per-app bypass lists every app with a launcher icon. -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
     </queries>
 
     <!-- Backups: the saved state holds node credentials, subscription links and
@@ -129,9 +142,12 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.MallocGFW">
+        <!-- singleTask: an import link opened from a browser comes back to the
+             running app (onNewIntent) instead of a second copy in the browser's task. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:theme="@style/Theme.MallocGFW">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -142,6 +158,27 @@
                 <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES" />
 
                 <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <!-- "One-tap import" buttons on subscription pages (ImportLinks.SCHEMES). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="clash" />
+                <data android:scheme="clashmeta" />
+                <data android:scheme="mihomo" />
+                <data android:scheme="flclash" />
+                <data android:scheme="stash" />
+                <data android:scheme="v2rayng" />
+                <data android:scheme="v2rayn" />
+                <data android:scheme="sing-box" />
+                <data android:scheme="sfa" />
+                <data android:scheme="hiddify" />
+                <data android:scheme="karing" />
+                <data android:scheme="shadowrocket" />
+                <data android:scheme="purplebear" />
             </intent-filter>
         </activity>
 
@@ -181,6 +218,35 @@
         <receiver
             android:name=".mcp.McpApprovalReceiver"
             android:exported="false" />
+
+        <!-- Remote panel: runs only while the user has it switched on. -->
+        <service
+            android:name=".panel.PanelService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-enabled read-only web page that shows this app's connection list and traffic statistics to the user's own computer on the same Wi-Fi or tailnet; shows a persistent notification with a stop button while running." />
+        </service>
+
+        <!-- Auto by Wi-Fi: runs only while the user has it switched on. -->
+        <service
+            android:name=".wifi.WifiRuleService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-enabled watcher that turns the user's VPN off on the Wi-Fi networks they marked as home and back on elsewhere; shows a persistent notification with a turn-off button while running." />
+        </service>
+
+        <receiver
+            android:name=".wifi.WifiRuleBootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <!-- Tailscale and libXray both embed Go runtimes. Keep their native
              code in separate processes while Xray remains the sole VPN. -->

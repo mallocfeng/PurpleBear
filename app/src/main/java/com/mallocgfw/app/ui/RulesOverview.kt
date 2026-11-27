@@ -84,6 +84,8 @@ internal fun RulesScreen(
     ruleAnalysisShowing: Boolean,
     onAnalyzeRules: () -> Unit,
     perAppEnabled: Boolean,
+    /** Apps that skip the VPN (bypass mode); 0 when it is off. */
+    perAppBypassCount: Int = 0,
     streamingRoutingEnabled: Boolean,
     onOpenTopRule: () -> Unit,
     onOpenPerApp: () -> Unit,
@@ -158,10 +160,10 @@ internal fun RulesScreen(
                     icon = Icons.Rounded.Apps,
                     title = uiText("分应用代理", "Per-app proxy", "По приложениям"),
                     // Global mode: every app uses the VPN, but an app's own node still applies.
-                    value = if (perAppEnabled && globalProxyEnabled) {
-                        ChainValue(uiText("部分生效", "Partly", "Частично"), Warning)
-                    } else {
-                        onOff(perAppEnabled)
+                    value = when {
+                        perAppEnabled && globalProxyEnabled -> ChainValue(uiText("部分生效", "Partly", "Частично"), Warning)
+                        perAppBypassCount > 0 -> ChainValue(uiText("$perAppBypassCount 个不走 VPN", "$perAppBypassCount skip VPN", "Без VPN: $perAppBypassCount"), Success)
+                        else -> onOff(perAppEnabled)
                     },
                     onClick = onOpenPerApp,
                 )

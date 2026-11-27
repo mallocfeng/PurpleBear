@@ -14,7 +14,7 @@ import com.mallocgfw.app.model.XrayNamedOutbound
  * the running core.
  */
 object TunnelNodes {
-    private class Installed(val serverId: String, val ids: Set<String>)
+    private class Installed(val serverId: String, val ids: Set<String>, val outboundNames: Map<String, String>)
 
     @Volatile
     private var installed: Installed? = null
@@ -25,8 +25,15 @@ object TunnelNodes {
     /** The node the core was last started on. */
     fun serverId(): String? = installed?.serverId
 
+    /** Node names by Xray outbound tag ("proxy" and the routed nodes' tags), for the connection view. */
+    fun outboundNames(): Map<String, String> = installed?.outboundNames.orEmpty()
+
     fun record(server: ServerNode, additionalOutbounds: List<XrayNamedOutbound>, servers: List<ServerNode>) {
-        installed = Installed(server.id, collect(server, additionalOutbounds, servers))
+        installed = Installed(
+            serverId = server.id,
+            ids = collect(server, additionalOutbounds, servers),
+            outboundNames = mapOf("proxy" to server.name) + additionalOutbounds.associate { it.tag to it.node.name },
+        )
     }
 
     fun clear() {

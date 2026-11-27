@@ -6,6 +6,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -264,7 +265,7 @@ private fun SubscriptionUsageBlock(usage: SubscriptionUsage, nowMs: Long) {
         when {
             expired -> uiText("已于 $date 到期", "Expired on $date", "Истекла $date")
             daysLeft < 1 -> uiText("今天到期", "Expires today", "Истекает сегодня")
-            else -> uiText("$date 到期（剩 $daysLeft 天）", "Expires $date ($daysLeft days left)", "До $date (осталось дней: $daysLeft)")
+            else -> uiText("$date 到期（剩 $daysLeft 天）", "Expires $date (${if (daysLeft == 1) "1 day" else "$daysLeft days"} left)", "До $date (осталось дней: $daysLeft)")
         }
     }
     val line = listOfNotNull(traffic, expiry).joinToString(" · ")
@@ -307,6 +308,7 @@ internal fun SubscriptionsScreen(
     refreshingIds: Set<String>,
     onRefresh: (String) -> Unit,
     onSetAutoUpdate: (String, Boolean) -> Unit,
+    onOpenWebPage: (String) -> Unit,
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
     onDelete: (String) -> Unit,
@@ -383,10 +385,15 @@ internal fun SubscriptionsScreen(
                 }
                 subscription.usage?.let { usage -> SubscriptionUsageBlock(usage, nowMs) }
                 Spacer(modifier = Modifier.height(12.dp))
-                Row(
+                // Wraps: four actions don't fit one line in every language.
+                FlowRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    subscription.webPageUrl?.let { site ->
+                        TextAction(text = "官网", onClick = { onOpenWebPage(site) })
+                    }
                     // Links that work only once: stop fetching them, keep the nodes.
                     if (!subscription.sourceUrl.isNullOrBlank()) {
                         TextAction(

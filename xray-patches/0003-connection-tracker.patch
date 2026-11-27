@@ -1,0 +1,419 @@
+diff --git a/app/dispatcher/default.go b/app/dispatcher/default.go
+index cae9735..7976542 100644
+--- a/app/dispatcher/default.go
++++ b/app/dispatcher/default.go
+@@ -8,6 +8,7 @@ import (
+ 
+ 	"github.com/xtls/xray-core/common"
+ 	"github.com/xtls/xray-core/common/buf"
++	"github.com/xtls/xray-core/common/conntrack"
+ 	"github.com/xtls/xray-core/common/errors"
+ 	"github.com/xtls/xray-core/common/log"
+ 	"github.com/xtls/xray-core/common/net"
+@@ -339,6 +340,17 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
+ 		ctx = session.ContextWithContent(ctx, content)
+ 	}
+ 	outbound = WrapLink(ctx, d.policy, d.stats, outbound)
++	// PurpleBear: connections from the TUN are listed in the app's connection view.
++	if sessionInbound := session.InboundFromContext(ctx); sessionInbound != nil && sessionInbound.Name == "tun" {
++		var tracked *conntrack.Conn
++		if ctx, tracked = conntrack.Begin(ctx); tracked != nil {
++			if r, ok := outbound.Reader.(*buf.TimeoutWrapperReader); ok {
++				r.Counter = tracked.UpCounter(r.Counter)
++			}
++			outbound.Writer = &SizeStatWriter{Counter: tracked.DownCounter(), Writer: outbound.Writer}
++			defer tracked.Finish()
++		}
++	}
+ 	sniffingRequest := content.SniffingRequest
+ 	if !sniffingRequest.Enabled {
+ 		d.routedDispatch(ctx, outbound, destination)
+@@ -440,6 +452,7 @@ func (d *DefaultDispatcher) routedDispatch(ctx context.Context, link *transport.
+ 	routingLink := routing_session.AsRoutingContext(ctx)
+ 	inTag := routingLink.GetInboundTag()
+ 	isPickRoute := 0
++	ruleTag := ""
+ 	if forcedOutboundTag := session.GetForcedOutboundTagFromContext(ctx); forcedOutboundTag != "" {
+ 		ctx = session.SetForcedOutboundTagToContext(ctx, "")
+ 		if h := d.ohm.GetHandler(forcedOutboundTag); h != nil {
+@@ -457,6 +470,7 @@ func (d *DefaultDispatcher) routedDispatch(ctx context.Context, link *transport.
+ 			outTag := route.GetOutboundTag()
+ 			if h := d.ohm.GetHandler(outTag); h != nil {
+ 				isPickRoute = 2
++				ruleTag = route.GetRuleTag()
+ 				if route.GetRuleTag() == "" {
+ 					errors.LogInfo(ctx, "taking detour [", outTag, "] for [", destination, "]")
+ 				} else {
+@@ -489,6 +503,23 @@ func (d *DefaultDispatcher) routedDispatch(ctx context.Context, link *transport.
+ 	}
+ 
+ 	ob.Tag = handler.Tag()
++	if tracked := conntrack.FromContext(ctx); tracked != nil {
++		route := conntrack.Route{
++			Network:  destination.Network.SystemString(),
++			Target:   destination,
++			Original: ob.OriginalTarget,
++			Inbound:  inTag,
++			Outbound: handler.Tag(),
++			Rule:     ruleTag,
++		}
++		if sessionInbound := session.InboundFromContext(ctx); sessionInbound != nil {
++			route.Source = sessionInbound.Source
++		}
++		tracked.Routed(route, func(network, srcIP string, srcPort uint16, dstIP string, dstPort uint16) (int, error) {
++			uid, _, _, err := net.FindProcess(network, srcIP, srcPort, dstIP, dstPort)
++			return uid, err
++		})
++	}
+ 	if accessMessage := log.AccessMessageFromContext(ctx); accessMessage != nil {
+ 		if tag := handler.Tag(); tag != "" {
+ 			if inTag == "" {
+diff --git a/common/conntrack/conntrack.go b/common/conntrack/conntrack.go
+new file mode 100644
+index 0000000..20a0c88
+--- /dev/null
++++ b/common/conntrack/conntrack.go
+@@ -0,0 +1,264 @@
++// Package conntrack keeps a live list of the connections the tunnel carries,
++// for PurpleBear's connection view: where each one goes, which routing rule
++// it hit, which outbound took it, which app opened it and how many bytes it
++// moved. It does nothing until SetEnabled(true).
++package conntrack
++
++import (
++	"context"
++	"encoding/json"
++	"sort"
++	"sync"
++	"sync/atomic"
++	"time"
++
++	"github.com/xtls/xray-core/common/net"
++	"github.com/xtls/xray-core/features/stats"
++)
++
++// MaxClosed is how many finished connections are kept for the view.
++const MaxClosed = 300
++
++// Route is what routing decided for a connection.
++type Route struct {
++	Network  string
++	Source   net.Destination
++	Target   net.Destination // after sniffing: a domain when one was found
++	Original net.Destination // the address the app dialed
++	Inbound  string
++	Outbound string
++	Rule     string
++}
++
++// Conn is one tracked connection.
++type Conn struct {
++	id       uint64
++	start    int64
++	end      int64
++	network  string
++	source   string
++	host     string
++	ip       string
++	port     uint32
++	inbound  string
++	outbound string
++	rule     string
++	uid      atomic.Int64
++	up       counter
++	down     counter
++	routed   bool
++	finished bool
++}
++
++// counter counts into a connection and passes the count on to [next].
++type counter struct {
++	v    atomic.Int64
++	next stats.Counter
++}
++
++func (c *counter) Value() int64 { return c.v.Load() }
++
++func (c *counter) Set(v int64) int64 {
++	if c.next != nil {
++		c.next.Set(v)
++	}
++	return c.v.Swap(v)
++}
++
++func (c *counter) Add(d int64) int64 {
++	if c.next != nil {
++		c.next.Add(d)
++	}
++	return c.v.Add(d) - d
++}
++
++type totalKey struct {
++	uid int64
++	out string
++}
++
++type total struct{ up, down int64 }
++
++var (
++	enabled atomic.Bool
++	mu      sync.Mutex
++	nextID  uint64
++	active  = map[uint64]*Conn{}
++	closed  []*Conn
++	totals  = map[totalKey]*total{}
++	epoch   = time.Now().UnixNano()
++)
++
++// SetEnabled turns tracking of new connections on or off.
++func SetEnabled(on bool) { enabled.Store(on) }
++
++// Enabled reports whether new connections are tracked.
++func Enabled() bool { return enabled.Load() }
++
++type ctxKey struct{}
++
++// Begin starts tracking the connection of ctx, when tracking is on.
++func Begin(ctx context.Context) (context.Context, *Conn) {
++	if !enabled.Load() {
++		return ctx, nil
++	}
++	c := &Conn{start: time.Now().UnixMilli()}
++	c.uid.Store(-1)
++	return context.WithValue(ctx, ctxKey{}, c), c
++}
++
++// FromContext returns the connection Begin attached to ctx, or nil.
++func FromContext(ctx context.Context) *Conn {
++	c, _ := ctx.Value(ctxKey{}).(*Conn)
++	return c
++}
++
++// UpCounter counts bytes from the app (and still feeds [next], if any).
++func (c *Conn) UpCounter(next stats.Counter) stats.Counter {
++	c.up.next = next
++	return &c.up
++}
++
++// DownCounter counts bytes to the app.
++func (c *Conn) DownCounter() stats.Counter { return &c.down }
++
++// Routed records the routing decision and lists the connection as active.
++// [findUID] (may be nil) names the app that owns it; it is asked here, once,
++// so the app never changes while the connection's bytes are being counted.
++func (c *Conn) Routed(r Route, findUID func(network, srcIP string, srcPort uint16, dstIP string, dstPort uint16) (int, error)) {
++	if findUID != nil && r.Source.Address != nil && r.Original.Address != nil && r.Original.Address.Family().IsIP() {
++		if uid, err := findUID(r.Network, r.Source.Address.String(), uint16(r.Source.Port), r.Original.Address.String(), uint16(r.Original.Port)); err == nil && uid >= 0 {
++			c.uid.Store(int64(uid))
++		}
++	}
++	mu.Lock()
++	defer mu.Unlock()
++	if c.routed || c.finished {
++		return
++	}
++	nextID++
++	c.id = nextID
++	c.network = r.Network
++	c.source = r.Source.NetAddr()
++	c.host = r.Target.Address.String()
++	if r.Original.Address != nil && r.Original.Address.Family().IsIP() {
++		if ip := r.Original.Address.String(); ip != c.host {
++			c.ip = ip
++		}
++	}
++	c.port = uint32(r.Target.Port)
++	c.inbound = r.Inbound
++	c.outbound = r.Outbound
++	c.rule = r.Rule
++	c.routed = true
++	active[c.id] = c
++}
++
++// Finish moves the connection to the closed list. Safe to call more than once.
++func (c *Conn) Finish() {
++	mu.Lock()
++	defer mu.Unlock()
++	if c.finished {
++		return
++	}
++	c.finished = true
++	if !c.routed {
++		return
++	}
++	c.end = time.Now().UnixMilli()
++	delete(active, c.id)
++	k := totalKey{uid: c.uid.Load(), out: c.outbound}
++	t := totals[k]
++	if t == nil {
++		t = &total{}
++		totals[k] = t
++	}
++	t.up += c.up.Value()
++	t.down += c.down.Value()
++	if len(closed) >= MaxClosed {
++		copy(closed, closed[1:])
++		closed = closed[:len(closed)-1]
++	}
++	closed = append(closed, c)
++}
++
++type connJSON struct {
++	ID       uint64 `json:"id"`
++	Start    int64  `json:"start"`
++	End      int64  `json:"end,omitempty"`
++	Network  string `json:"net"`
++	Source   string `json:"src"`
++	Host     string `json:"host"`
++	IP       string `json:"ip,omitempty"`
++	Port     uint32 `json:"port"`
++	Inbound  string `json:"in"`
++	Outbound string `json:"out"`
++	Rule     string `json:"rule,omitempty"`
++	UID      int64  `json:"uid"`
++	Up       int64  `json:"up"`
++	Down     int64  `json:"down"`
++}
++
++type totalJSON struct {
++	UID  int64  `json:"uid"`
++	Out  string `json:"out"`
++	Up   int64  `json:"up"`
++	Down int64  `json:"down"`
++}
++
++type snapshotJSON struct {
++	Epoch   int64       `json:"epoch"`
++	Now     int64       `json:"now"`
++	Enabled bool        `json:"enabled"`
++	Active  []connJSON  `json:"active"`
++	Closed  []connJSON  `json:"closed"`
++	Totals  []totalJSON `json:"totals"`
++}
++
++func (c *Conn) json() connJSON {
++	return connJSON{
++		ID: c.id, Start: c.start, End: c.end, Network: c.network, Source: c.source,
++		Host: c.host, IP: c.ip, Port: c.port, Inbound: c.inbound, Outbound: c.outbound,
++		Rule: c.rule, UID: c.uid.Load(), Up: c.up.Value(), Down: c.down.Value(),
++	}
++}
++
++// Snapshot returns the active connections, the closed ones newer than
++// [closedAfter] (an id) and the bytes moved so far per app and outbound
++// (since this process started; [epoch] changes when it restarts).
++func Snapshot(closedAfter uint64) []byte {
++	mu.Lock()
++	snap := snapshotJSON{
++		Epoch:   epoch,
++		Now:     time.Now().UnixMilli(),
++		Enabled: enabled.Load(),
++		Active:  make([]connJSON, 0, len(active)),
++		Closed:  []connJSON{},
++		Totals:  []totalJSON{},
++	}
++	sums := make(map[totalKey]total, len(totals))
++	for k, t := range totals {
++		sums[k] = *t
++	}
++	for _, c := range active {
++		j := c.json()
++		snap.Active = append(snap.Active, j)
++		k := totalKey{uid: j.UID, out: j.Outbound}
++		s := sums[k]
++		s.up += j.Up
++		s.down += j.Down
++		sums[k] = s
++	}
++	for _, c := range closed {
++		if c.id > closedAfter {
++			snap.Closed = append(snap.Closed, c.json())
++		}
++	}
++	mu.Unlock()
++	for k, s := range sums {
++		snap.Totals = append(snap.Totals, totalJSON{UID: k.uid, Out: k.out, Up: s.up, Down: s.down})
++	}
++	sort.Slice(snap.Active, func(i, j int) bool { return snap.Active[i].ID < snap.Active[j].ID })
++	out, _ := json.Marshal(snap)
++	return out
++}
+diff --git a/common/conntrack/conntrack_test.go b/common/conntrack/conntrack_test.go
+new file mode 100644
+index 0000000..e4b57e8
+--- /dev/null
++++ b/common/conntrack/conntrack_test.go
+@@ -0,0 +1,73 @@
++package conntrack
++
++import (
++	"context"
++	"encoding/json"
++	"testing"
++
++	"github.com/xtls/xray-core/common/net"
++)
++
++func TestTrackingLifecycle(t *testing.T) {
++	if _, c := Begin(context.Background()); c != nil {
++		t.Fatal("tracked while disabled")
++	}
++	SetEnabled(true)
++	defer SetEnabled(false)
++
++	ctx, c := Begin(context.Background())
++	if FromContext(ctx) != c || c == nil {
++		t.Fatal("connection not attached to context")
++	}
++	up := c.UpCounter(nil)
++	up.Add(100) // the sniffed first packet, before routing
++	c.Routed(Route{
++		Network:  "tcp",
++		Source:   net.TCPDestination(net.ParseAddress("172.19.0.1"), 40000),
++		Target:   net.TCPDestination(net.ParseAddress("www.example.com"), 443),
++		Original: net.TCPDestination(net.ParseAddress("93.184.216.34"), 443),
++		Inbound:  "tun-in",
++		Outbound: "proxy",
++		Rule:     "rule|Example",
++	}, func(string, string, uint16, string, uint16) (int, error) { return 10123, nil })
++	c.DownCounter().Add(900)
++
++	var snap snapshotJSON
++	if err := json.Unmarshal(Snapshot(0), &snap); err != nil {
++		t.Fatal(err)
++	}
++	if len(snap.Active) != 1 || snap.Active[0].Host != "www.example.com" || snap.Active[0].IP != "93.184.216.34" || snap.Active[0].UID != 10123 || snap.Active[0].Up != 100 || snap.Active[0].Down != 900 {
++		t.Fatalf("active = %+v", snap.Active)
++	}
++	if len(snap.Totals) != 1 || snap.Totals[0].Down != 900 || snap.Totals[0].Out != "proxy" {
++		t.Fatalf("totals = %+v", snap.Totals)
++	}
++
++	c.Finish()
++	c.Finish()
++	if err := json.Unmarshal(Snapshot(0), &snap); err != nil {
++		t.Fatal(err)
++	}
++	if len(snap.Active) != 0 || len(snap.Closed) != 1 || snap.Closed[0].End == 0 {
++		t.Fatalf("after finish: %+v", snap)
++	}
++	if len(snap.Totals) != 1 || snap.Totals[0].Up != 100 || snap.Totals[0].Down != 900 {
++		t.Fatalf("totals after finish = %+v", snap.Totals)
++	}
++	if err := json.Unmarshal(Snapshot(snap.Closed[0].ID), &snap); err != nil {
++		t.Fatal(err)
++	}
++	if len(snap.Closed) != 0 {
++		t.Fatal("closedAfter not applied")
++	}
++
++	// Never routed (sniffing failed, say): never listed.
++	_, d := Begin(context.Background())
++	d.Finish()
++	if err := json.Unmarshal(Snapshot(0), &snap); err != nil {
++		t.Fatal(err)
++	}
++	if len(snap.Closed) != 1 {
++		t.Fatalf("unrouted connection listed: %+v", snap.Closed)
++	}
++}

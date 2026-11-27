@@ -225,7 +225,8 @@ internal fun screenMatchesTab(screen: AppScreen, tab: MainTab): Boolean {
         MainTab.Import -> screen == AppScreen.Import || screen == AppScreen.ConfirmImport || screen == AppScreen.Subscriptions
         MainTab.Me -> screen == AppScreen.Me || screen == AppScreen.Diagnostics ||
             screen == AppScreen.Settings || screen == AppScreen.Permission || screen == AppScreen.LogViewer || screen == AppScreen.Update ||
-            screen == AppScreen.OpenSourceLicenses || screen == AppScreen.About || screen == AppScreen.Tailscale || screen == AppScreen.Mcp
+            screen == AppScreen.OpenSourceLicenses || screen == AppScreen.About || screen == AppScreen.Tailscale || screen == AppScreen.Mcp ||
+            screen == AppScreen.Stats || screen == AppScreen.WifiRules
     }
 }
 

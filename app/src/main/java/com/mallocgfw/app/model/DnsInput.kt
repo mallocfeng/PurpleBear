@@ -42,6 +42,54 @@ object DnsInput {
         Preset("Quad9", "9.9.9.9"),
     )
 
+    /**
+     * Public resolvers run from outside China. Plain DNS to them from China is
+     * dropped or tampered with, so it goes through the node instead.
+     */
+    private val FOREIGN_PUBLIC_RESOLVERS = setOf(
+        "8.8.8.8", "8.8.4.4", "2001:4860:4860::8888", "2001:4860:4860::8844", // Google
+        "1.1.1.1", "1.0.0.1", "2606:4700:4700::1111", "2606:4700:4700::1001", // Cloudflare
+        "9.9.9.9", "149.112.112.112", "2620:fe::fe", "2620:fe::9", // Quad9
+        "208.67.222.222", "208.67.220.220", // OpenDNS
+        "94.140.14.14", "94.140.15.15", // AdGuard
+        "4.2.2.1", "4.2.2.2", // Level3
+    )
+
+    /** Host names of the same services' encrypted DNS (DoH / DoT / DoQ). */
+    private val FOREIGN_ENCRYPTED_HOSTS = setOf(
+        "dns.google", "dns64.dns.google",
+        "cloudflare-dns.com", "one.one.one.one", "1dot1dot1dot1.cloudflare-dns.com",
+        "security.cloudflare-dns.com", "family.cloudflare-dns.com",
+        "dns.quad9.net", "dns9.quad9.net", "dns10.quad9.net", "dns11.quad9.net",
+        "dns.adguard-dns.com", "dns.adguard.com", "unfiltered.adguard-dns.com", "family.adguard-dns.com",
+        "doh.opendns.com", "dns.opendns.com", "dns.nextdns.io",
+        "doh.mullvad.net", "dns.mullvad.net", "base.dns.mullvad.net",
+    )
+    private val FOREIGN_ENCRYPTED_SUFFIXES = listOf(".dns.nextdns.io", ".cloudflare-dns.com", ".adguard-dns.com")
+
+    /**
+     * Whether DNS to [server] (an IP or, for encrypted DNS, a host name) has
+     * to go through the node: a foreign public resolver used from China, where
+     * it can't be reached directly. Others (the router, the carrier, Chinese
+     * resolvers) keep going direct.
+     */
+    fun needsProxy(server: String, region: AppGeoRoutingRegion): Boolean {
+        if (region != AppGeoRoutingRegion.China) return false
+        val host = server.trim().lowercase().removePrefix("[").removeSuffix("]").removeSuffix(".")
+        return host in FOREIGN_PUBLIC_RESOLVERS ||
+            host in FOREIGN_ENCRYPTED_HOSTS ||
+            FOREIGN_ENCRYPTED_SUFFIXES.any(host::endsWith)
+    }
+
+    /**
+     * A foreign DoQ server used from China: Xray's DoQ only connects
+     * directly, so it can't use the node and usually doesn't answer.
+     */
+    fun isUnreachableDoq(raw: String, region: AppGeoRoutingRegion): Boolean {
+        val dns = encryptedOf(raw) ?: return false
+        return dns.kind == EncryptedDns.Kind.DoQ && needsProxy(dns.host, region)
+    }
+
     /** Well-known encrypted servers, shown under the address box. */
     val encryptedPresets = listOf(
         Preset("阿里 DoH", "https://dns.alidns.com/dns-query"),

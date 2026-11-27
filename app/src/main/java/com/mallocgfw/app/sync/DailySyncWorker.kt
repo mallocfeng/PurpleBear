@@ -30,6 +30,8 @@ class DailySyncWorker(
             val removal = AppController.editNodes(reconnect = true) { current ->
                 report.applyTo(current) { source, compiled -> RuleSourceManager.commitCompiled(applicationContext, source, compiled) }
             }
+            // Usage the sync just fetched may make an expiry or traffic reminder due.
+            runCatching { SubscriptionReminders.check(applicationContext) }
             if (state.settings.showUpdateNotifications) {
                 // Nodes the refresh dropped may have cleared pre-proxies, app pins …
                 val cleared = removal?.notice

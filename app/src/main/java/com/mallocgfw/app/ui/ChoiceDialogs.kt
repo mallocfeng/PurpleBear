@@ -68,6 +68,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.mallocgfw.app.model.AppDnsMode
+import com.mallocgfw.app.model.AppGeoRoutingRegion
 import com.mallocgfw.app.model.DnsInput
 import com.mallocgfw.app.ui.theme.Error
 import com.mallocgfw.app.ui.theme.IsLightTheme
@@ -156,6 +157,7 @@ internal fun ChoiceDialogFrame(
 internal fun DnsSettingsDialog(
     initialMode: AppDnsMode,
     initialCustomDns: String,
+    region: AppGeoRoutingRegion,
     onDismiss: () -> Unit,
     onConfirm: (AppDnsMode, String) -> Unit,
 ) {
@@ -229,6 +231,7 @@ internal fun DnsSettingsDialog(
                         ),
                     )
                     val encrypted = DnsInput.encryptedOf(custom)
+                    val unreachableDoq = customValid && DnsInput.isUnreachableDoq(custom, region)
                     Text(
                         text = when {
                             custom.isNotBlank() && DnsInput.isRefusedByAndroid(custom) -> uiText(
@@ -241,24 +244,29 @@ internal fun DnsSettingsDialog(
                                 "Enter an IP (port 53), or an encrypted DNS address: https://… (DoH), tls://… (DoT), quic://… (DoQ).",
                                 "Введите IP (порт 53) или адрес зашифрованного DNS: https://… (DoH), tls://… (DoT), quic://… (DoQ).",
                             )
+                            unreachableDoq -> uiText(
+                                "国外的 DoQ 服务器在国内通常连不上：DoQ 只能直连，不能经代理。请改用同一服务的 DoH（https://…）或 DoT（tls://…），它们会自动经代理连接。",
+                                "Foreign DoQ servers usually can't be reached from China: DoQ only connects directly, never through the proxy. Use the same service's DoH (https://…) or DoT (tls://…) instead; they go through the proxy automatically.",
+                                "Зарубежные DoQ-серверы обычно недоступны из Китая: DoQ подключается только напрямую, без прокси. Используйте DoH (https://…) или DoT (tls://…) того же сервиса — они автоматически идут через прокси.",
+                            )
                             encrypted?.kind == DnsInput.EncryptedDns.Kind.DoQ -> uiText(
                                 "加密 DNS（DoQ）：查询加密发送，DoQ 始终直连服务器，不经代理。" + ADDRESS_ONLY_DNS_NOTE_ZH,
                                 "Encrypted DNS (DoQ): queries are encrypted; DoQ always connects directly, not through the proxy." + ADDRESS_ONLY_DNS_NOTE_EN,
                                 "Зашифрованный DNS (DoQ): запросы шифруются; DoQ всегда подключается напрямую, без прокси." + ADDRESS_ONLY_DNS_NOTE_RU,
                             )
                             encrypted?.kind == DnsInput.EncryptedDns.Kind.DoH -> uiText(
-                                "加密 DNS（DoH）：查询加密发送，按分流规则直连或经代理连接服务器。" + ADDRESS_ONLY_DNS_NOTE_ZH,
-                                "Encrypted DNS (DoH): queries are encrypted and reach the server direct or through the proxy, following your rules." + ADDRESS_ONLY_DNS_NOTE_EN,
-                                "Зашифрованный DNS (DoH): запросы шифруются и идут к серверу напрямую или через прокси по правилам." + ADDRESS_ONLY_DNS_NOTE_RU,
+                                "加密 DNS（DoH）：查询加密发送，按分流规则直连或经代理连接服务器（国内区域下，Google、Cloudflare 等国外服务器固定经代理）。" + ADDRESS_ONLY_DNS_NOTE_ZH,
+                                "Encrypted DNS (DoH): queries are encrypted and reach the server direct or through the proxy, following your rules (in the China region, foreign servers such as Google and Cloudflare always go through the proxy)." + ADDRESS_ONLY_DNS_NOTE_EN,
+                                "Зашифрованный DNS (DoH): запросы шифруются и идут к серверу напрямую или через прокси по правилам (в регионе «Китай» зарубежные серверы, например Google и Cloudflare, всегда идут через прокси)." + ADDRESS_ONLY_DNS_NOTE_RU,
                             )
                             encrypted != null -> uiText(
-                                "加密 DNS（${encrypted.label}）：查询加密发送，按分流规则直连或经代理连接服务器，支持所有记录类型。",
-                                "Encrypted DNS (${encrypted.label}): queries are encrypted and reach the server direct or through the proxy, following your rules. All record types are supported.",
-                                "Зашифрованный DNS (${encrypted.label}): запросы шифруются и идут к серверу напрямую или через прокси по правилам. Поддерживаются все типы записей.",
+                                "加密 DNS（${encrypted.label}）：查询加密发送，按分流规则直连或经代理连接服务器（国内区域下，Google、Cloudflare 等国外服务器固定经代理），支持所有记录类型。",
+                                "Encrypted DNS (${encrypted.label}): queries are encrypted and reach the server direct or through the proxy, following your rules (in the China region, foreign servers such as Google and Cloudflare always go through the proxy). All record types are supported.",
+                                "Зашифрованный DNS (${encrypted.label}): запросы шифруются и идут к серверу напрямую или через прокси по правилам (в регионе «Китай» зарубежные серверы, например Google и Cloudflare, всегда идут через прокси). Поддерживаются все типы записей.",
                             )
                             else -> uiText("也可以直接点下面的常用服务器：", "Or pick a common server:", "Или выберите популярный сервер:")
                         },
-                        color = if (custom.isNotBlank() && !customValid) Error else TextSecondary,
+                        color = if ((custom.isNotBlank() && !customValid) || unreachableDoq) Error else TextSecondary,
                         fontSize = TypeScale.Meta,
                         lineHeight = TypeScale.MetaLine,
                         modifier = Modifier.padding(top = 6.dp, start = 4.dp),

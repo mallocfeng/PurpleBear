@@ -139,9 +139,11 @@ class McpService : Service() {
         wifiCallback = null
         tailnetJob?.cancel()
         tailnetJob = null
-        if (forwardSecret != null) {
+        val forwardedPort = config?.port
+        if (forwardSecret != null && forwardedPort != null) {
             val context = applicationContext
-            CoroutineScope(Dispatchers.IO).launch { TailscaleRuntimeManager.stopForward(context) }
+            // Only this server's port: the remote panel may have its own.
+            CoroutineScope(Dispatchers.IO).launch { TailscaleRuntimeManager.stopForward(context, forwardedPort) }
         }
         forwardSecret = null
         forwardLocalPort = null

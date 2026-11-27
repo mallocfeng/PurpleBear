@@ -17,6 +17,7 @@ import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.GppGood
 import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.LiveTv
+import androidx.compose.material.icons.rounded.QueryStats
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.DeviceHub
@@ -50,6 +51,7 @@ internal fun MeScreen(
     onOpenDiagnostics: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenTailscale: () -> Unit,
+    onOpenStats: () -> Unit,
     onOpenPermission: () -> Unit,
     tailscaleEnabled: Boolean = false,
     vpnPermissionGranted: Boolean = true,
@@ -120,6 +122,13 @@ internal fun MeScreen(
         item {
             GroupedCard {
                 ListRow(title = "订阅管理", icon = Icons.Rounded.Inventory2, onClick = onOpenSubscriptions)
+                GroupDivider(startIndent = 58.dp)
+                ListRow(
+                    title = uiText("统计看板", "Statistics", "Статистика"),
+                    value = statsMenuValue(),
+                    icon = Icons.Rounded.QueryStats,
+                    onClick = onOpenStats,
+                )
                 GroupDivider(startIndent = 58.dp)
                 // Same on/off wording and colours as the media routing row on the Rules tab.
                 ListRow(

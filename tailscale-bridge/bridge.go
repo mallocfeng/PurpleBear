@@ -61,7 +61,8 @@ type Bridge struct {
 	lastError string
 	proxyAddr string
 	proxyPass string
-	forward   net.Listener
+	// Tailnet listeners by tailnet port (the MCP server, the remote panel).
+	forwards map[int]net.Listener
 }
 
 // NewBridge returns a new bridge instance.
@@ -256,35 +257,45 @@ func (b *Bridge) Logout(stateDir string) error {
 	return os.RemoveAll(stateDir)
 }
 
-// forwardConfig asks the bridge to accept TCP connections on the node's
-// tailnet address and hand them to an app-local loopback port (the MCP
-// server). Each forwarded connection starts with one line,
+// forwardConfig asks the bridge to accept TCP connections on a port of the
+// node's tailnet address and hand them to an app-local loopback port (the MCP
+// server or the remote panel). Each forwarded connection starts with one line,
 //
 //	PBTN1 <secret> <base64url JSON {"user","device","addr"}>\n
 //
 // naming the tailnet peer as resolved by WhoIs. The secret proves to the app
 // that the line came from this bridge and not from another local process.
+// With Stop set, the listener on TailnetPort is closed instead.
 type forwardConfig struct {
 	TailnetPort int    `json:"tailnetPort"`
 	LocalPort   int    `json:"localPort"`
 	Secret      string `json:"secret"`
+	Stop        bool   `json:"stop"`
 }
 
-// ServeForward starts (or replaces) the tailnet listener.
+// ServeForward starts (or replaces) the tailnet listener on one port, or
+// closes it when the configuration says stop. Other ports are left alone.
 func (b *Bridge) ServeForward(configJSON string) error {
 	var cfg forwardConfig
 	if err := json.Unmarshal([]byte(configJSON), &cfg); err != nil {
 		return fmt.Errorf("invalid forward configuration: %w", err)
 	}
-	if cfg.TailnetPort <= 0 || cfg.TailnetPort > 65535 || cfg.LocalPort <= 0 || cfg.LocalPort > 65535 || len(cfg.Secret) < 16 {
+	if cfg.TailnetPort <= 0 || cfg.TailnetPort > 65535 {
 		return errors.New("invalid forward configuration")
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if cfg.Stop {
+		b.closeForwardPortLocked(cfg.TailnetPort)
+		return nil
+	}
+	if cfg.LocalPort <= 0 || cfg.LocalPort > 65535 || len(cfg.Secret) < 16 {
+		return errors.New("invalid forward configuration")
+	}
 	if b.server == nil {
 		return errors.New("Tailscale 尚未启动")
 	}
-	b.closeForwardLocked()
+	b.closeForwardPortLocked(cfg.TailnetPort)
 	lc, err := b.server.LocalClient()
 	if err != nil {
 		return err
@@ -293,7 +304,10 @@ func (b *Bridge) ServeForward(configJSON string) error {
 	if err != nil {
 		return fmt.Errorf("listen on tailnet port %d: %w", cfg.TailnetPort, err)
 	}
-	b.forward = ln
+	if b.forwards == nil {
+		b.forwards = map[int]net.Listener{}
+	}
+	b.forwards[cfg.TailnetPort] = ln
 	whois := func(ctx context.Context, remote string) (string, string, error) {
 		who, err := lc.WhoIs(ctx, remote)
 		if err != nil {
@@ -315,7 +329,7 @@ func (b *Bridge) ServeForward(configJSON string) error {
 	return nil
 }
 
-// StopForward closes the tailnet listener, if any.
+// StopForward closes every tailnet listener.
 func (b *Bridge) StopForward() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -324,10 +338,16 @@ func (b *Bridge) StopForward() error {
 }
 
 func (b *Bridge) closeForwardLocked() {
-	if b.forward != nil {
-		_ = b.forward.Close()
-		b.forward = nil
+	for port := range b.forwards {
+		b.closeForwardPortLocked(port)
 	}
+}
+
+func (b *Bridge) closeForwardPortLocked(port int) {
+	if ln := b.forwards[port]; ln != nil {
+		_ = ln.Close()
+	}
+	delete(b.forwards, port)
 }
 
 func acceptForward(ln net.Listener, cfg forwardConfig, whois func(context.Context, string) (string, string, error)) {
@@ -597,7 +617,7 @@ func NativeLogout(stateDir *C.char) *C.char {
 	})
 }
 
-// NativeServeForward starts the tailnet listener for the MCP server.
+// NativeServeForward starts or stops one tailnet listener (MCP server, remote panel).
 //
 //export NativeServeForward
 func NativeServeForward(config *C.char) *C.char {
@@ -609,7 +629,7 @@ func NativeServeForward(config *C.char) *C.char {
 	})
 }
 
-// NativeStopForward closes the tailnet listener.
+// NativeStopForward closes every tailnet listener.
 //
 //export NativeStopForward
 func NativeStopForward() *C.char {

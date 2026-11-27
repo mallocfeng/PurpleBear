@@ -26,6 +26,8 @@ enum class AppScreen {
     OpenSourceLicenses,
     About,
     Mcp,
+    Stats,
+    WifiRules,
     Update,
     MediaRouting,
     MediaRoutingNodePicker,
@@ -270,6 +272,8 @@ data class SubscriptionItem(
     val sourceUrl: String? = null,
     /** Traffic and expiry as the provider last reported them; null when it reports none. */
     val usage: SubscriptionUsage? = null,
+    /** The provider's website, when its subscription names one (ProviderProfile). */
+    val webPageUrl: String? = null,
 )
 
 /**
@@ -421,6 +425,20 @@ data class AppSettings(
     val dailyAutoUpdate: Boolean,
     val showUpdateNotifications: Boolean,
     val lightThemeEnabled: Boolean,
+    /**
+     * Until the user picks a theme, the app follows the system's light/dark
+     * setting and [lightThemeEnabled] is ignored. Stored settings from before
+     * this existed have no such key and keep their saved theme.
+     */
+    val followSystemTheme: Boolean = false,
+    /** Notify before a subscription expires or runs out of traffic (SubscriptionReminders). */
+    val subscriptionReminders: Boolean = true,
+    /**
+     * Per-app bypass: every app uses the VPN except [bypassApps] (package
+     * names). Not with ProxyMode.PerApp, which only lets selected apps in.
+     */
+    val bypassAppsEnabled: Boolean = false,
+    val bypassApps: List<String> = emptyList(),
     val onboardingCompleted: Boolean,
     val dnsMode: AppDnsMode,
     val customDnsValue: String,

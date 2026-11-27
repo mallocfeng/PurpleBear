@@ -17,6 +17,7 @@ import java.net.URI
 import java.net.URLDecoder
 import java.util.Base64
 import java.util.Locale
+import com.mallocgfw.app.stats.RuleTags
 import org.json.JSONArray
 import org.json.JSONObject
 import com.mallocgfw.app.model.tr
@@ -36,6 +37,15 @@ object XrayConfigFactory {
     const val ENCRYPTED_DNS_ADDRESS = "172.19.0.2"
     private const val ENCRYPTED_DNS_OUTBOUND_TAG = "encrypted-dns-out"
     private const val DNS_MODULE_TAG = "dns-module"
+
+    /**
+     * Blackhole for QUIC dropped so apps fall back to TCP. Kept apart from
+     * "block" so the stats tell it from traffic blocked by rules (ads, etc.).
+     */
+    const val QUIC_FALLBACK_TAG = "block-quic"
+
+    /** Outbounds that don't go through a node, so their QUIC is left alone. */
+    private val NOT_PROXY_OUTBOUNDS = setOf("direct", "block", QUIC_FALLBACK_TAG, "tailscale")
     private const val DOT_OUTBOUND_TAG = "dot-out"
     private const val DOT_LOOPBACK_TAG = "dot-loop"
     /** Tailscale's resolver; also the DNS address the VPN advertises for MagicDNS. */
@@ -106,6 +116,10 @@ object XrayConfigFactory {
                     })
                     put(JSONObject().apply {
                         put("tag", "block")
+                        put("protocol", "blackhole")
+                    })
+                    put(JSONObject().apply {
+                        put("tag", QUIC_FALLBACK_TAG)
                         put("protocol", "blackhole")
                     })
                 },
@@ -214,6 +228,10 @@ object XrayConfigFactory {
                         put("tag", "block")
                         put("protocol", "blackhole")
                     })
+                    put(JSONObject().apply {
+                        put("tag", QUIC_FALLBACK_TAG)
+                        put("protocol", "blackhole")
+                    })
                 },
             )
             put(
@@ -276,6 +294,7 @@ object XrayConfigFactory {
             rules.put(
                 JSONObject().apply {
                     put("type", "field")
+                    put("ruleTag", RuleTags.tag(RuleTags.Kind.Dns, "MagicDNS"))
                     put("inboundTag", JSONArray().put("tun-in"))
                     put("ip", JSONArray().put(TAILSCALE_RESOLVER))
                     put("port", "53")
@@ -291,6 +310,7 @@ object XrayConfigFactory {
             rules.put(
                 JSONObject().apply {
                     put("type", "field")
+                    put("ruleTag", RuleTags.tag(RuleTags.Kind.Dns))
                     put("ip", JSONArray().put(server))
                     put("port", "53")
                     put(
@@ -313,6 +333,7 @@ object XrayConfigFactory {
             rules.put(
                 JSONObject().apply {
                     put("type", "field")
+                    put("ruleTag", RuleTags.tag(RuleTags.Kind.Dns, "DoT"))
                     put("inboundTag", JSONArray().put(DNS_MODULE_TAG))
                     put("network", "tcp")
                     put("port", encryptedDns.port.toString())
@@ -321,10 +342,32 @@ object XrayConfigFactory {
             )
         }
 
+        if (encryptedDns != null &&
+            encryptedDns.kind != DnsInput.EncryptedDns.Kind.DoQ &&
+            DnsInput.needsProxy(encryptedDns.host, geoRoutingRegion)
+        ) {
+            // A foreign DoH / DoT server can't be reached directly from China:
+            // it goes through the node whatever the rules say. (DoQ can't: Xray
+            // only sends it directly.)
+            val host = encryptedDns.host
+            val isIp = host.contains(':') || host.matches(Regex("""\d{1,3}(\.\d{1,3}){3}"""))
+            rules.put(
+                JSONObject().apply {
+                    put("type", "field")
+                    put("ruleTag", RuleTags.tag(RuleTags.Kind.Dns, encryptedDns.label))
+                    if (isIp) put("ip", JSONArray().put(host)) else put("domain", JSONArray().put("full:$host"))
+                    put("network", "tcp")
+                    put("port", encryptedDns.port.toString())
+                    put("outboundTag", if (tailscale?.routeAllTraffic == true) "tailscale" else "proxy")
+                },
+            )
+        }
+
         if (forceSpeedTestToProxy) {
             rules.put(
                 JSONObject().apply {
                     put("type", "field")
+                    put("ruleTag", RuleTags.tag(RuleTags.Kind.Internal))
                     put("inboundTag", JSONArray().apply {
                         put(SPEED_TEST_INBOUND_TAG)
                         put(APP_SOCKS_INBOUND_TAG)
@@ -346,6 +389,7 @@ object XrayConfigFactory {
             rules.put(
                 JSONObject().apply {
                     put("type", "field")
+                    put("ruleTag", RuleTags.tag(RuleTags.Kind.Tailscale))
                     put("domain", JSONArray().put("domain:ts.net"))
                     put("outboundTag", "tailscale")
                 },
@@ -353,6 +397,7 @@ object XrayConfigFactory {
             rules.put(
                 JSONObject().apply {
                     put("type", "field")
+                    put("ruleTag", RuleTags.tag(RuleTags.Kind.Tailscale))
                     put(
                         "ip",
                         JSONArray().apply {
@@ -374,14 +419,36 @@ object XrayConfigFactory {
             rules.put(
                 JSONObject().apply {
                     put("type", "field")
+                    put("ruleTag", RuleTags.tag(RuleTags.Kind.Quic))
                     put("network", "udp")
                     put("port", "443")
                     if (!globalProxyEnabled) {
                         put("ip", JSONArray().put("geoip:!${geoRoutingRegion.geoipCode}"))
                     }
-                    put("outboundTag", "block")
+                    put("outboundTag", QUIC_FALLBACK_TAG)
                 },
             )
+        }
+
+        // The rule above only sees IP targets. Once sniffing has found a
+        // QUIC connection's domain, the target is that domain, so every rule
+        // that sends traffic to a node first drops its QUIC: otherwise it goes
+        // through the proxy whatever the setting says. (Global mode already
+        // dropped all of it above.)
+        val dropProxiedQuic = blockForeignUdp443 && !globalProxyEnabled
+        fun putRule(rule: JSONObject) {
+            val outbound = rule.optString("outboundTag")
+            if (dropProxiedQuic && outbound !in NOT_PROXY_OUTBOUNDS) {
+                rules.put(
+                    JSONObject(rule.toString()).apply {
+                        put("ruleTag", RuleTags.tag(RuleTags.Kind.Quic))
+                        put("network", "udp")
+                        put("port", "443")
+                        put("outboundTag", QUIC_FALLBACK_TAG)
+                    },
+                )
+            }
+            rules.put(rule)
         }
 
         // Global mode skips rule sources and media routing, but an app's own node
@@ -407,9 +474,10 @@ object XrayConfigFactory {
                 }
                 if (rule.processes.isNotEmpty()) {
                     // Per-app node: Xray asks Android which app owns each connection.
-                    rules.put(
+                    putRule(
                         JSONObject().apply {
                             put("type", "field")
+                            rule.ruleTag?.let { put("ruleTag", it) }
                             put("process", JSONArray(rule.processes))
                             put("outboundTag", outboundTag)
                         },
@@ -422,9 +490,10 @@ object XrayConfigFactory {
                     rule.domainRegexes.forEach { put("regexp:$it") }
                 }
                 if (domains.length() > 0) {
-                    rules.put(
+                    putRule(
                         JSONObject().apply {
                             put("type", "field")
+                            rule.ruleTag?.let { put("ruleTag", it) }
                             put("domain", domains)
                             put("outboundTag", outboundTag)
                         },
@@ -435,9 +504,10 @@ object XrayConfigFactory {
                     rule.ipCidrs6.forEach(::put)
                 }
                 if (ips.length() > 0) {
-                    rules.put(
+                    putRule(
                         JSONObject().apply {
                             put("type", "field")
+                            rule.ruleTag?.let { put("ruleTag", it) }
                             put("ip", ips)
                             put("outboundTag", outboundTag)
                         },
@@ -450,6 +520,7 @@ object XrayConfigFactory {
         rules.put(
             JSONObject().apply {
                 put("type", "field")
+                put("ruleTag", RuleTags.tag(RuleTags.Kind.Private))
                 put("ip", JSONArray().apply {
                     put("geoip:private")
                 })
@@ -463,6 +534,7 @@ object XrayConfigFactory {
                 rules.put(
                     JSONObject().apply {
                         put("type", "field")
+                        put("ruleTag", RuleTags.tag(RuleTags.Kind.HomeSites))
                         put("domain", JSONArray().apply {
                             put("geosite:$geositeCode")
                         })
@@ -473,6 +545,7 @@ object XrayConfigFactory {
             rules.put(
                 JSONObject().apply {
                     put("type", "field")
+                    put("ruleTag", RuleTags.tag(RuleTags.Kind.HomeIp))
                     put("ip", JSONArray().apply {
                         put("geoip:${geoRoutingRegion.geoipCode}")
                     })
@@ -483,9 +556,10 @@ object XrayConfigFactory {
 
         // Explicit fallback so the default outbound never depends on the order
         // of the outbounds array (streaming/pre-proxy chains can re-order it).
-        rules.put(
+        putRule(
             JSONObject().apply {
                 put("type", "field")
+                put("ruleTag", RuleTags.tag(RuleTags.Kind.Final))
                 put("network", "tcp,udp")
                 put(
                     "outboundTag",
@@ -499,6 +573,7 @@ object XrayConfigFactory {
             },
         )
 
+        RuleTags.makeUnique(rules)
         return rules
     }
 
@@ -748,16 +823,18 @@ object XrayConfigFactory {
             rules.put(
                 JSONObject().apply {
                     put("type", "field")
+                    put("ruleTag", RuleTags.tag(RuleTags.Kind.Play))
                     put("domain", JSONArray(domains.toString()))
                     put("network", "udp")
                     put("port", "443")
-                    put("outboundTag", "block")
+                    put("outboundTag", QUIC_FALLBACK_TAG)
                 },
             )
         }
         rules.put(
             JSONObject().apply {
                 put("type", "field")
+                put("ruleTag", RuleTags.tag(RuleTags.Kind.Play))
                 put("domain", domains)
                 put("outboundTag", "proxy")
             },

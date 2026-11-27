@@ -1,0 +1,24 @@
+diff --git a/conntrack.go b/conntrack.go
+new file mode 100644
+index 0000000..fff4f45
+--- /dev/null
++++ b/conntrack.go
+@@ -0,0 +1,18 @@
++package libXray
++
++import "github.com/xtls/xray-core/common/conntrack"
++
++// ConnTrackSetEnabled turns the connection list on or off (PurpleBear).
++func ConnTrackSetEnabled(enabled bool) {
++	conntrack.SetEnabled(enabled)
++}
++
++// ConnTrackSnapshot returns the connection list as JSON: the active
++// connections, the closed ones with an id above closedAfter, and the bytes
++// moved per app and outbound since the process started.
++func ConnTrackSnapshot(closedAfter int64) string {
++	if closedAfter < 0 {
++		closedAfter = 0
++	}
++	return string(conntrack.Snapshot(uint64(closedAfter)))
++}

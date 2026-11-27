@@ -222,6 +222,7 @@ object StateOps {
                 // A response without the usage header (some panels only send it
                 // to clients they know) keeps what was last reported.
                 usage = subscription.usage ?: subscriptions.firstOrNull { it.id == targetGroupId }?.usage,
+                webPageUrl = subscription.webPageUrl ?: subscriptions.firstOrNull { it.id == targetGroupId }?.webPageUrl,
                 id = targetGroupId,
                 name = targetGroup.name,
                 nodes = mergedNodeCount,
@@ -313,7 +314,12 @@ object StateOps {
         nowMs: Long = System.currentTimeMillis(),
     ): ImportOutcome? {
         if (!refreshStillApplies(state, subscriptionId, sourceUrl, fetchStartedAtMs, nowMs)) return null
-        val outcome = applyImport(state, preview, connectedServerId, runningNodeIds)
+        // A response that names no provider would rename the subscription to its
+        // host: keep the name it has (from the provider earlier, or an import link).
+        val currentName = state.subscriptions.firstOrNull { it.id == subscriptionId }?.name
+        val unnamed = sourceUrl != null && preview.group.name == ImportParser.defaultSubscriptionName(sourceUrl)
+        val named = if (unnamed && currentName != null) ImportParser.withDisplayName(preview, currentName) else preview
+        val outcome = applyImport(state, named, connectedServerId, runningNodeIds)
         // Whether it refreshes is the user's call (setSubscriptionAutoUpdate),
         // not the fetched link's: keep it as it is now.
         val keepAutoUpdate = state.subscriptions.firstOrNull { it.id == subscriptionId }?.autoUpdate

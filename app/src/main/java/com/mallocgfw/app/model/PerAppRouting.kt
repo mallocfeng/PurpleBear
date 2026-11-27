@@ -1,5 +1,6 @@
 package com.mallocgfw.app.model
 
+import com.mallocgfw.app.stats.RuleTags
 import android.content.Context
 
 /**
@@ -48,6 +49,7 @@ object PerAppRouting {
                 outboundTag = tag,
                 priority = PRIORITY,
                 processes = uids.distinct(),
+                ruleTag = RuleTags.tag(RuleTags.Kind.PerApp, serverById.getValue(nodeId).name),
             )
         }
         if (uidsByNode.isNotEmpty()) {

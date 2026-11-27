@@ -1,0 +1,1570 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>PurpleBear</title>
+<link rel="icon" type="image/png" href="data:image/png;base64,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">
+<style>
+:root {
+  --bg: #0b0a10; --panel: #13111b; --card: #17151f; --card2: #1e1b29; --hover: #221e2f;
+  --line: #2a2638; --line2: #34304a;
+  --text: #ecebf3; --text2: #b9b5c9; --muted: #7f7a93;
+  --primary: #a78bfa; --primary-strong: #8b5cf6; --primary-soft: rgba(167,139,250,.14);
+  --down: #a78bfa; --up: #38bdf8;
+  --ok: #34d399; --warn: #fbbf24; --bad: #f87171; --info: #60a5fa; --teal: #2dd4bf;
+  --shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 8px 24px rgba(0,0,0,.25);
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f5f4f9; --panel: #ffffff; --card: #ffffff; --card2: #f6f4fb; --hover: #f3f0fb;
+    --line: #e7e4ef; --line2: #dcd7e8;
+    --text: #17151f; --text2: #474257; --muted: #807a93;
+    --primary: #7c3aed; --primary-strong: #6d28d9; --primary-soft: rgba(124,58,237,.09);
+    --down: #7c3aed; --up: #0284c7;
+    --ok: #059669; --warn: #d97706; --bad: #dc2626; --info: #2563eb; --teal: #0d9488;
+    --shadow: 0 1px 2px rgba(20,16,40,.05), 0 4px 16px rgba(20,16,40,.04);
+    color-scheme: light;
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 13.5px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; -webkit-font-smoothing: antialiased; }
+button, input, select { font: inherit; color: inherit; }
+svg { display: block; }
+.hidden { display: none !important; }
+.num, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.muted { color: var(--muted); }
+
+/* Shell */
+.shell { display: grid; grid-template-columns: 232px minmax(0, 1fr); min-height: 100vh; }
+.side { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid var(--line); padding: 18px 14px; }
+.logo { display: flex; align-items: center; gap: 10px; padding: 2px 8px 20px; }
+/* The app icon's bear (res/mipmap-xxxhdpi/ic_launcher_foreground.png, cropped). */
+.logo-mark { width: 34px; height: 34px; flex: none; border-radius: 10px; background: #582da0 url("data:image/png;base64,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") center / cover no-repeat; }
+.logo b { display: block; font-size: 15px; letter-spacing: -.01em; }
+.logo span { display: block; font-size: 11.5px; color: var(--muted); }
+.nav { display: flex; flex-direction: column; gap: 2px; }
+.nav-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: 8px 10px 6px; }
+.nav button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--text2); cursor: pointer; text-align: left; }
+.nav button:hover { background: var(--hover); color: var(--text); }
+.nav button.sel { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+.nav button svg { width: 17px; height: 17px; flex: none; }
+.nav .badge { margin-left: auto; font-family: var(--mono); font-size: 11px; padding: 0 7px; border-radius: 999px; background: var(--card2); color: var(--muted); font-weight: 500; }
+.nav button.sel .badge { background: var(--primary-soft); color: var(--primary); }
+.side-foot { margin-top: auto; display: flex; flex-direction: column; gap: 10px; }
+.device-card { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--card); }
+.device-card .row1 { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; }
+.device-card .row2 { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+.readonly { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); padding: 0 4px; }
+.readonly svg { width: 13px; height: 13px; }
+.linkbtn { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 4px; font-size: 12px; text-align: left; }
+.linkbtn:hover { color: var(--text); }
+
+.main { min-width: 0; display: flex; flex-direction: column; }
+.top { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 16px; padding: 16px 28px; background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: saturate(1.4) blur(10px); -webkit-backdrop-filter: saturate(1.4) blur(10px); border-bottom: 1px solid var(--line); }
+.top h1 { font-size: 18px; margin: 0; letter-spacing: -.015em; }
+.top p { margin: 1px 0 0; color: var(--muted); font-size: 12.5px; }
+.top .grow { flex: 1; }
+.status { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); font-size: 12.5px; color: var(--text2); white-space: nowrap; max-width: 340px; overflow: hidden; text-overflow: ellipsis; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex: none; }
+.dot.ok { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+.dot.warn { background: var(--warn); }
+.dot.live { background: var(--ok); animation: pulse 2s infinite; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 55%, transparent); } 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+.content { padding: 22px 28px 48px; display: flex; flex-direction: column; gap: 18px; max-width: 1560px; width: 100%; }
+
+/* Cards */
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); min-width: 0; }
+.card-head { display: flex; align-items: center; gap: 12px; padding: 14px 18px 0; }
+.card-head h2 { margin: 0; font-size: 13.5px; font-weight: 600; letter-spacing: -.005em; }
+.card-head .sub { color: var(--muted); font-size: 12px; }
+.card-head .grow { flex: 1; }
+.card-body { padding: 14px 18px 16px; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
+.kpi { padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; position: relative; overflow: hidden; }
+.kpi .label { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
+.kpi .label svg { width: 14px; height: 14px; }
+.kpi .value { font-size: 22px; font-weight: 650; letter-spacing: -.02em; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi .value small { font-size: 13px; font-weight: 500; color: var(--muted); margin-left: 3px; }
+.kpi .foot { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi .spark { position: absolute; right: 0; bottom: 0; width: 55%; height: 46px; opacity: .9; pointer-events: none; }
+.legend { display: flex; gap: 18px; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+.split { height: 6px; border-radius: 3px; background: var(--card2); overflow: hidden; }
+.split > div { height: 100%; display: flex; border-radius: 3px; overflow: hidden; }
+.split > div > span { height: 100%; }
+.split > div > span + span { margin-left: 1px; }
+.rank-row .split { grid-column: 2 / -1; margin-top: -2px; height: 5px; }
+.legend.small { gap: 12px; font-size: 11.5px; }
+.legend.small i { width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
+.kpi .label i.sw { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+tr.sub td { background: var(--card2); font-size: 12.5px; padding-top: 6px; padding-bottom: 6px; }
+tr.sub td:first-child { border-left: 2px solid var(--primary); }
+tr.expandable { cursor: pointer; }
+tr.expandable .chev { display: inline-block; color: var(--muted); margin-left: 6px; transition: transform .15s; }
+tr.expandable.open .chev { transform: rotate(90deg); }
+.legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.legend b { color: var(--text); font-family: var(--mono); font-weight: 500; margin-left: 4px; }
+
+/* Charts */
+.chart { position: relative; }
+.chart .grid-line { stroke: var(--line); stroke-width: 1; }
+.chart .axis-text { fill: var(--muted); font-size: 10.5px; font-family: var(--mono); }
+.chart .cross { stroke: var(--line2); stroke-width: 1; stroke-dasharray: 3 3; }
+.tip { position: absolute; pointer-events: none; z-index: 3; background: var(--panel); border: 1px solid var(--line2); border-radius: 8px; padding: 8px 10px; font-size: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.25); white-space: nowrap; }
+.tip .t { color: var(--muted); margin-bottom: 4px; font-family: var(--mono); font-size: 11px; }
+.tip .r { display: flex; align-items: center; gap: 8px; }
+.tip .r i { width: 8px; height: 8px; border-radius: 2px; }
+.tip .r b { margin-left: auto; padding-left: 14px; font-family: var(--mono); font-weight: 500; }
+
+/* Rank lists */
+.rank { display: flex; flex-direction: column; }
+.rank-row { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; align-items: center; gap: 4px 10px; padding: 7px 0; }
+.rank-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank-row .val { font-family: var(--mono); font-size: 12.5px; color: var(--text2); }
+.rank-row .bar { grid-column: 2 / -1; height: 4px; border-radius: 2px; background: var(--card2); overflow: hidden; margin-top: -2px; }
+.rank-row .bar > div { height: 100%; border-radius: 2px; background: linear-gradient(90deg, var(--primary-strong), var(--primary)); }
+.rank-row .mark { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; font-size: 11px; font-weight: 600; }
+.donut-wrap { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 18px; align-items: center; }
+.donut-center { font-family: var(--mono); }
+.legend-list { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.legend-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto auto; gap: 9px; align-items: center; font-size: 12.5px; }
+.legend-row i { width: 10px; height: 10px; border-radius: 3px; }
+.legend-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.legend-row .pct { color: var(--muted); font-family: var(--mono); font-size: 12px; width: 44px; text-align: right; }
+.legend-row .v { font-family: var(--mono); font-size: 12px; color: var(--text2); text-align: right; min-width: 64px; }
+
+/* App icon */
+.icon { width: 22px; height: 22px; border-radius: 6px; flex: none; object-fit: cover; }
+.icon.ph { display: inline-grid; place-items: center; font-size: 11px; font-weight: 700; color: #fff; }
+.app-cell { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.app-cell span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Toolbar */
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.toolbar .grow { flex: 1; }
+.seg { display: inline-flex; padding: 3px; border-radius: 9px; background: var(--card2); border: 1px solid var(--line); }
+.seg button { border: 0; background: none; padding: 5px 12px; border-radius: 6px; cursor: pointer; color: var(--text2); display: inline-flex; gap: 7px; align-items: center; }
+.seg button.sel { background: var(--card); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.18); font-weight: 600; }
+.seg button .n { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+.search { position: relative; flex: 0 1 300px; min-width: 180px; }
+.search svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; color: var(--muted); }
+.search input { width: 100%; padding: 7px 12px 7px 32px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); outline: none; }
+.search input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+select { padding: 7px 28px 7px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); outline: none; appearance: none; -webkit-appearance: none; max-width: 160px; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; }
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; white-space: nowrap; flex: none; border-radius: 8px; border: 1px solid var(--line); background: var(--card); cursor: pointer; color: var(--text2); }
+.btn:hover { background: var(--hover); color: var(--text); }
+.btn.on { border-color: var(--warn); color: var(--warn); }
+.top .status { flex: 0 1 auto; min-width: 0; }
+.top .reset-chip, .top #live { flex: none; }
+.reset-chip { border-color: color-mix(in srgb, var(--primary) 35%, var(--line)); background: var(--primary-soft); color: var(--primary); }
+.reset-chip svg { width: 13px; height: 13px; flex: none; }
+.reset-chip button { border: 0; background: none; padding: 0 0 0 4px; color: inherit; font: inherit; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.btn svg { width: 14px; height: 14px; }
+
+/* Table */
+.table-wrap { overflow: auto; max-height: calc(100vh - 196px); border-radius: 12px; }
+table { width: 100%; border-collapse: separate; border-spacing: 0; }
+th, td { padding: 9px 12px; text-align: left; white-space: nowrap; }
+th { position: sticky; top: 0; z-index: 1; background: var(--card2); color: var(--muted); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid var(--line); cursor: pointer; user-select: none; }
+th:hover { color: var(--text); }
+th.r, td.r { text-align: right; }
+th .arrow { display: inline-block; width: 10px; margin-left: 3px; color: var(--primary); }
+td { border-bottom: 1px solid var(--line); vertical-align: middle; }
+tbody tr { cursor: pointer; }
+tbody tr:hover td { background: var(--hover); }
+tbody tr.sel td { background: var(--primary-soft); }
+tbody tr:last-child td { border-bottom: 0; }
+td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 12.5px; color: var(--text2); }
+td.num.hot, td.pair .hot { color: var(--text); font-weight: 600; }
+td.num.zero, td.pair .zero { color: var(--muted); opacity: .55; }
+td.pair { font-size: 12px; line-height: 1.45; }
+.host { max-width: 320px; }
+.host .h { overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.host .s { display: flex; gap: 6px; align-items: center; font-size: 11.5px; color: var(--muted); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; }
+.tag { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 6px; font-size: 12px; background: var(--card2); color: var(--text2); border: 1px solid var(--line); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag.net { font-family: var(--mono); font-size: 10.5px; padding: 0 5px; border-radius: 4px; }
+.tag .d { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.tag .tx { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.app-col .tag { max-width: min(180px, 100%); }
+.r-proxy { color: var(--primary); background: var(--primary-soft); border-color: transparent; }
+.r-direct { color: var(--ok); background: color-mix(in srgb, var(--ok) 13%, transparent); border-color: transparent; }
+.r-block { color: var(--bad); background: color-mix(in srgb, var(--bad) 13%, transparent); border-color: transparent; }
+.r-quic { color: var(--warn); background: color-mix(in srgb, var(--warn) 13%, transparent); border-color: transparent; }
+.r-dns { color: var(--info); background: color-mix(in srgb, var(--info) 13%, transparent); border-color: transparent; }
+.r-tailscale { color: var(--teal); background: color-mix(in srgb, var(--teal) 13%, transparent); border-color: transparent; }
+.app-col { max-width: 180px; }
+.rule-col { max-width: 200px; }
+.rule-col .tag { max-width: 190px; }
+.empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 56px 20px; color: var(--muted); text-align: center; }
+.empty svg { width: 34px; height: 34px; opacity: .55; }
+.table-foot { display: flex; justify-content: space-between; padding: 10px 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+
+/* Drawer */
+.scrim { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 20; }
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 420px; max-width: 100vw; z-index: 21; background: var(--panel); border-left: 1px solid var(--line); box-shadow: -12px 0 40px rgba(0,0,0,.3); display: flex; flex-direction: column; }
+.drawer-head { display: flex; align-items: flex-start; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--line); }
+.drawer-head h3 { margin: 0; font-size: 15px; word-break: break-all; }
+.drawer-head p { margin: 3px 0 0; font-size: 12px; color: var(--muted); }
+.drawer-head .x { margin-left: auto; border: 0; background: none; color: var(--muted); cursor: pointer; padding: 2px; }
+.drawer-head .x:hover { color: var(--text); }
+.drawer-body { overflow: auto; padding: 8px 20px 24px; }
+.dl-title { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 18px 0 6px; }
+.dl { display: grid; grid-template-columns: 110px minmax(0, 1fr); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.dl > div { padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 12.5px; min-width: 0; word-break: break-all; }
+.dl > div:nth-child(odd) { color: var(--muted); background: var(--card2); }
+.dl > div:nth-last-child(-n+2) { border-bottom: 0; }
+.io { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+.io .card { padding: 12px 14px; box-shadow: none; }
+.io .k { font-size: 11.5px; color: var(--muted); }
+.io .v { font-size: 18px; font-weight: 650; font-family: var(--mono); margin-top: 2px; }
+.io .s { font-size: 11.5px; color: var(--muted); font-family: var(--mono); }
+
+/* Login */
+.login { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+.login .card { width: 100%; max-width: 420px; padding: 28px; }
+.login h2 { margin: 18px 0 6px; font-size: 18px; }
+.login p { margin: 0 0 18px; color: var(--muted); }
+.login form { display: flex; flex-direction: column; gap: 10px; }
+.login input { padding: 10px 12px; border-radius: 9px; border: 1px solid var(--line); background: var(--card2); outline: none; font-family: var(--mono); }
+.login input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.primary { border: 0; background: var(--primary-strong); color: #fff; padding: 10px 16px; border-radius: 9px; cursor: pointer; font-weight: 600; }
+.primary:hover { filter: brightness(1.08); }
+.err { color: var(--bad); font-size: 12.5px; min-height: 18px; }
+.note { color: var(--muted); font-size: 12px; display: flex; gap: 6px; align-items: center; }
+.note svg { width: 14px; height: 14px; flex: none; }
+.banner { display: flex; gap: 10px; align-items: center; padding: 11px 14px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--line)); background: color-mix(in srgb, var(--warn) 8%, var(--card)); color: var(--text2); font-size: 12.5px; }
+.banner svg { width: 16px; height: 16px; color: var(--warn); flex: none; }
+
+@media (max-width: 1100px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 860px) {
+  .shell { grid-template-columns: minmax(0, 1fr); }
+  .side { position: static; height: auto; flex-direction: row; align-items: center; padding: 10px 14px; gap: 10px; border-right: 0; border-bottom: 1px solid var(--line); overflow-x: auto; }
+  .logo { padding: 0; }
+  .logo span, .nav-label, .side-foot { display: none; }
+  .nav { flex-direction: row; }
+  .nav button { padding: 7px 10px; }
+  .top { position: static; padding: 14px 16px; flex-wrap: wrap; }
+  .content { padding: 16px; }
+  .donut-wrap { grid-template-columns: minmax(0, 1fr); justify-items: center; }
+  .table-wrap { max-height: none; }
+}
+</style>
+</head>
+<body>
+<div id="login" class="login hidden">
+  <div class="card">
+    <div class="logo" style="padding:0">
+      <div class="logo-mark" role="img" aria-label="PurpleBear"></div>
+      <div><b>PurpleBear</b><span data-t="panel"></span></div>
+    </div>
+    <h2 data-t="loginTitle"></h2>
+    <p data-t="loginText"></p>
+    <form id="login-form">
+      <input id="login-token" type="password" autocomplete="off" spellcheck="false">
+      <div id="login-error" class="err"></div>
+      <button class="primary" type="submit" data-t="open"></button>
+    </form>
+  </div>
+</div>
+
+<div id="app" class="shell hidden">
+  <aside class="side">
+    <div class="logo">
+      <div class="logo-mark" role="img" aria-label="PurpleBear"></div>
+      <div><b>PurpleBear</b><span data-t="panel"></span></div>
+    </div>
+    <div class="nav">
+      <div class="nav-label" data-t="monitor"></div>
+      <button data-page="overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span data-t="overview"></span></button>
+      <button data-page="conn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h11l-3-3M17 17H6l3 3"/></svg><span data-t="conns"></span><span class="badge num" id="nav-count">0</span></button>
+      <button data-page="traffic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span data-t="traffic"></span></button>
+    </div>
+    <div class="side-foot">
+      <div class="device-card">
+        <div class="row1"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg><span id="device">–</span></div>
+        <div class="row2" id="version"></div>
+      </div>
+      <div class="readonly"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><span data-t="readonly"></span></div>
+      <button class="linkbtn" id="logout" data-t="logout"></button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="top">
+      <div><h1 id="page-title"></h1><p id="page-sub"></p></div>
+      <span class="grow"></span>
+      <span class="status reset-chip hidden" id="reset-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span id="reset-since"></span><button id="reset-clear" data-t="showAll"></button></span>
+      <button class="btn" id="reset-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg><span data-t="resetCount"></span></button>
+      <span class="status" id="vpn-status"><span class="dot"></span><span></span></span>
+      <span class="status" id="live"><span class="dot"></span><span></span></span>
+    </header>
+
+    <!-- Overview -->
+    <div class="content" id="page-overview">
+      <div class="banner hidden" id="ov-banner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg><span data-t="notTracking"></span></div>
+      <div class="kpis">
+        <div class="card kpi">
+          <div class="label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6z"/></svg><span data-t="node"></span></div>
+          <div class="value" id="k-node">–</div>
+          <div class="foot" id="k-uptime"></div>
+        </div>
+        <div class="card kpi">
+          <div class="label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--down)"><path d="M12 4v16M6 14l6 6 6-6"/></svg><span data-t="downSpeed"></span></div>
+          <div class="value num" id="k-down">0</div>
+          <div class="foot num" id="k-down-peak"></div>
+          <svg class="spark" id="spark-down" preserveAspectRatio="none"></svg>
+        </div>
+        <div class="card kpi">
+          <div class="label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--up)"><path d="M12 20V4M6 10l6-6 6 6"/></svg><span data-t="upSpeed"></span></div>
+          <div class="value num" id="k-up">0</div>
+          <div class="foot num" id="k-up-peak"></div>
+          <svg class="spark" id="spark-up" preserveAspectRatio="none"></svg>
+        </div>
+        <div class="card kpi">
+          <div class="label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h11l-3-3M17 17H6l3 3"/></svg><span data-t="activeConns"></span></div>
+          <div class="value num" id="k-active">0</div>
+          <div class="foot num" id="k-active-split"></div>
+        </div>
+        <div class="card kpi">
+          <div class="label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span id="k-today-label" data-t="todayTraffic"></span></div>
+          <div class="value num" id="k-today">0</div>
+          <div class="foot num" id="k-today-split"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2 data-t="realtime"></h2><span class="sub" data-t="last2m"></span>
+          <span class="grow"></span>
+          <div class="legend">
+            <span><i style="background:var(--down)"></i><span data-t="download"></span><b id="lg-down">0</b></span>
+            <span><i style="background:var(--up)"></i><span data-t="upload"></span><b id="lg-up">0</b></span>
+          </div>
+        </div>
+        <div class="card-body"><div class="chart" id="speed-chart"></div></div>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <div class="card-head"><h2 data-t="topApps"></h2><span class="sub" id="ov-apps-sub" data-t="today"></span><span class="grow"></span><div class="legend small route-legend"></div><button class="linkbtn" data-goto="traffic" data-t="viewAll"></button></div>
+          <div class="card-body"><div class="rank" id="ov-apps"></div></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2 data-t="nodeShare"></h2><span class="sub" id="ov-nodes-sub" data-t="today"></span></div>
+          <div class="card-body"><div class="donut-wrap" id="ov-nodes"></div></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2 data-t="ruleHits"></h2><span class="sub" id="ov-rules-sub"></span><span class="grow"></span><div class="legend small route-legend"></div></div>
+          <div class="card-body"><div class="rank" id="ov-rules"></div></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2 data-t="topHosts"></h2><span class="sub" id="ov-hosts-sub"></span><span class="grow"></span><button class="linkbtn" data-goto="conn" data-t="viewAll"></button></div>
+          <div class="card-body"><div class="rank" id="ov-hosts"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Connections -->
+    <div class="content hidden" id="page-conn">
+      <div class="toolbar">
+        <div class="seg">
+          <button data-view="active"><span data-t="showActive"></span><span class="n" id="n-active">0</span></button>
+          <button data-view="closed"><span data-t="showClosed"></span><span class="n" id="n-closed">0</span></button>
+        </div>
+        <label class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="filter" type="search" autocomplete="off" spellcheck="false"></label>
+        <select id="f-app"></select>
+        <select id="f-route"></select>
+        <select id="f-node"></select>
+        <select id="f-net"></select>
+        <span class="grow"></span>
+        <button class="btn" id="pause"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg><span></span></button>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead><tr id="conn-head"></tr></thead>
+            <tbody id="conn-body"></tbody>
+          </table>
+          <div class="empty hidden" id="conn-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h11l-3-3M17 17H6l3 3"/></svg><span></span></div>
+        </div>
+        <div class="table-foot"><span id="conn-count"></span><span id="conn-sum" class="num"></span></div>
+      </div>
+    </div>
+
+    <!-- Traffic -->
+    <div class="content hidden" id="page-traffic">
+      <div class="toolbar">
+        <div class="seg">
+          <button data-range="today" data-t="today"></button>
+          <button data-range="week" data-t="week"></button>
+          <button data-range="month" data-t="month"></button>
+          <button data-range="since" id="range-since" class="hidden"></button>
+        </div>
+        <span class="grow"></span>
+        <span class="note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg><span data-t="note"></span></span>
+      </div>
+      <div class="kpis">
+        <div class="card kpi"><div class="label" data-t="total"></div><div class="value num" id="t-total">0</div><div class="foot" id="t-range"></div></div>
+        <div class="card kpi"><div class="label"><i class="sw" style="background:var(--primary)"></i><span data-t="viaProxy"></span></div><div class="value num" id="t-proxy">0</div><div class="foot num" id="t-proxy-pct"></div></div>
+        <div class="card kpi"><div class="label"><i class="sw" style="background:var(--ok)"></i><span data-t="viaDirect"></span></div><div class="value num" id="t-direct">0</div><div class="foot num" id="t-direct-pct"></div></div>
+        <div class="card kpi"><div class="label" id="t-avg-label"></div><div class="value num" id="t-avg">0</div><div class="foot" id="t-avg-foot"></div></div>
+      </div>
+      <div class="card" id="daily-card">
+        <div class="card-head">
+          <h2 data-t="daily"></h2>
+          <span class="grow"></span>
+          <div class="legend">
+            <span><i style="background:var(--down)"></i><span data-t="download"></span></span>
+            <span><i style="background:var(--up)"></i><span data-t="upload"></span></span>
+          </div>
+        </div>
+        <div class="card-body"><div class="chart" id="daily-chart"></div></div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h2 data-t="byApp"></h2><span class="sub" id="t-apps-sub"></span>
+          <span class="grow"></span>
+          <div class="legend small route-legend"></div>
+          <div class="seg">
+            <button data-apps="all" data-t="appsAll"></button>
+            <button data-apps="proxy" data-t="appsProxied"></button>
+            <button data-apps="direct" data-t="appsDirectOnly"></button>
+          </div>
+        </div>
+        <div class="table-wrap" style="max-height:none;margin-top:10px"><table><thead><tr id="apps-head"></tr></thead><tbody id="apps-body"></tbody></table></div>
+      </div>
+      <div class="grid2">
+        <div class="card">
+          <div class="card-head"><h2 data-t="routeShare"></h2></div>
+          <div class="card-body"><div class="donut-wrap" id="t-routes"></div></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2 data-t="byNode"></h2><span class="sub" id="t-nodes-sub"></span></div>
+          <div class="table-wrap" style="max-height:none"><table><thead><tr id="nodes-head"></tr></thead><tbody id="nodes-body"></tbody></table></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="scrim" class="scrim hidden"></div>
+<aside id="drawer" class="drawer hidden">
+  <div class="drawer-head">
+    <div style="min-width:0"><h3 id="dw-title"></h3><p id="dw-sub"></p></div>
+    <button class="x" id="dw-close" aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <div class="drawer-body" id="dw-body"></div>
+</aside>
+
+<script>
+(() => {
+  "use strict";
+  const TEXT = {
+    zh: {
+      panel: "远程面板", monitor: "监控", overview: "概览", conns: "连接", traffic: "流量", readonly: "只读 · 数据来自手机", logout: "退出登录",
+      loginTitle: "输入访问令牌", loginText: "令牌在手机 PurpleBear 的「统计看板 → 远程面板」里。", open: "打开面板", badToken: "令牌不对，或已在手机上重置。", locked: "尝试次数过多，请稍后再试。",
+      ovSub: "实时速率、连接和今日流量", connSub: "每条连接命中的规则和走的节点", trafficSub: "按应用、节点和日期统计，保留 90 天",
+      vpnOn: "VPN 已连接", vpnOff: "VPN 未连接", live: "实时", offline: "连接手机中断，重试中…", paused: "已暂停",
+      node: "当前节点", uptime: "已连接 {0}", notConnected: "未连接", downSpeed: "下载速度", upSpeed: "上传速度", peak: "2 分钟峰值 {0}",
+      activeConns: "活动连接", todayTraffic: "今日流量", realtime: "实时速率", last2m: "最近 2 分钟", download: "下载", upload: "上传",
+      topApps: "应用排行", nodeShare: "节点占比", ruleHits: "规则命中", topHosts: "热门目标", today: "今天", week: "近 7 天", month: "近 30 天", viewAll: "查看全部",
+      recentN: "最近 {0} 条连接", connsN: "{0} 条连接", nothing: "暂无数据",
+      notTracking: "手机上的 VPN 没有连接。连接后，这里会实时显示每条连接和速率。",
+      showActive: "活动中", showClosed: "已关闭", filter: "搜索域名、IP、应用、规则、节点…", allApps: "全部应用", allNodes: "全部节点", allNets: "全部协议",
+      pause: "暂停", resume: "继续",
+      host: "目标", app: "应用", rule: "规则", via: "节点", speedCol: "速率", bytesCol: "流量", dl: "下载", ul: "上传", time: "时长", started: "开始", ended: "结束",
+      noActive: "没有活动连接", noClosed: "还没有已关闭的连接", noMatch: "没有匹配的连接",
+      showing: "显示 {0} / {1} 条", sum: "合计 ↓ {0}  ↑ {1}",
+      total: "总流量", share: "占比", avgDay: "日均", appsUsed: "使用的应用", peakDay: "最高 {0}（{1}）", nApps: "{0} 个应用", nNodes: "{0} 个节点", daily: "每日流量", byApp: "按应用", byNode: "按节点", name: "名称",
+      ofTotal: "占 {0}", note: "只统计经过 VPN 的流量，数据只保存在手机上。",
+      detail: "连接详情", basics: "基本信息", routing: "路由", timing: "时间", ip: "IP 地址", port: "端口", network: "协议", pkg: "包名", uid: "UID", ruleName: "命中规则", nodeName: "出站节点", routeKind: "线路类型", duration: "持续", stillOpen: "进行中", speedNow: "当前 {0}/s",
+      proxy: "代理", direct: "直连", block: "拦截", quic: "QUIC 转 TCP", dns: "DNS", tailscale: "Tailscale", fallback: "默认规则", none: "未区分",
+      viaProxy: "走代理", viaDirect: "直连", allRoutes: "全部线路", appsAll: "全部", appsProxied: "走代理的", appsDirectOnly: "只直连的", routeShare: "线路分布", route: "线路分布",
+      todaySplit: "代理 {0} · 直连 {1}", showNodes: "点开查看走了哪些节点",
+      resetCount: "重新计数", showAll: "显示全部", sinceTime: "{0} 起", sinceTraffic: "重置后流量",
+      resetTip: "从现在开始重新计数，方便跟踪。只影响这个面板，手机上的统计不变。",
+    },
+    en: {
+      panel: "Remote panel", monitor: "Monitor", overview: "Overview", conns: "Connections", traffic: "Traffic", readonly: "Read-only · data from the phone", logout: "Sign out",
+      loginTitle: "Enter the access token", loginText: "The token is in PurpleBear on the phone: Statistics → Remote panel.", open: "Open panel", badToken: "Wrong token, or it was reset on the phone.", locked: "Too many tries. Try again shortly.",
+      ovSub: "Live speed, connections and today's traffic", connSub: "The rule each connection matched and the node it went through", trafficSub: "By app, node and day, kept for 90 days",
+      vpnOn: "VPN connected", vpnOff: "VPN off", live: "Live", offline: "Lost the phone, retrying…", paused: "Paused",
+      node: "Node", uptime: "Connected {0}", notConnected: "Not connected", downSpeed: "Download", upSpeed: "Upload", peak: "2-min peak {0}",
+      activeConns: "Active connections", todayTraffic: "Today", realtime: "Live throughput", last2m: "Last 2 minutes", download: "Download", upload: "Upload",
+      topApps: "Top apps", nodeShare: "By node", ruleHits: "Rule hits", topHosts: "Top destinations", today: "Today", week: "7 days", month: "30 days", viewAll: "View all",
+      recentN: "Last {0} connections", connsN: "{0} connections", nothing: "No data yet",
+      notTracking: "The VPN on the phone is off. Once it connects, connections and speed show here live.",
+      showActive: "Active", showClosed: "Closed", filter: "Search host, IP, app, rule, node…", allApps: "All apps", allNodes: "All nodes", allNets: "All protocols",
+      pause: "Pause", resume: "Resume",
+      host: "Destination", app: "App", rule: "Rule", via: "Node", speedCol: "Speed", bytesCol: "Traffic", dl: "Down", ul: "Up", time: "Duration", started: "Started", ended: "Ended",
+      noActive: "No active connections", noClosed: "No closed connections yet", noMatch: "No matching connections",
+      showing: "Showing {0} of {1}", sum: "Total ↓ {0}  ↑ {1}",
+      total: "Total", share: "Share", avgDay: "Daily average", appsUsed: "Apps", peakDay: "Peak {0} ({1})", nApps: "{0} apps", nNodes: "{0} nodes", daily: "Daily traffic", byApp: "By app", byNode: "By node", name: "Name",
+      ofTotal: "{0} of total", note: "Only traffic through the VPN is counted. The data stays on the phone.",
+      detail: "Connection", basics: "Basics", routing: "Routing", timing: "Time", ip: "IP address", port: "Port", network: "Protocol", pkg: "Package", uid: "UID", ruleName: "Rule", nodeName: "Node", routeKind: "Route", duration: "Duration", stillOpen: "Open", speedNow: "Now {0}/s",
+      proxy: "Proxy", direct: "Direct", block: "Blocked", quic: "QUIC → TCP", dns: "DNS", tailscale: "Tailscale", fallback: "Fallback", none: "Not split",
+      viaProxy: "Proxied", viaDirect: "Direct", allRoutes: "All routes", appsAll: "All", appsProxied: "Proxied", appsDirectOnly: "Direct only", routeShare: "By route", route: "Routes",
+      todaySplit: "Proxy {0} · Direct {1}", showNodes: "Click to see the nodes it used",
+      resetCount: "Reset counters", showAll: "Show all", sinceTime: "Since {0}", sinceTraffic: "Since reset",
+      resetTip: "Start counting from now, to follow what happens next. Only this panel changes; the phone's statistics are kept.",
+    },
+    ru: {
+      panel: "Удалённая панель", monitor: "Мониторинг", overview: "Обзор", conns: "Соединения", traffic: "Трафик", readonly: "Только чтение · данные с телефона", logout: "Выйти",
+      loginTitle: "Введите токен доступа", loginText: "Токен — в PurpleBear на телефоне: «Статистика → Удалённая панель».", open: "Открыть панель", badToken: "Неверный токен или он был сброшен на телефоне.", locked: "Слишком много попыток. Повторите позже.",
+      ovSub: "Скорость, соединения и трафик за сегодня", connSub: "Какое правило сработало и через какой узел идёт соединение", trafficSub: "По приложениям, узлам и дням, хранится 90 дней",
+      vpnOn: "VPN подключён", vpnOff: "VPN выключен", live: "В реальном времени", offline: "Нет связи с телефоном, повтор…", paused: "Пауза",
+      node: "Узел", uptime: "Подключён {0}", notConnected: "Не подключён", downSpeed: "Загрузка", upSpeed: "Отдача", peak: "Пик за 2 мин {0}",
+      activeConns: "Активные соединения", todayTraffic: "Сегодня", realtime: "Скорость", last2m: "Последние 2 минуты", download: "Загрузка", upload: "Отдача",
+      topApps: "Приложения", nodeShare: "По узлам", ruleHits: "Срабатывания правил", topHosts: "Популярные адреса", today: "Сегодня", week: "7 дней", month: "30 дней", viewAll: "Все",
+      recentN: "Последние {0} соединений", connsN: "{0} соединений", nothing: "Пока нет данных",
+      notTracking: "VPN на телефоне выключен. После подключения здесь появятся соединения и скорость.",
+      showActive: "Активные", showClosed: "Закрытые", filter: "Поиск: адрес, IP, приложение, правило, узел…", allApps: "Все приложения", allNodes: "Все узлы", allNets: "Все протоколы",
+      pause: "Пауза", resume: "Продолжить",
+      host: "Адрес", app: "Приложение", rule: "Правило", via: "Узел", speedCol: "Скорость", bytesCol: "Трафик", dl: "Загр.", ul: "Отд.", time: "Длительность", started: "Начало", ended: "Конец",
+      noActive: "Нет активных соединений", noClosed: "Закрытых соединений пока нет", noMatch: "Ничего не найдено",
+      showing: "Показано {0} из {1}", sum: "Всего ↓ {0}  ↑ {1}",
+      total: "Всего", share: "Доля", avgDay: "В среднем за день", appsUsed: "Приложения", peakDay: "Пик {0} ({1})", nApps: "{0} прил.", nNodes: "{0} узл.", daily: "Трафик по дням", byApp: "По приложениям", byNode: "По узлам", name: "Название",
+      ofTotal: "{0} от всего", note: "Учитывается только трафик через VPN. Данные хранятся на телефоне.",
+      detail: "Соединение", basics: "Основное", routing: "Маршрут", timing: "Время", ip: "IP-адрес", port: "Порт", network: "Протокол", pkg: "Пакет", uid: "UID", ruleName: "Правило", nodeName: "Узел", routeKind: "Тип", duration: "Длительность", stillOpen: "Открыто", speedNow: "Сейчас {0}/с",
+      proxy: "Прокси", direct: "Напрямую", block: "Заблокировано", quic: "QUIC → TCP", dns: "DNS", tailscale: "Tailscale", fallback: "По умолчанию", none: "Без разбивки",
+      viaProxy: "Через прокси", viaDirect: "Напрямую", allRoutes: "Все маршруты", appsAll: "Все", appsProxied: "Через прокси", appsDirectOnly: "Только напрямую", routeShare: "По маршрутам", route: "Маршруты",
+      todaySplit: "Прокси {0} · Напрямую {1}", showNodes: "Нажмите, чтобы увидеть узлы",
+      resetCount: "Сбросить счётчики", showAll: "Показать всё", sinceTime: "С {0}", sinceTraffic: "После сброса",
+      resetTip: "Начать отсчёт с этого момента. Меняется только эта панель, статистика на телефоне сохраняется.",
+    },
+  };
+
+  let lang = (navigator.language || "en").slice(0, 2);
+  if (!TEXT[lang]) lang = "en";
+  const t = (key, ...args) => {
+    let s = (TEXT[lang] || TEXT.en)[key] ?? TEXT.en[key] ?? key;
+    args.forEach((a, i) => { s = s.replace("{" + i + "}", a); });
+    return s;
+  };
+  const $ = (id) => document.getElementById(id);
+  const el = (tag, cls, text) => {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined && text !== null) n.textContent = String(text);
+    return n;
+  };
+  const SVGNS = "http://www.w3.org/2000/svg";
+  const sv = (tag, attrs, parent) => {
+    const n = document.createElementNS(SVGNS, tag);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(n);
+    return n;
+  };
+
+  const UNITS = ["B", "KB", "MB", "GB", "TB"];
+  const size = (bytes) => {
+    let v = Math.max(0, bytes || 0), i = 0;
+    while (v >= 1024 && i < UNITS.length - 1) { v /= 1024; i++; }
+    return (i === 0 ? v.toFixed(0) : v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2)) + " " + UNITS[i];
+  };
+  const speed = (b) => size(b) + "/s";
+  const duration = (ms) => {
+    let s = Math.max(0, Math.floor(ms / 1000));
+    if (s < 60) return s + "s";
+    let m = Math.floor(s / 60); s %= 60;
+    if (m < 60) return m + "m " + String(s).padStart(2, "0") + "s";
+    let h = Math.floor(m / 60); m %= 60;
+    if (h < 24) return h + "h " + String(m).padStart(2, "0") + "m";
+    return Math.floor(h / 24) + "d " + (h % 24) + "h";
+  };
+  const clock = (ms) => new Date(ms).toLocaleTimeString(lang, { hour12: false });
+  const stamp = (ms) => new Date(ms).toLocaleString(lang, { hour12: false });
+  const pct = (part, whole) => whole > 0 ? (part / whole * 100).toFixed(part / whole >= 0.1 ? 0 : 1) + "%" : "0%";
+
+  /** A step of 1, 2, 2.5 or 5 × 10^n bytes in the unit of [max], so axis labels read well. */
+  const niceAxis = (max, ticks) => {
+    if (max <= 0) return { top: 1024, step: 256 };
+    let unit = 1;
+    while (max / unit >= 1024 && unit < Math.pow(1024, 4)) unit *= 1024;
+    const raw = max / unit / ticks;
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const step = [1, 2, 2.5, 5, 10].map((f) => f * mag).find((s) => s >= raw) * unit;
+    return { top: step * Math.ceil(max / step), step };
+  };
+
+  // App icons: data URLs fetched once per package.
+  const icons = new Map();
+  const iconPending = new Set();
+  const PALETTE = ["#8b5cf6", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#ec4899", "#14b8a6", "#6366f1", "#84cc16", "#f97316"];
+  const hashColor = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) | 0; return PALETTE[Math.abs(h) % PALETTE.length]; };
+  const isPackage = (key) => !!key && key !== "?" && !key.startsWith("uid:") && key.includes(".");
+  const appIcon = (key, name, px) => {
+    const url = icons.get(key);
+    if (url) {
+      const img = el("img", "icon");
+      img.src = url; img.alt = "";
+      if (px) { img.style.width = px + "px"; img.style.height = px + "px"; }
+      return img;
+    }
+    if (isPackage(key) && !icons.has(key)) iconPending.add(key);
+    const ph = el("span", "icon ph", (name || "?").trim().charAt(0).toUpperCase() || "?");
+    ph.style.background = key && key.startsWith("uid:") ? "#64748b" : hashColor(key || name);
+    if (px) { ph.style.width = px + "px"; ph.style.height = px + "px"; }
+    return ph;
+  };
+  const appCell = (key, name) => {
+    const box = el("div", "app-cell");
+    box.appendChild(appIcon(key, name));
+    box.appendChild(el("span", "", name));
+    box.title = key && key !== name ? name + " · " + key : name;
+    return box;
+  };
+  let iconTimer = null;
+  const fetchIcons = () => {
+    if (!iconPending.size || iconTimer || !token) return;
+    const batch = [...iconPending].slice(0, 40);
+    batch.forEach((k) => { iconPending.delete(k); icons.set(k, ""); });
+    iconTimer = fetch("/api/icons?apps=" + encodeURIComponent(batch.join(",")), { headers: { Authorization: "Bearer " + token } })
+      .then((r) => r.ok ? r.json() : {})
+      .then((data) => {
+        for (const k of batch) if (typeof data[k] === "string" && data[k].startsWith("data:image/png;base64,")) icons.set(k, data[k]);
+        render();
+      })
+      .catch(() => {})
+      .finally(() => { iconTimer = null; if (iconPending.size) setTimeout(fetchIcons, 50); });
+  };
+
+  const ROUTE_COLOR = { direct: "var(--ok)", block: "var(--bad)", quic: "var(--warn)", dns: "var(--info)", tailscale: "var(--teal)" };
+  // How bytes split by route: proxy, direct, blocked, DNS, Tailscale; "none" for an
+  // app's days recorded before the split was kept.
+  const ROUTES = ["proxy", "direct", "block", "quic", "dns", "tailscale", "none"];
+  const ROUTE_FILL = { proxy: "var(--primary)", direct: "var(--ok)", block: "var(--bad)", quic: "var(--warn)", dns: "var(--info)", tailscale: "var(--teal)", none: "var(--line2)" };
+  const emptyParts = () => ({ proxy: 0, direct: 0, block: 0, quic: 0, dns: 0, tailscale: 0, none: 0 });
+  /** Route totals of a node list ({route, up, down}). */
+  const routeTotals = (nodes) => {
+    const parts = emptyParts();
+    for (const n of nodes || []) parts[ROUTE_FILL[n.route] ? n.route : "proxy"] += n.up + n.down;
+    return parts;
+  };
+  /** How one app's bytes split by route. */
+  const splitOf = (item) => {
+    const parts = routeTotals(item.via);
+    const known = ROUTES.reduce((s, r) => s + parts[r], 0);
+    parts.none = Math.max(0, item.up + item.down - known);
+    return parts;
+  };
+  const splitTitle = (parts) => ROUTES.filter((r) => parts[r] > 0).map((r) => t(r) + "  " + size(parts[r])).join("\n");
+  /** A bar [widthPct] wide whose colored pieces are the routes in [parts]. */
+  const splitBar = (parts, widthPct) => {
+    const bar = el("div", "split");
+    const inner = bar.appendChild(el("div"));
+    inner.style.width = Math.max(1, Math.min(100, widthPct)) + "%";
+    const total = ROUTES.reduce((s, r) => s + parts[r], 0) || 1;
+    ROUTES.forEach((r) => {
+      if (parts[r] <= 0) return;
+      const seg = inner.appendChild(el("span"));
+      seg.style.flex = String(parts[r] / total);
+      seg.style.background = ROUTE_FILL[r];
+    });
+    bar.title = splitTitle(parts);
+    return bar;
+  };
+  const routeLegend = () => {
+    document.querySelectorAll(".route-legend").forEach((box) => {
+      box.textContent = "";
+      ["proxy", "direct", "block", "quic"].forEach((r) => {
+        const item = box.appendChild(el("span"));
+        item.appendChild(el("i")).style.background = ROUTE_FILL[r];
+        item.appendChild(document.createTextNode(t(r)));
+      });
+    });
+  };
+  const PROXY_COLORS = ["#8b5cf6", "#a78bfa", "#6366f1", "#c084fc", "#7c3aed", "#818cf8", "#d8b4fe", "#4f46e5"];
+  const routeTag = (name, route) => {
+    const tag = el("span", "tag r-" + (route || "proxy"));
+    tag.appendChild(el("span", "d")).style.background = "currentColor";
+    tag.appendChild(el("span", "tx", name));
+    tag.title = name;
+    return tag;
+  };
+
+  // Token: from the link's #token=, then kept in this browser.
+  const TOKEN_KEY = "purplebear_panel_token";
+  let token = null;
+  const match = /(?:^|[#&])token=([^&]+)/.exec(location.hash);
+  if (match) {
+    token = decodeURIComponent(match[1]);
+    try { localStorage.setItem(TOKEN_KEY, token); } catch (e) {}
+    history.replaceState(null, "", location.pathname);
+  } else {
+    try { token = localStorage.getItem(TOKEN_KEY); } catch (e) {}
+  }
+
+  const HISTORY_MS = 120000;
+  const state = {
+    page: (location.hash.match(/^#(overview|conn|traffic)$/) || [])[1] || "overview",
+    view: "active", range: "week",
+    sort: { key: null, dir: -1 },
+    data: null, frozen: null, paused: false, online: true,
+    selected: null, timer: null,
+    hist: [], prev: new Map(), rates: new Map(),
+    hover: {},
+    appFilter: "all", expandedApps: new Set(),
+  };
+
+  // ---------- Counting since a reset ----------
+  // "Reset counters" only changes this panel: it keeps what the phone had
+  // counted at that moment and shows what came after. The phone's data is
+  // untouched and the panel stays read-only.
+  const RESET_KEY = "purplebear_panel_reset";
+  const EMPTY = { up: 0, down: 0, apps: [], nodes: [], daily: [] };
+  const loadReset = () => {
+    try { return JSON.parse(localStorage.getItem(RESET_KEY) || "null"); } catch (e) { return null; }
+  };
+  let resetSavedAt = 0;
+  const saveReset = () => {
+    resetSavedAt = Date.now();
+    try {
+      if (state.reset) localStorage.setItem(RESET_KEY, JSON.stringify(state.reset));
+      else localStorage.removeItem(RESET_KEY);
+    } catch (e) {}
+  };
+  /** [as] + sign·[bs], matched by [keyOf]; apps' per-node lists likewise. */
+  const mix = (as, bs, keyOf, sign) => {
+    const m = new Map();
+    for (const x of as) m.set(keyOf(x), Object.assign({}, x));
+    for (const y of bs) {
+      const k = keyOf(y);
+      const x = m.get(k);
+      if (!x) { if (sign > 0) m.set(k, Object.assign({}, y)); continue; }
+      x.up = Math.max(0, x.up + sign * y.up);
+      x.down = Math.max(0, x.down + sign * y.down);
+      if (x.via || y.via) x.via = mix(x.via || [], y.via || [], (v) => v.name, sign);
+    }
+    return [...m.values()].filter((x) => x.up + x.down > 0).sort((a, b) => b.up + b.down - a.up - a.down);
+  };
+  const combine = (a, b, sign) => ({
+    up: Math.max(0, a.up + sign * b.up),
+    down: Math.max(0, a.down + sign * b.down),
+    apps: mix(a.apps, b.apps, (x) => x.key, sign),
+    nodes: mix(a.nodes, b.nodes, (x) => x.name, sign),
+    daily: [],
+  });
+  const strip = (s) => ({ up: s.up, down: s.down, apps: s.apps, nodes: s.nodes, daily: [] });
+  const dayOf = (d) => {
+    const daily = d.traffic.today.daily;
+    if (daily && daily.length) return daily[daily.length - 1].day;
+    const n = new Date(d.now);
+    return n.getFullYear() + "-" + String(n.getMonth() + 1).padStart(2, "0") + "-" + String(n.getDate()).padStart(2, "0");
+  };
+  const startReset = () => {
+    const d = state.data;
+    if (!d) return;
+    const conns = {};
+    d.active.forEach((c) => { conns[c.id] = [c.up, c.down]; });
+    state.reset = { at: d.now, day: dayOf(d), base: strip(d.traffic.today), carry: null, last: strip(d.traffic.today), conns };
+    saveReset();
+    state.since = sinceOf(d);
+    state.range = "since";
+  };
+  const clearReset = () => {
+    state.reset = null;
+    state.since = null;
+    if (state.range === "since") state.range = "week";
+    saveReset();
+  };
+  /** Traffic since the reset; a new day adds what the last one counted after it. */
+  const sinceOf = (d) => {
+    const r = state.reset;
+    if (!r) return null;
+    const today = strip(d.traffic.today);
+    const day = dayOf(d);
+    if (day !== r.day) {
+      const tail = combine(r.last, r.base, -1);
+      r.carry = r.carry ? combine(r.carry, tail, 1) : tail;
+      r.base = EMPTY;
+      r.day = day;
+      saveReset();
+    }
+    r.last = today;
+    if (Date.now() - resetSavedAt > 15000) saveReset();
+    const now = combine(today, r.base, -1);
+    return r.carry ? combine(now, r.carry, 1) : now;
+  };
+  /** The snapshot as the views show it: since the reset when there is one. */
+  const viewOf = (d) => {
+    const r = state.reset;
+    if (!d || !r) return d;
+    // Connections already open at the reset show up again once they carry
+    // new traffic, with only that traffic.
+    const active = d.active.map((c) => {
+      const b = r.conns[c.id];
+      return b ? Object.assign({}, c, { up: Math.max(0, c.up - b[0]), down: Math.max(0, c.down - b[1]), pre: true }) : c;
+    }).filter((c) => !c.pre || c.up + c.down > 0);
+    const closed = d.closed
+      .filter((c) => (c.end || d.now) >= r.at)
+      .map((c) => {
+        const b = r.conns[c.id];
+        return b ? Object.assign({}, c, { up: Math.max(0, c.up - b[0]), down: Math.max(0, c.down - b[1]), pre: true }) : c;
+      });
+    return Object.assign({}, d, { active, closed });
+  };
+  const hhmm = (ms) => new Date(ms).toLocaleTimeString(lang, { hour12: false, hour: "2-digit", minute: "2-digit" });
+  state.reset = loadReset();
+  state.since = null;
+  if (state.reset) state.range = "since";
+
+  // ---------- Static text ----------
+  const applyText = () => {
+    document.documentElement.lang = lang;
+    routeLegend();
+    document.querySelectorAll("[data-t]").forEach((n) => { n.textContent = t(n.getAttribute("data-t")); });
+    $("filter").placeholder = t("filter");
+    $("login-token").placeholder = "token";
+  };
+
+  // ---------- Polling ----------
+  const showLogin = (message) => {
+    $("app").classList.add("hidden");
+    closeDrawer();
+    $("login").classList.remove("hidden");
+    $("login-error").textContent = message || "";
+    $("login-token").focus();
+  };
+  const schedule = (ms) => { clearTimeout(state.timer); state.timer = setTimeout(poll, ms); };
+
+  const ingest = (d) => {
+    // Speed history for the charts: the phone's recent samples first, then each look.
+    if (!state.hist.length && Array.isArray(d.speedHistory)) {
+      state.hist = d.speedHistory.filter((s) => s[0] < d.now).map((s) => ({ t: s[0], up: s[1], down: s[2] }));
+    }
+    state.hist.push({ t: d.now, up: d.speed.up, down: d.speed.down });
+    while (state.hist.length && state.hist[0].t < d.now - HISTORY_MS - 5000) state.hist.shift();
+    // Per-connection speed from the change since the last look.
+    const next = new Map();
+    const rates = new Map();
+    for (const c of d.active) {
+      const p = state.prev.get(c.id);
+      if (p && d.now > p.t) {
+        const s = (d.now - p.t) / 1000;
+        rates.set(c.id, { up: Math.max(0, (c.up - p.up) / s), down: Math.max(0, (c.down - p.down) / s) });
+      } else if (!p) {
+        const s = Math.max(1, (d.now - c.start) / 1000);
+        rates.set(c.id, { up: c.up / s, down: c.down / s });
+      }
+      next.set(c.id, { t: d.now, up: c.up, down: c.down });
+    }
+    state.prev = next;
+    state.rates = rates;
+  };
+
+  const poll = () => {
+    if (!token) { showLogin(""); return; }
+    if (document.hidden) { schedule(3000); return; }
+    fetch("/api/snapshot", { headers: { Authorization: "Bearer " + token }, cache: "no-store" })
+      .then((r) => {
+        if (r.status === 401) { showLogin(t("badToken")); return null; }
+        if (r.status === 429) { showLogin(t("locked")); return null; }
+        if (!r.ok) throw new Error(String(r.status));
+        return r.json();
+      })
+      .then((d) => {
+        if (!d) return;
+        if (d.lang && TEXT[d.lang] && d.lang !== lang) { lang = d.lang; applyText(); }
+        state.data = d;
+        state.online = true;
+        ingest(d);
+        state.since = sinceOf(d);
+        $("login").classList.add("hidden");
+        $("app").classList.remove("hidden");
+        render();
+        schedule(1000);
+      })
+      .catch(() => {
+        state.online = false;
+        if (state.data) renderHeader();
+        schedule(3000);
+      });
+  };
+
+  // ---------- Render ----------
+  const PAGES = ["overview", "conn", "traffic"];
+  const render = () => {
+    const d = viewOf(state.data);
+    if (!d) return;
+    renderHeader();
+    if (state.page === "overview") renderOverview(d);
+    else if (state.page === "conn") renderConnections(state.paused && state.frozen ? viewOf(state.frozen) : d);
+    else renderTraffic(d);
+    if (state.selected !== null) renderDrawer();
+    fetchIcons();
+  };
+
+  const renderHeader = () => {
+    const d = state.data;
+    PAGES.forEach((p) => $("page-" + p).classList.toggle("hidden", p !== state.page));
+    document.querySelectorAll("[data-page]").forEach((b) => b.classList.toggle("sel", b.getAttribute("data-page") === state.page));
+    $("page-title").textContent = t({ overview: "overview", conn: "conns", traffic: "traffic" }[state.page]);
+    $("page-sub").textContent = t({ overview: "ovSub", conn: "connSub", traffic: "trafficSub" }[state.page]);
+    $("nav-count").textContent = d.active.length;
+    const r = state.reset;
+    $("reset-chip").classList.toggle("hidden", !r);
+    if (r) {
+      $("reset-since").textContent = t("sinceTime", hhmm(r.at));
+      $("reset-chip").title = t("resetTip");
+    }
+    $("reset-btn").title = t("resetTip");
+    $("range-since").classList.toggle("hidden", !r);
+    if (r) $("range-since").textContent = t("sinceTime", hhmm(r.at));
+    $("device").textContent = d.device || "Android";
+    $("version").textContent = "PurpleBear " + d.version;
+
+    const vpn = $("vpn-status");
+    vpn.firstElementChild.className = "dot" + (d.vpn.connected ? " ok" : "");
+    vpn.lastElementChild.textContent = d.vpn.connected ? t("vpnOn") + (d.vpn.node ? " · " + d.vpn.node : "") : t("vpnOff");
+    vpn.title = vpn.lastElementChild.textContent;
+
+    const live = $("live");
+    const paused = state.paused && state.page === "conn";
+    live.firstElementChild.className = "dot" + (!state.online ? " warn" : paused ? "" : " live");
+    live.lastElementChild.textContent = !state.online ? t("offline") : paused ? t("paused") : t("live") + " · " + clock(d.now);
+  };
+
+  // Overview
+  const renderOverview = (d) => {
+    $("ov-banner").classList.toggle("hidden", d.vpn.tracking);
+    $("k-node").textContent = d.vpn.connected ? (d.vpn.node || "–") : t("notConnected");
+    $("k-node").title = $("k-node").textContent;
+    $("k-uptime").textContent = d.vpn.connected && d.vpn.since ? t("uptime", duration(d.now - d.vpn.since)) : t("vpnOff");
+
+    // The speed history starts again at a reset, like the counters.
+    const hist = state.hist.filter((p) => p.t >= Math.max(d.now - HISTORY_MS, state.reset ? state.reset.at : 0));
+    const peakDown = Math.max(0, ...hist.map((p) => p.down));
+    const peakUp = Math.max(0, ...hist.map((p) => p.up));
+    $("k-down").textContent = speed(d.speed.down);
+    $("k-up").textContent = speed(d.speed.up);
+    $("k-down-peak").textContent = t("peak", speed(peakDown));
+    $("k-up-peak").textContent = t("peak", speed(peakUp));
+    $("lg-down").textContent = speed(d.speed.down);
+    $("lg-up").textContent = speed(d.speed.up);
+    sparkline($("spark-down"), hist, "down", "var(--down)", d.now);
+    sparkline($("spark-up"), hist, "up", "var(--up)", d.now);
+
+    // Open connections right now, reset or not.
+    const live = state.data.active;
+    const tcp = live.filter((c) => c.net === "tcp").length;
+    $("k-active").textContent = live.length;
+    $("k-active-split").textContent = "TCP " + tcp + " · UDP " + (live.length - tcp);
+    const today = state.since || d.traffic.today;
+    const sinceLabel = state.since ? t("sinceTime", hhmm(state.reset.at)) : t("today");
+    $("k-today-label").textContent = state.since ? t("sinceTraffic") : t("todayTraffic");
+    $("ov-apps-sub").textContent = sinceLabel;
+    $("ov-nodes-sub").textContent = sinceLabel;
+    $("k-today").textContent = size(today.up + today.down);
+    const todayRoutes = routeTotals(today.nodes);
+    $("k-today-split").textContent = t("todaySplit", size(todayRoutes.proxy), size(todayRoutes.direct));
+    $("k-today-split").title = "↓ " + size(today.down) + "   ↑ " + size(today.up);
+
+    speedChart();
+
+    // Top apps today.
+    const apps = $("ov-apps");
+    apps.textContent = "";
+    const appTotal = today.up + today.down;
+    const appMax = Math.max(1, ...today.apps.map((a) => a.up + a.down));
+    today.apps.slice(0, 6).forEach((a) => {
+      const row = el("div", "rank-row");
+      row.appendChild(appIcon(a.key, a.name));
+      row.appendChild(el("div", "name", a.name)).title = a.key;
+      row.appendChild(el("div", "val", size(a.up + a.down) + "  " + pct(a.up + a.down, appTotal)));
+      row.appendChild(splitBar(splitOf(a), (a.up + a.down) / appMax * 100));
+      apps.appendChild(row);
+    });
+    if (!today.apps.length) apps.appendChild(el("div", "empty", t("nothing")));
+
+    donut($("ov-nodes"), today.nodes);
+
+    // Rule hits and destinations over the connections the phone remembers;
+    // after a reset, connections already open then count only once they
+    // carry new traffic.
+    const all = d.active.concat(d.closed).filter((c) => !c.pre || c.up + c.down > 0);
+    const connSub = state.reset ? t("sinceTime", hhmm(state.reset.at)) + " · " + t("connsN", all.length) : t("recentN", all.length);
+    $("ov-rules-sub").textContent = connSub;
+    $("ov-hosts-sub").textContent = connSub;
+    const rules = new Map();
+    for (const c of all) {
+      const r = rules.get(c.rule) || { name: c.rule, n: 0, parts: emptyParts() };
+      r.n++;
+      r.parts[ROUTE_FILL[c.route] ? c.route : "proxy"]++;
+      rules.set(c.rule, r);
+    }
+    const ruleList = [...rules.values()].sort((a, b) => b.n - a.n).slice(0, 6);
+    const rulesBox = $("ov-rules");
+    rulesBox.textContent = "";
+    const ruleMax = Math.max(1, ...ruleList.map((r) => r.n));
+    ruleList.forEach((r, i) => {
+      const row = el("div", "rank-row");
+      const mark = el("span", "mark num", i + 1);
+      mark.style.background = "var(--card2)"; mark.style.color = "var(--muted)";
+      row.appendChild(mark);
+      row.appendChild(el("div", "name", r.name)).title = r.name;
+      row.appendChild(el("div", "val", t("connsN", r.n)));
+      const bar = row.appendChild(splitBar(r.parts, r.n / ruleMax * 100));
+      bar.title = ROUTES.filter((k) => r.parts[k] > 0).map((k) => t(k) + "  " + t("connsN", r.parts[k])).join("\n");
+      rulesBox.appendChild(row);
+    });
+    if (!ruleList.length) rulesBox.appendChild(el("div", "empty", t("nothing")));
+
+    const hosts = new Map();
+    for (const c of all) {
+      const h = hosts.get(c.host) || { host: c.host, bytes: 0, n: 0, appKey: c.appKey, app: c.app, node: c.node, parts: emptyParts() };
+      h.bytes += c.up + c.down; h.n++;
+      h.parts[ROUTE_FILL[c.route] ? c.route : "proxy"] += Math.max(1, c.up + c.down);
+      hosts.set(c.host, h);
+    }
+    const hostList = [...hosts.values()].sort((a, b) => b.bytes - a.bytes).slice(0, 6);
+    const hostBox = $("ov-hosts");
+    hostBox.textContent = "";
+    const hostMax = Math.max(1, ...hostList.map((h) => h.bytes));
+    hostList.forEach((h) => {
+      const row = el("div", "rank-row");
+      row.appendChild(appIcon(h.appKey, h.app));
+      const name = row.appendChild(el("div", "name", h.host));
+      name.title = h.host + " · " + h.app + " → " + h.node;
+      row.appendChild(el("div", "val", size(h.bytes)));
+      row.appendChild(splitBar(h.parts, h.bytes / hostMax * 100));
+      hostBox.appendChild(row);
+    });
+    if (!hostList.length) hostBox.appendChild(el("div", "empty", t("nothing")));
+  };
+
+  const sparkline = (svg, hist, key, color, now) => {
+    svg.textContent = "";
+    const W = 200, H = 46;
+    svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+    if (hist.length < 2) return;
+    const max = Math.max(1, ...hist.map((p) => p[key]));
+    const x = (p) => (p.t - (now - HISTORY_MS)) / HISTORY_MS * W;
+    const y = (p) => H - 2 - p[key] / max * (H - 8);
+    const line = hist.map((p, i) => (i ? "L" : "M") + x(p).toFixed(1) + " " + y(p).toFixed(1)).join(" ");
+    sv("path", { d: line + " L" + x(hist[hist.length - 1]).toFixed(1) + " " + H + " L" + x(hist[0]).toFixed(1) + " " + H + " Z", fill: color, "fill-opacity": ".12" }, svg);
+    sv("path", { d: line, fill: "none", stroke: color, "stroke-width": "1.5", "vector-effect": "non-scaling-stroke", "stroke-linejoin": "round" }, svg);
+  };
+
+  const tooltip = (host, x, y, title, rows) => {
+    const tip = el("div", "tip");
+    tip.appendChild(el("div", "t", title));
+    rows.forEach(([label, value, color]) => {
+      const r = tip.appendChild(el("div", "r"));
+      r.appendChild(el("i")).style.background = color;
+      r.appendChild(el("span", "", label));
+      r.appendChild(el("b", "", value));
+    });
+    host.appendChild(tip);
+    const w = tip.offsetWidth, hw = host.clientWidth;
+    tip.style.left = Math.min(Math.max(0, x + 14), hw - w) + "px";
+    tip.style.top = Math.max(0, y - 10) + "px";
+    if (x + 14 + w > hw) tip.style.left = Math.max(0, x - w - 14) + "px";
+  };
+
+  const hoverable = (host, key, draw) => {
+    if (host.dataset.hover) return;
+    host.dataset.hover = "1";
+    host.addEventListener("mousemove", (e) => {
+      const r = host.getBoundingClientRect();
+      state.hover[key] = { x: e.clientX - r.left, y: e.clientY - r.top };
+      draw();
+    });
+    host.addEventListener("mouseleave", () => { delete state.hover[key]; draw(); });
+  };
+
+  const speedChart = () => {
+    const d = state.data;
+    const host = $("speed-chart");
+    hoverable(host, "speed", speedChart);
+    host.textContent = "";
+    const W = Math.max(300, host.clientWidth), H = 230, L = 70, R = 8, T = 10, B = 24;
+    const svg = sv("svg", { width: W, height: H, viewBox: "0 0 " + W + " " + H }, host);
+    const defs = sv("defs", {}, svg);
+    [["gd", "var(--down)"], ["gu", "var(--up)"]].forEach(([id, c]) => {
+      const g = sv("linearGradient", { id, x1: "0", y1: "0", x2: "0", y2: "1" }, defs);
+      sv("stop", { offset: "0%", "stop-color": c, "stop-opacity": ".32" }, g);
+      sv("stop", { offset: "100%", "stop-color": c, "stop-opacity": "0" }, g);
+    });
+    const now = d.now, start = now - HISTORY_MS;
+    const pts = state.hist.filter((p) => p.t >= Math.max(start, state.reset ? state.reset.at : 0));
+    const max = Math.max(0, ...pts.map((p) => Math.max(p.up, p.down)));
+    const axis = niceAxis(max, 4);
+    const x = (tm) => L + (tm - start) / HISTORY_MS * (W - L - R);
+    const y = (v) => T + (1 - v / axis.top) * (H - T - B);
+    for (let v = 0; v <= axis.top + 1e-6; v += axis.step) {
+      sv("line", { x1: L, x2: W - R, y1: y(v), y2: y(v), class: "grid-line" }, svg);
+      sv("text", { x: L - 8, y: y(v) + 3.5, "text-anchor": "end", class: "axis-text" }, svg).textContent = speed(v);
+    }
+    [120, 90, 60, 30, 0].forEach((s) => {
+      sv("text", { x: x(now - s * 1000), y: H - 6, "text-anchor": s === 120 ? "start" : s === 0 ? "end" : "middle", class: "axis-text" }, svg).textContent = s ? "-" + s + "s" : t("live");
+    });
+    if (pts.length >= 2) {
+      [["down", "gd", "var(--down)"], ["up", "gu", "var(--up)"]].forEach(([k, g, c]) => {
+        const line = pts.map((p, i) => (i ? "L" : "M") + x(p.t).toFixed(1) + " " + y(p[k]).toFixed(1)).join(" ");
+        sv("path", { d: line + " L" + x(pts[pts.length - 1].t).toFixed(1) + " " + y(0) + " L" + x(pts[0].t).toFixed(1) + " " + y(0) + " Z", fill: "url(#" + g + ")" }, svg);
+        sv("path", { d: line, fill: "none", stroke: c, "stroke-width": "1.8", "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
+      });
+    }
+    const hover = state.hover.speed;
+    if (hover && pts.length && hover.x >= L) {
+      const tm = start + (hover.x - L) / (W - L - R) * HISTORY_MS;
+      const p = pts.reduce((a, b) => Math.abs(b.t - tm) < Math.abs(a.t - tm) ? b : a);
+      const px = x(p.t);
+      sv("line", { x1: px, x2: px, y1: T, y2: H - B, class: "cross" }, svg);
+      sv("circle", { cx: px, cy: y(p.down), r: 3.5, fill: "var(--down)", stroke: "var(--card)", "stroke-width": 2 }, svg);
+      sv("circle", { cx: px, cy: y(p.up), r: 3.5, fill: "var(--up)", stroke: "var(--card)", "stroke-width": 2 }, svg);
+      tooltip(host, px, hover.y, clock(p.t), [[t("download"), speed(p.down), "var(--down)"], [t("upload"), speed(p.up), "var(--up)"]]);
+    }
+  };
+
+  const donut = (box, nodes, caption) => {
+    box.textContent = "";
+    const total = nodes.reduce((s, n) => s + n.up + n.down, 0);
+    if (!nodes.length || total <= 0) { box.appendChild(el("div", "empty", t("nothing"))); return; }
+    let proxyIndex = 0;
+    const items = nodes.map((n) => ({ ...n, bytes: n.up + n.down, color: ROUTE_COLOR[n.route] || PROXY_COLORS[proxyIndex++ % PROXY_COLORS.length] }));
+    const shown = items.slice(0, 6);
+    const rest = items.slice(6).reduce((s, n) => s + n.bytes, 0);
+    if (rest > 0) shown.push({ name: "…", bytes: rest, color: "var(--muted)" });
+    const svg = sv("svg", { width: 150, height: 150, viewBox: "0 0 42 42" }, box);
+    const C = 2 * Math.PI * 15.915;
+    sv("circle", { cx: 21, cy: 21, r: 15.915, fill: "none", stroke: "var(--card2)", "stroke-width": 5 }, svg);
+    let offset = 0;
+    shown.forEach((n) => {
+      const len = n.bytes / total * 100;
+      const c = sv("circle", { cx: 21, cy: 21, r: 15.915, fill: "none", stroke: n.color, "stroke-width": 5, "stroke-dasharray": Math.max(0, len - (shown.length > 1 ? 0.6 : 0)) + " " + (100 - len + (shown.length > 1 ? 0.6 : 0)), "stroke-dashoffset": 25 - offset }, svg);
+      sv("title", {}, c).textContent = n.name + " · " + size(n.bytes);
+      offset += len;
+    });
+    sv("text", { x: 21, y: 21, "text-anchor": "middle", "font-size": "4.4", "font-weight": "650", fill: "var(--text)", class: "donut-center" }, svg).textContent = size(total);
+    sv("text", { x: 21, y: 26.5, "text-anchor": "middle", "font-size": "2.8", fill: "var(--muted)" }, svg).textContent = caption || t("nNodes", nodes.length);
+    const legend = box.appendChild(el("div", "legend-list"));
+    shown.forEach((n) => {
+      const row = legend.appendChild(el("div", "legend-row"));
+      row.appendChild(el("i")).style.background = n.color;
+      row.appendChild(el("span", "name", n.name)).title = n.name;
+      row.appendChild(el("span", "v", size(n.bytes)));
+      row.appendChild(el("span", "pct", pct(n.bytes, total)));
+    });
+  };
+
+  // Connections
+  const COLS = {
+    active: [
+      { k: "host", l: "host", v: (c) => c.host },
+      { k: "app", l: "app", v: (c) => c.app },
+      { k: "rule", l: "rule", v: (c) => c.rule },
+      { k: "node", l: "via", v: (c) => c.node },
+      { k: "rate", l: "speedCol", r: true, v: (c) => rate(c).down + rate(c).up },
+      { k: "bytes", l: "bytesCol", r: true, v: (c) => c.down + c.up },
+      { k: "time", l: "time", r: true, v: (c) => c.start, inv: true },
+    ],
+    closed: [
+      { k: "host", l: "host", v: (c) => c.host },
+      { k: "app", l: "app", v: (c) => c.app },
+      { k: "rule", l: "rule", v: (c) => c.rule },
+      { k: "node", l: "via", v: (c) => c.node },
+      { k: "bytes", l: "bytesCol", r: true, v: (c) => c.down + c.up },
+      { k: "time", l: "time", r: true, v: (c) => (c.end || 0) - c.start },
+      { k: "end", l: "ended", r: true, v: (c) => c.end || 0 },
+    ],
+  };
+  const bare = (ip) => String(ip).replace(/^\[(.*)\]$/, "$1");
+  const rate = (c) => (state.paused && state.frozenRates ? state.frozenRates : state.rates).get(c.id) || { up: 0, down: 0 };
+
+  const fillSelect = (sel, allLabel, values) => {
+    const current = sel.value;
+    const pairs = values.map((v) => (Array.isArray(v) ? v : [v, v]));
+    const wanted = [["", allLabel]].concat(pairs);
+    const have = [...sel.options].map((o) => [o.value, o.textContent]);
+    if (have.length === wanted.length && have.every((v, i) => v[0] === wanted[i][0] && v[1] === wanted[i][1])) return;
+    sel.textContent = "";
+    wanted.forEach(([value, label]) => { sel.appendChild(el("option", "", label)).value = value; });
+    sel.value = pairs.some((p) => p[0] === current) ? current : "";
+  };
+
+  const renderConnections = (d) => {
+    document.querySelectorAll("[data-view]").forEach((b) => b.classList.toggle("sel", b.getAttribute("data-view") === state.view));
+    $("n-active").textContent = d.active.length;
+    $("n-closed").textContent = d.closed.length;
+    const pause = $("pause");
+    pause.classList.toggle("on", state.paused);
+    pause.lastElementChild.textContent = state.paused ? t("resume") : t("pause");
+
+    const source = state.view === "closed" ? d.closed : d.active;
+    const sortLocale = (a, b) => a.localeCompare(b, lang);
+    fillSelect($("f-app"), t("allApps"), [...new Set(source.map((c) => c.app))].sort(sortLocale));
+    fillSelect($("f-route"), t("allRoutes"), ["proxy", "direct", "block", "quic", "dns", "tailscale"].filter((r) => source.some((c) => c.route === r)).map((r) => [r, t(r)]));
+    fillSelect($("f-node"), t("allNodes"), [...new Set(source.map((c) => c.node))].sort(sortLocale));
+    fillSelect($("f-net"), t("allNets"), ["TCP", "UDP"]);
+
+    const q = $("filter").value.trim().toLowerCase();
+    const fApp = $("f-app").value, fNode = $("f-node").value, fNet = $("f-net").value.toLowerCase(), fRoute = $("f-route").value;
+    let list = source.filter((c) =>
+      (!fApp || c.app === fApp) && (!fNode || c.node === fNode) && (!fNet || c.net === fNet) && (!fRoute || c.route === fRoute) &&
+      (!q || [c.host, c.ip || "", c.port, c.app, c.appKey, c.rule, c.node].join(" ").toLowerCase().includes(q)));
+
+    const cols = COLS[state.view];
+    const sortCol = cols.find((c) => c.k === state.sort.key);
+    if (sortCol) {
+      const dir = state.sort.dir * (sortCol.inv ? -1 : 1);
+      list = list.slice().sort((a, b) => {
+        const x = sortCol.v(a), y = sortCol.v(b);
+        return (typeof x === "string" ? x.localeCompare(y, lang) : x - y) * dir || b.id - a.id;
+      });
+    }
+
+    const head = $("conn-head");
+    head.textContent = "";
+    cols.forEach((c) => {
+      const th = el("th", c.r ? "r" : "", t(c.l));
+      if (state.sort.key === c.k) th.appendChild(el("span", "arrow", state.sort.dir > 0 ? "↑" : "↓"));
+      th.addEventListener("click", () => {
+        if (state.sort.key !== c.k) state.sort = { key: c.k, dir: -1 };
+        else if (state.sort.dir < 0) state.sort.dir = 1;
+        else state.sort = { key: null, dir: -1 };
+        render();
+      });
+      head.appendChild(th);
+    });
+
+    const LIMIT = 500;
+    const body = $("conn-body");
+    const frag = document.createDocumentFragment();
+    list.slice(0, LIMIT).forEach((c) => {
+      const tr = el("tr", c.id === state.selected ? "sel" : "");
+      tr.addEventListener("click", () => openDrawer(c.id));
+      const host = tr.appendChild(el("td", "host"));
+      host.appendChild(el("div", "h", c.host + ":" + c.port)).title = c.host + ":" + c.port;
+      const sub = host.appendChild(el("div", "s"));
+      sub.appendChild(el("span", "tag net", c.net.toUpperCase()));
+      if (c.ip && c.ip !== c.host) sub.appendChild(el("span", "mono", bare(c.ip)));
+      tr.appendChild(el("td", "app-col")).appendChild(appCell(c.appKey, c.app));
+      const rule = tr.appendChild(el("td", "rule-col")).appendChild(el("span", "tag", c.rule));
+      rule.title = c.rule;
+      tr.appendChild(el("td")).appendChild(routeTag(c.node, c.route));
+      const pair = (down, up, fmt, hot) => {
+        const td = tr.appendChild(el("td", "num r pair"));
+        td.appendChild(el("div", down > 0 ? (hot && down >= hot ? "hot" : "") : "zero", "↓ " + fmt(down)));
+        td.appendChild(el("div", up > 0 ? (hot && up >= hot ? "hot" : "") : "zero", "↑ " + fmt(up)));
+        return td;
+      };
+      if (state.view === "active") {
+        const r = rate(c);
+        pair(r.down, r.up, speed, 1024);
+        pair(c.down, c.up, size);
+        tr.appendChild(el("td", "num r", duration(d.now - c.start)));
+      } else {
+        pair(c.down, c.up, size);
+        tr.appendChild(el("td", "num r", duration((c.end || d.now) - c.start)));
+        tr.appendChild(el("td", "num r", c.end ? clock(c.end) : "–"));
+      }
+      frag.appendChild(tr);
+    });
+    body.textContent = "";
+    body.appendChild(frag);
+
+    const empty = $("conn-empty");
+    empty.classList.toggle("hidden", list.length > 0);
+    empty.lastElementChild.textContent = (q || fApp || fNode || fNet || fRoute) ? t("noMatch")
+      : !d.vpn.tracking && state.view === "active" ? t("notTracking")
+      : state.view === "closed" ? t("noClosed") : t("noActive");
+    $("conn-count").textContent = t("showing", Math.min(list.length, LIMIT), source.length);
+    const down = list.reduce((s, c) => s + c.down, 0), up = list.reduce((s, c) => s + c.up, 0);
+    $("conn-sum").textContent = t("sum", size(down), size(up));
+  };
+
+  // Drawer
+  const findConnection = (id) => {
+    const d = state.data;
+    if (!d) return null;
+    return d.active.find((c) => c.id === id) || d.closed.find((c) => c.id === id)
+      || (state.frozen && (state.frozen.active.find((c) => c.id === id) || state.frozen.closed.find((c) => c.id === id))) || null;
+  };
+  const openDrawer = (id) => {
+    state.selected = id;
+    $("drawer").classList.remove("hidden");
+    $("scrim").classList.remove("hidden");
+    render();
+  };
+  const closeDrawer = () => {
+    state.selected = null;
+    $("drawer").classList.add("hidden");
+    $("scrim").classList.add("hidden");
+    document.querySelectorAll("#conn-body tr.sel").forEach((r) => r.classList.remove("sel"));
+  };
+  const renderDrawer = () => {
+    const c = findConnection(state.selected);
+    if (!c) return;
+    const d = state.data;
+    const open = !c.end;
+    $("dw-title").textContent = c.host + ":" + c.port;
+    $("dw-sub").textContent = t("detail") + " #" + c.id + " · " + (open ? t("stillOpen") : t("showClosed"));
+    const body = $("dw-body");
+    body.textContent = "";
+    const io = body.appendChild(el("div", "io"));
+    const r = open ? rate(c) : null;
+    [["download", c.down, r && r.down, "var(--down)"], ["upload", c.up, r && r.up, "var(--up)"]].forEach(([k, v, s, color]) => {
+      const card = io.appendChild(el("div", "card"));
+      card.appendChild(el("div", "k", t(k)));
+      card.appendChild(el("div", "v", size(v))).style.color = color;
+      card.appendChild(el("div", "s", s !== null ? t("speedNow", size(s)) : "–"));
+    });
+    const section = (title, rows) => {
+      body.appendChild(el("div", "dl-title", t(title)));
+      const dl = body.appendChild(el("div", "dl"));
+      rows.forEach(([label, value]) => {
+        dl.appendChild(el("div", "", t(label)));
+        const cell = dl.appendChild(el("div"));
+        if (value instanceof Node) cell.appendChild(value); else cell.textContent = value === undefined || value === null || value === "" ? "–" : String(value);
+      });
+    };
+    section("basics", [
+      ["host", c.host], ["ip", c.ip ? bare(c.ip) : ""], ["port", c.port], ["network", c.net.toUpperCase()],
+      ["app", appCell(c.appKey, c.app)], ["pkg", isPackage(c.appKey) ? c.appKey : ""], ["uid", c.uid],
+    ]);
+    section("routing", [
+      ["ruleName", c.rule], ["nodeName", routeTag(c.node, c.route)], ["routeKind", t(c.route || "proxy")],
+    ]);
+    section("timing", [
+      ["started", stamp(c.start)], ["ended", c.end ? stamp(c.end) : t("stillOpen")], ["duration", duration((c.end || d.now) - c.start)],
+    ]);
+  };
+
+  // Traffic
+  const tableHead = (row, cols) => {
+    row.textContent = "";
+    cols.forEach(([label, right]) => row.appendChild(el("th", right ? "r" : "", label)));
+    row.querySelectorAll("th").forEach((th) => { th.style.cursor = "default"; });
+  };
+  const rankTable = (headRow, body, items, total, cell) => {
+    tableHead(headRow, [["#", false], [t("name"), false], [t("dl"), true], [t("ul"), true], [t("total"), true], [t("share"), false]]);
+    body.textContent = "";
+    if (!items.length) {
+      const td = body.appendChild(el("tr")).appendChild(el("td", "", t("nothing")));
+      td.colSpan = 6; td.className = "muted"; td.style.textAlign = "center"; td.style.padding = "28px";
+      return;
+    }
+    const max = Math.max(1, ...items.map((i) => i.up + i.down));
+    items.slice(0, 100).forEach((i, n) => {
+      const tr = body.appendChild(el("tr"));
+      tr.style.cursor = "default";
+      tr.appendChild(el("td", "num", n + 1));
+      tr.appendChild(el("td", "app-col")).appendChild(cell(i));
+      tr.appendChild(el("td", "num r", size(i.down)));
+      tr.appendChild(el("td", "num r", size(i.up)));
+      tr.appendChild(el("td", "num r hot", size(i.up + i.down)));
+      const share = tr.appendChild(el("td"));
+      share.style.width = "120px";
+      const wrap = share.appendChild(el("div"));
+      wrap.style.cssText = "display:flex;align-items:center;gap:8px";
+      const bar = wrap.appendChild(el("div"));
+      bar.style.cssText = "flex:1;height:5px;border-radius:3px;background:var(--card2);overflow:hidden;min-width:40px";
+      const fill = bar.appendChild(el("div"));
+      fill.style.cssText = "height:100%;border-radius:3px;background:var(--primary);width:" + Math.max(1, (i.up + i.down) / max * 100) + "%";
+      wrap.appendChild(el("span", "num muted", pct(i.up + i.down, total))).style.cssText = "font-size:11.5px;width:38px;text-align:right";
+    });
+  };
+
+  /** Apps with their split by route; a click shows the nodes an app used. */
+  const appsTable = (s, total) => {
+    document.querySelectorAll("[data-apps]").forEach((b) => b.classList.toggle("sel", b.getAttribute("data-apps") === state.appFilter));
+    tableHead($("apps-head"), [["#", false], [t("app"), false], [t("viaProxy"), true], [t("viaDirect"), true], [t("total"), true], [t("route"), false]]);
+    const body = $("apps-body");
+    body.textContent = "";
+    const items = s.apps.map((a) => ({ ...a, parts: splitOf(a) })).filter((a) =>
+      state.appFilter === "proxy" ? a.parts.proxy > 0
+        : state.appFilter === "direct" ? a.parts.proxy === 0 && a.parts.direct > 0
+        : true);
+    $("t-apps-sub").textContent = t("nApps", items.length);
+    if (!items.length) {
+      const td = body.appendChild(el("tr")).appendChild(el("td", "", t("nothing")));
+      td.colSpan = 6; td.className = "muted"; td.style.textAlign = "center"; td.style.padding = "28px";
+      return;
+    }
+    const max = Math.max(1, ...items.map((i) => i.up + i.down));
+    const shareCell = (tr, parts, bytes, of, widthPct) => {
+      const td = tr.appendChild(el("td"));
+      td.style.width = "34%";
+      const wrap = td.appendChild(el("div"));
+      wrap.style.cssText = "display:flex;align-items:center;gap:10px";
+      const bar = wrap.appendChild(splitBar(parts, widthPct));
+      bar.style.flex = "1";
+      bar.style.minWidth = "80px";
+      wrap.appendChild(el("span", "num muted", pct(bytes, of))).style.cssText = "font-size:11.5px;width:40px;text-align:right";
+    };
+    items.slice(0, 200).forEach((a, n) => {
+      const open = state.expandedApps.has(a.key);
+      const tr = body.appendChild(el("tr", "expandable" + (open ? " open" : "")));
+      tr.title = t("showNodes");
+      tr.addEventListener("click", () => {
+        if (state.expandedApps.has(a.key)) state.expandedApps.delete(a.key); else state.expandedApps.add(a.key);
+        render();
+      });
+      tr.appendChild(el("td", "num", n + 1));
+      const name = tr.appendChild(el("td", "app-col"));
+      const cell = name.appendChild(appCell(a.key, a.name));
+      cell.appendChild(el("span", "chev", "›"));
+      const num = (v) => tr.appendChild(el("td", "num r" + (v > 0 ? "" : " zero"), v > 0 ? size(v) : "–"));
+      num(a.parts.proxy).style.color = a.parts.proxy > 0 ? "var(--primary)" : "";
+      num(a.parts.direct).style.color = a.parts.direct > 0 ? "var(--ok)" : "";
+      tr.appendChild(el("td", "num r hot", size(a.up + a.down))).title = "↓ " + size(a.down) + "   ↑ " + size(a.up);
+      shareCell(tr, a.parts, a.up + a.down, total, (a.up + a.down) / max * 100);
+      if (!open) return;
+      const via = (a.via || []).slice();
+      if (a.parts.none > 0) via.push({ name: t("none"), route: "none", up: a.parts.none, down: 0 });
+      via.forEach((v) => {
+        const sub = body.appendChild(el("tr", "sub"));
+        sub.appendChild(el("td"));
+        const tag = v.route === "none" ? el("span", "tag", v.name) : routeTag(v.name, v.route);
+        sub.appendChild(el("td")).appendChild(tag);
+        const b = v.up + v.down;
+        sub.appendChild(el("td", "num r", v.route === "proxy" || v.route === "tailscale" ? size(b) : ""));
+        sub.appendChild(el("td", "num r", v.route === "direct" ? size(b) : ""));
+        sub.appendChild(el("td", "num r", size(b))).title = "↓ " + size(v.down) + "   ↑ " + size(v.up);
+        const parts = emptyParts();
+        parts[ROUTE_FILL[v.route] ? v.route : "proxy"] = b;
+        shareCell(sub, parts, b, a.up + a.down, b / (a.up + a.down || 1) * 100);
+      });
+    });
+  };
+
+  const renderTraffic = (d) => {
+    if (state.range === "since" && !state.since) state.range = "week";
+    document.querySelectorAll("[data-range]").forEach((b) => b.classList.toggle("sel", b.getAttribute("data-range") === state.range));
+    const s = state.range === "since" ? state.since : d.traffic[state.range];
+    const total = s.up + s.down;
+    $("t-total").textContent = size(total);
+    const routes = routeTotals(s.nodes);
+    $("t-range").textContent = "↓ " + size(s.down) + "   ↑ " + size(s.up);
+    $("t-proxy").textContent = size(routes.proxy);
+    $("t-direct").textContent = size(routes.direct);
+    $("t-proxy-pct").textContent = t("ofTotal", pct(routes.proxy, total));
+    $("t-direct-pct").textContent = t("ofTotal", pct(routes.direct, total));
+    if (state.range === "today" || state.range === "since") {
+      $("t-avg-label").textContent = t("appsUsed");
+      $("t-avg").textContent = s.apps.length;
+      $("t-avg-foot").textContent = t("nNodes", s.nodes.length);
+    } else {
+      const days = Math.max(1, s.daily.length);
+      $("t-avg-label").textContent = t("avgDay");
+      $("t-avg").textContent = size(total / days);
+      const peak = s.daily.reduce((a, b) => (b.up + b.down > a.up + a.down ? b : a), { up: 0, down: 0, day: "" });
+      $("t-avg-foot").textContent = peak.day ? t("peakDay", size(peak.up + peak.down), peak.day.slice(5)) : "";
+    }
+    $("daily-card").classList.toggle("hidden", s.daily.length < 2);
+    if (s.daily.length >= 2) dailyChart();
+    $("t-apps-sub").textContent = t("nApps", s.apps.length);
+    $("t-nodes-sub").textContent = t("nNodes", s.nodes.length);
+    appsTable(s, total);
+    donut($("t-routes"), ROUTES.filter((r) => r !== "none" && routes[r] > 0).map((r) => ({ name: t(r), route: r, up: routes[r], down: 0 })), t("total"));
+    let proxyIndex = 0;
+    rankTable($("nodes-head"), $("nodes-body"), s.nodes, total, (n) => {
+      const tag = routeTag(n.name, n.route);
+      if (n.route === "proxy") tag.querySelector(".d").style.background = PROXY_COLORS[proxyIndex++ % PROXY_COLORS.length];
+      return tag;
+    });
+  };
+
+  const dailyChart = () => {
+    const d = state.data;
+    const s = d.traffic[state.range];
+    const host = $("daily-chart");
+    hoverable(host, "daily", dailyChart);
+    host.textContent = "";
+    const W = Math.max(300, host.clientWidth), H = 240, L = 70, R = 8, T = 10, B = 26;
+    const svg = sv("svg", { width: W, height: H, viewBox: "0 0 " + W + " " + H }, host);
+    const days = s.daily;
+    const max = Math.max(0, ...days.map((x) => x.up + x.down));
+    const axis = niceAxis(max, 4);
+    const y = (v) => T + (1 - v / axis.top) * (H - T - B);
+    for (let v = 0; v <= axis.top + 1e-6; v += axis.step) {
+      sv("line", { x1: L, x2: W - R, y1: y(v), y2: y(v), class: "grid-line" }, svg);
+      sv("text", { x: L - 8, y: y(v) + 3.5, "text-anchor": "end", class: "axis-text" }, svg).textContent = size(v);
+    }
+    const slot = (W - L - R) / days.length;
+    const bw = Math.max(3, Math.min(34, slot * 0.62));
+    const hover = state.hover.daily;
+    const hi = hover && hover.x >= L ? Math.min(days.length - 1, Math.floor((hover.x - L) / slot)) : -1;
+    const labelEvery = Math.ceil(days.length / Math.max(1, Math.floor((W - L - R) / 56)));
+    days.forEach((x, i) => {
+      const cx = L + slot * i + slot / 2;
+      if (i === hi) sv("rect", { x: L + slot * i, y: T, width: slot, height: H - T - B, fill: "var(--hover)" }, svg);
+      const hDown = y(0) - y(x.down), hUp = y(0) - y(x.up);
+      if (x.down > 0) sv("rect", { x: cx - bw / 2, y: y(0) - hDown, width: bw, height: Math.max(1, hDown), fill: "var(--down)", rx: 2 }, svg);
+      if (x.up > 0) sv("rect", { x: cx - bw / 2, y: y(0) - hDown - hUp - (x.down > 0 ? 1 : 0), width: bw, height: Math.max(1, hUp), fill: "var(--up)", rx: 2 }, svg);
+      if (i % labelEvery === 0 || i === days.length - 1) {
+        sv("text", { x: cx, y: H - 7, "text-anchor": "middle", class: "axis-text" }, svg).textContent = x.day.slice(5);
+      }
+    });
+    if (hi >= 0) {
+      const x = days[hi];
+      tooltip(host, L + slot * hi + slot / 2, hover.y, x.day, [[t("download"), size(x.down), "var(--down)"], [t("upload"), size(x.up), "var(--up)"], [t("total"), size(x.up + x.down), "transparent"]]);
+    }
+  };
+
+  // ---------- Events ----------
+  $("login-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    token = $("login-token").value.trim();
+    try { localStorage.setItem(TOKEN_KEY, token); } catch (err) {}
+    $("login-error").textContent = "";
+    poll();
+  });
+  $("reset-btn").addEventListener("click", () => { startReset(); render(); });
+  $("reset-clear").addEventListener("click", () => { clearReset(); render(); });
+  window.addEventListener("pagehide", () => { if (state.reset) saveReset(); });
+  $("logout").addEventListener("click", () => {
+    clearReset();
+    try { localStorage.removeItem(TOKEN_KEY); } catch (e) {}
+    token = null;
+    state.data = null;
+    clearTimeout(state.timer);
+    $("login-token").value = "";
+    showLogin("");
+  });
+  const go = (page) => {
+    state.page = page;
+    history.replaceState(null, "", "#" + page);
+    window.scrollTo(0, 0);
+    render();
+  };
+  document.querySelectorAll("[data-page]").forEach((b) => b.addEventListener("click", () => go(b.getAttribute("data-page"))));
+  document.querySelectorAll("[data-goto]").forEach((b) => b.addEventListener("click", () => go(b.getAttribute("data-goto"))));
+  document.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => {
+    state.view = b.getAttribute("data-view");
+    if (!COLS[state.view].some((c) => c.k === state.sort.key)) state.sort = { key: null, dir: -1 };
+    render();
+  }));
+  document.querySelectorAll("[data-range]").forEach((b) => b.addEventListener("click", () => { state.range = b.getAttribute("data-range"); render(); }));
+  document.querySelectorAll("[data-apps]").forEach((b) => b.addEventListener("click", () => { state.appFilter = b.getAttribute("data-apps"); render(); }));
+  ["filter", "f-app", "f-route", "f-node", "f-net"].forEach((id) => $(id).addEventListener(id === "filter" ? "input" : "change", render));
+  $("pause").addEventListener("click", () => {
+    state.paused = !state.paused;
+    state.frozen = state.paused ? state.data : null;
+    state.frozenRates = state.paused ? state.rates : null;
+    render();
+  });
+  $("dw-close").addEventListener("click", closeDrawer);
+  $("scrim").addEventListener("click", closeDrawer);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeDrawer();
+    if (e.key === "/" && state.page === "conn" && document.activeElement !== $("filter")) { e.preventDefault(); $("filter").focus(); }
+  });
+  let resizeTimer = null;
+  window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(render, 120); });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
+
+  applyText();
+  poll();
+})();
+</script>
+</body>
+</html>

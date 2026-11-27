@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Rebuilds app/libs/libXray.aar from upstream libXray / Xray-core v26.11.9
-# plus the patches in this folder (per-app routing needs 0001).
+# plus the patches in this folder (per-app routing needs 0001; the
+# connection view needs 0003 and libxray-0001).
 #
 # Needs: git, python3, Go (fetches go1.27.4 via GOTOOLCHAIN), the Android
 # SDK with NDK 29 (ANDROID_HOME / ANDROID_NDK_HOME).
@@ -24,8 +25,14 @@ cd "$WORK"
 [ -d libXray ] || git clone --depth 1 --branch "$VERSION" https://github.com/XTLS/libXray.git
 
 git -C Xray-core checkout -- .
+git -C Xray-core clean -fdq
 for patch in "$HERE"/0*.patch; do
   git -C Xray-core apply "$patch"
+done
+git -C libXray checkout -- .
+git -C libXray clean -fdq -e libXray.aar -e libXray-sources.jar -e dat
+for patch in "$HERE"/libxray-*.patch; do
+  git -C libXray apply "$patch"
 done
 
 # Upstream builds every Android ABI; PurpleBear ships arm64-v8a only.

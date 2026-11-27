@@ -8,6 +8,32 @@ import org.junit.Test
 
 class DnsInputTest {
     @Test
+    fun foreignPublicResolversGoThroughTheNodeOnlyFromChina() {
+        listOf("8.8.8.8", "1.1.1.1", "9.9.9.9", "2001:4860:4860::8888").forEach {
+            assertTrue(it, DnsInput.needsProxy(it, AppGeoRoutingRegion.China))
+            assertFalse(it, DnsInput.needsProxy(it, AppGeoRoutingRegion.Russia))
+            assertFalse(it, DnsInput.needsProxy(it, AppGeoRoutingRegion.English))
+        }
+        listOf("223.5.5.5", "119.29.29.29", "114.114.114.114", "192.168.0.1", "10.0.0.1").forEach {
+            assertFalse(it, DnsInput.needsProxy(it, AppGeoRoutingRegion.China))
+        }
+    }
+
+    @Test
+    fun foreignEncryptedServersAreKnownByHostName() {
+        listOf("dns.google", "cloudflare-dns.com", "one.one.one.one", "dns.adguard-dns.com", "abc123.dns.nextdns.io").forEach {
+            assertTrue(it, DnsInput.needsProxy(it, AppGeoRoutingRegion.China))
+        }
+        listOf("dns.alidns.com", "doh.pub", "dot.pub").forEach {
+            assertFalse(it, DnsInput.needsProxy(it, AppGeoRoutingRegion.China))
+        }
+        assertTrue(DnsInput.isUnreachableDoq("quic://dns.adguard-dns.com", AppGeoRoutingRegion.China))
+        assertFalse(DnsInput.isUnreachableDoq("quic://dns.alidns.com", AppGeoRoutingRegion.China))
+        assertFalse(DnsInput.isUnreachableDoq("https://dns.google/dns-query", AppGeoRoutingRegion.China))
+        assertFalse(DnsInput.isUnreachableDoq("quic://dns.adguard-dns.com", AppGeoRoutingRegion.Russia))
+    }
+
+    @Test
     fun acceptsIpsWithOptionalPort() {
         listOf("8.8.8.8", " 223.5.5.5 ", "1.1.1.1:53", "2001:4860:4860::8888", "[2001:4860:4860::8888]:53", "192.168.1.1", "[fd00::1]")
             .forEach { assertTrue(it, DnsInput.isValid(it)) }

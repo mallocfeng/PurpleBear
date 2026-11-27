@@ -18,6 +18,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.indication
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -55,6 +56,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -66,6 +68,7 @@ import com.mallocgfw.app.model.AppScreen
 import com.mallocgfw.app.model.AppDnsMode
 import com.mallocgfw.app.model.AppGeoRoutingRegion
 import com.mallocgfw.app.model.ConnectionStatus
+import com.mallocgfw.app.model.ImportLinks
 import com.mallocgfw.app.model.ImportParser
 import com.mallocgfw.app.model.ImportPreview
 import com.mallocgfw.app.model.AppLanguage
@@ -106,6 +109,7 @@ import com.mallocgfw.app.update.AppUpdateStatus
 import com.mallocgfw.app.update.AppUpdateUiState
 import com.mallocgfw.app.sync.BackgroundSyncManager
 import com.mallocgfw.app.sync.DailySyncScheduler
+import com.mallocgfw.app.sync.SubscriptionReminders
 import com.mallocgfw.app.sync.SyncNotifications
 import com.mallocgfw.app.quicksettings.VpnQuickSettingsTileService
 import com.mallocgfw.app.xray.AppLogManager
@@ -131,6 +135,7 @@ fun MallocGfwApp(
     onLaunchRequestConsumed: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
     val quickTileLabel = stringResource(R.string.qs_tile_label)
     val scope = rememberCoroutineScope()
     val screenStateHolder = rememberSaveableStateHolder()
@@ -326,7 +331,7 @@ fun MallocGfwApp(
             AppScreen.Import, AppScreen.ConfirmImport, AppScreen.Subscriptions -> MainTab.Import
             AppScreen.Me, AppScreen.Diagnostics, AppScreen.Settings, AppScreen.Permission,
             AppScreen.OpenSourceLicenses, AppScreen.About, AppScreen.Mcp, AppScreen.LogViewer,
-            AppScreen.Tailscale -> MainTab.Me
+            AppScreen.Tailscale, AppScreen.Stats, AppScreen.WifiRules -> MainTab.Me
             else -> mainTab
         }
     }
@@ -358,7 +363,7 @@ fun MallocGfwApp(
             AppScreen.Import, AppScreen.ConfirmImport, AppScreen.Subscriptions -> MainTab.Import
             AppScreen.Me, AppScreen.Diagnostics, AppScreen.Settings, AppScreen.Permission,
             AppScreen.OpenSourceLicenses, AppScreen.About, AppScreen.Mcp, AppScreen.LogViewer,
-            AppScreen.Tailscale -> MainTab.Me
+            AppScreen.Tailscale, AppScreen.Stats, AppScreen.WifiRules -> MainTab.Me
             else -> MainTab.Home
         }
         screenHistory = screenHistory + screen
@@ -480,9 +485,20 @@ fun MallocGfwApp(
         }
     }
 
+    // Which switch asked for the notification permission.
+    var notificationPermissionForReminders by remember { mutableStateOf(false) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
+        if (notificationPermissionForReminders) {
+            appSettings = appSettings.copy(subscriptionReminders = granted)
+            settingsMessage = if (granted) {
+                tr("订阅到期提醒已开启。", "Subscription reminders are on.", "Напоминания о подписке включены.")
+            } else {
+                tr("系统未授予通知权限，无法显示订阅提醒。", "Notifications aren't allowed, so subscription reminders can't show.", "Уведомления запрещены, напоминания о подписке не будут показаны.")
+            }
+            return@rememberLauncherForActivityResult
+        }
         appSettings = appSettings.copy(showUpdateNotifications = granted)
         settingsMessage = if (granted) {
             "更新通知已开启。"
@@ -648,8 +664,12 @@ fun MallocGfwApp(
         }
     }
 
+    // The system's light/dark setting until the user picks one with the toggle.
+    val systemDarkTheme = isSystemInDarkTheme()
+    val lightTheme = if (appSettings.followSystemTheme) !systemDarkTheme else appSettings.lightThemeEnabled
+
     fun toggleThemeMode() {
-        appSettings = appSettings.copy(lightThemeEnabled = !appSettings.lightThemeEnabled)
+        appSettings = appSettings.copy(lightThemeEnabled = !lightTheme, followSystemTheme = false)
     }
 
     fun updateLanguage(language: AppLanguage) {
@@ -724,6 +744,10 @@ fun MallocGfwApp(
     fun updateProxyMode(nextMode: ProxyMode) {
         if (proxyMode == nextMode) return
         proxyMode = nextMode
+        // The two per-app modes exclude each other.
+        if (nextMode == ProxyMode.PerApp && appSettings.bypassAppsEnabled) {
+            appSettings = appSettings.copy(bypassAppsEnabled = false)
+        }
         val perAppEnabled = nextMode == ProxyMode.PerApp
         val shouldReconnect = VpnServiceController.isRunning() ||
             connectionStatus == ConnectionStatus.Connected ||
@@ -756,6 +780,35 @@ fun MallocGfwApp(
                 },
             )
         }
+    }
+
+    fun setBypassAppsMode(enabled: Boolean) {
+        val shouldReconnect = VpnServiceController.isRunning() ||
+            connectionStatus == ConnectionStatus.Connected ||
+            connectionStatus == ConnectionStatus.Connecting
+        // The two per-app modes exclude each other.
+        if (enabled && proxyMode == ProxyMode.PerApp) proxyMode = ProxyMode.Smart
+        appSettings = appSettings.copy(bypassAppsEnabled = enabled)
+        pendingProtectedAppsApply = false
+        settingsMessage = if (enabled) {
+            tr("已开启：选中的应用不走 VPN。", "On: the picked apps skip the VPN.", "Включено: выбранные приложения идут без VPN.")
+        } else {
+            tr("已关闭：所有应用照常走 VPN。", "Off: all apps use the VPN again.", "Выключено: все приложения снова идут через VPN.")
+        }
+        val reconnectServer = resolveServerForSettingsReconnect()
+        if (shouldReconnect && reconnectServer != null) {
+            reconnectVpnForSettingsChange(
+                server = reconnectServer,
+                message = tr("正在重连 VPN 以应用新的分应用设置…", "Reconnecting the VPN to apply the per-app setting…", "Переподключение VPN для применения настройки по приложениям…"),
+            )
+        }
+    }
+
+    fun toggleBypassApp(packageName: String) {
+        val current = appSettings.bypassApps
+        val next = if (packageName in current) current - packageName else current + packageName
+        appSettings = appSettings.copy(bypassApps = next)
+        pendingProtectedAppsApply = true
     }
 
     fun updateProtectedAppEnabled(appId: String) {
@@ -791,7 +844,7 @@ fun MallocGfwApp(
     }
 
     fun applyProtectedAppsSelection() {
-        if (proxyMode != ProxyMode.PerApp) {
+        if (proxyMode != ProxyMode.PerApp && !appSettings.bypassAppsEnabled) {
             settingsMessage = "请先启用分应用代理，再应用当前应用名单。"
             return
         }
@@ -842,6 +895,20 @@ fun MallocGfwApp(
         }
     }
 
+    fun setSubscriptionRemindersEnabled(enabled: Boolean) {
+        if (enabled && !SubscriptionReminders.canPostNotifications(context)) {
+            notificationPermissionForReminders = true
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            return
+        }
+        appSettings = appSettings.copy(subscriptionReminders = enabled)
+        settingsMessage = if (enabled) {
+            tr("订阅到期提醒已开启。", "Subscription reminders are on.", "Напоминания о подписке включены.")
+        } else {
+            tr("订阅到期提醒已关闭。", "Subscription reminders are off.", "Напоминания о подписке выключены.")
+        }
+    }
+
     fun setUpdateNotificationsEnabled(enabled: Boolean) {
         if (!enabled) {
             appSettings = appSettings.copy(showUpdateNotifications = false)
@@ -851,6 +918,7 @@ fun MallocGfwApp(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
         ) {
+            notificationPermissionForReminders = false
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             return
         }
@@ -1494,6 +1562,27 @@ fun MallocGfwApp(
         }
     }
 
+    /** A "one-tap import" link from a subscription page: parsed, then shown for confirmation. */
+    fun importFromLink(link: ImportLinks.Request) {
+        appSettings = appSettings.copy(onboardingCompleted = true)
+        goToMain(MainTab.Import)
+        importInput = link.url
+        scope.launch {
+            importInFlight = true
+            importError = null
+            pendingImport = null
+            runCatching { ImportParser.withDisplayName(ImportParser.buildPreview(link.url), link.name) }
+                .onSuccess {
+                    pendingImport = it
+                    importInput = ""
+                    navigateSecondary(AppScreen.ConfirmImport)
+                }
+                // The link stays in the box so it can be checked or tried again.
+                .onFailure { importError = it.message ?: tr("导入失败，请检查链接格式。", "Import failed. Check the link format.", "Импорт не удался. Проверьте формат ссылки.") }
+            importInFlight = false
+        }
+    }
+
     fun scanSubscriptionQr() {
         val granted = ContextCompat.checkSelfPermission(
             context,
@@ -1767,6 +1856,7 @@ fun MallocGfwApp(
                 appSettings = appSettings.copy(onboardingCompleted = true)
                 navigateSecondary(AppScreen.Settings)
             }
+            MainActivity.LaunchAction.ImportLink -> request.importLink?.let(::importFromLink)
         }
         onLaunchRequestConsumed()
     }
@@ -1893,6 +1983,13 @@ fun MallocGfwApp(
         DailySyncScheduler.schedule(context, appSettings.dailyAutoUpdate)
     }
 
+    // Also checked on launch and whenever a subscription's usage changes (refresh, sync).
+    val subscriptionUsages = subscriptions.map { it.usage }
+    LaunchedEffect(appSettings.subscriptionReminders, subscriptionUsages) {
+        SubscriptionReminders.schedule(context, appSettings.subscriptionReminders)
+        withContext(Dispatchers.IO) { SubscriptionReminders.check(context) }
+    }
+
     // Checked on every launch; a newer release shows red dots (no dialog)
     // until the user opens the update page for it.
     LaunchedEffect(Unit) {
@@ -1992,7 +2089,7 @@ fun MallocGfwApp(
             )
             lastRequestedConnectionServerId = null
             lastFallbackTargetServerId = null
-            if (proxyMode == ProxyMode.PerApp && pendingProtectedAppsApply) {
+            if (pendingProtectedAppsApply) {
                 pendingProtectedAppsApply = false
             }
             if (pendingStreamingRoutingApply) {
@@ -2278,7 +2375,7 @@ fun MallocGfwApp(
     AppTextLanguage.apply(appSettings.language)
 
     CompositionLocalProvider(LocalAppLanguage provides resolvedLanguage) {
-    MallocGfwTheme(lightTheme = appSettings.lightThemeEnabled) {
+    MallocGfwTheme(lightTheme = lightTheme) {
         // Changes an AI client asked for over MCP, waiting for the phone owner's
         // answer. Inside the language provider so the dialog follows the app language.
         McpApprovalDialogHost()
@@ -2301,7 +2398,7 @@ fun MallocGfwApp(
                 else -> AppScaffold(
                     screen = screen,
                     currentTab = mainTab,
-                    lightThemeEnabled = appSettings.lightThemeEnabled,
+                    lightThemeEnabled = lightTheme,
                     onSelectTab = ::goToMain,
                     onToggleTheme = ::toggleThemeMode,
                     onOpenScan = ::scanSubscriptionQr,
@@ -2394,6 +2491,7 @@ fun MallocGfwApp(
                         ruleAnalysisInFlight = ruleAnalysisInFlight,
                         ruleAnalysisShowing = ruleAnalysisReport != null,
                         perAppEnabled = proxyMode == ProxyMode.PerApp,
+                        perAppBypassCount = if (appSettings.bypassAppsEnabled && proxyMode != ProxyMode.PerApp) appSettings.bypassApps.size else 0,
                         streamingRoutingEnabled = appSettings.streamingRoutingEnabled,
                         onOpenPerApp = { navigateSecondary(AppScreen.PerApp) },
                         onOpenMediaRouting = { navigateSecondary(AppScreen.MediaRouting) },
@@ -2560,6 +2658,10 @@ fun MallocGfwApp(
                                 subscriptionRefreshInFlight.remove(subscriptionId)
                             }
                         },
+                        onOpenWebPage = { url ->
+                            runCatching { uriHandler.openUri(url) }
+                                .onFailure { subscriptionMessage = tr("没有可以打开链接的浏览器。", "No browser available to open the link.", "Нет браузера, чтобы открыть ссылку.") }
+                        },
                         onSetAutoUpdate = { subscriptionId, enabled ->
                             val subscription = subscriptions.firstOrNull { it.id == subscriptionId } ?: return@SubscriptionsScreen
                             AppController.edit { StateOps.setSubscriptionAutoUpdate(it, subscriptionId, enabled) }
@@ -2583,9 +2685,13 @@ fun MallocGfwApp(
                         search = perAppSearch,
                         apps = protectedApps,
                         hasPendingChanges = pendingProtectedAppsApply,
-                        applyEnabled = proxyMode == ProxyMode.PerApp &&
+                        applyEnabled = (proxyMode == ProxyMode.PerApp || appSettings.bypassAppsEnabled) &&
                             pendingProtectedAppsApply &&
                             connectionStatus == ConnectionStatus.Connected,
+                        bypassMode = appSettings.bypassAppsEnabled && proxyMode != ProxyMode.PerApp,
+                        bypassApps = appSettings.bypassApps.toSet(),
+                        onBypassModeChange = ::setBypassAppsMode,
+                        onToggleBypassApp = ::toggleBypassApp,
                         onBack = ::onBack,
                         onModeChange = ::updateProxyMode,
                         onSearchChange = { perAppSearch = it },
@@ -2691,6 +2797,7 @@ fun MallocGfwApp(
                             }
                         },
                         onUpdateNotificationsChange = ::setUpdateNotificationsEnabled,
+                        onSubscriptionRemindersChange = ::setSubscriptionRemindersEnabled,
                         updateBadge = updateBadge,
                         onSyncNow = ::syncAllResources,
                         onDnsChange = ::updateDnsSettings,
@@ -2702,6 +2809,7 @@ fun MallocGfwApp(
                         onViewLogs = ::openLogViewer,
                         onOpenAbout = { navigateSecondary(AppScreen.About) },
                         onOpenMcp = { navigateSecondary(AppScreen.Mcp) },
+                        onOpenWifiRules = { navigateSecondary(AppScreen.WifiRules) },
                     )
 
                     AppScreen.About -> AboutScreen(
@@ -2842,6 +2950,16 @@ fun MallocGfwApp(
                         onBack = ::onBack,
                     )
 
+                    AppScreen.Stats -> StatsScreen(
+                        padding = padding,
+                        onBack = ::onBack,
+                    )
+
+                    AppScreen.WifiRules -> WifiRulesScreen(
+                        padding = padding,
+                        onBack = ::onBack,
+                    )
+
                     AppScreen.Update -> UpdateScreen(
                         padding = padding,
                         state = updateState,
@@ -2890,12 +3008,13 @@ fun MallocGfwApp(
                         connectionStatus = connectionStatus,
                         proxyMode = proxyMode,
                         server = selectedServer,
-                        lightThemeEnabled = appSettings.lightThemeEnabled,
+                        lightThemeEnabled = lightTheme,
                         onToggleTheme = ::toggleThemeMode,
                         onOpenSubscriptions = { navigateSecondary(AppScreen.Subscriptions) },
                         onOpenDiagnostics = { navigateSecondary(AppScreen.Diagnostics) },
                         onOpenSettings = { navigateSecondary(AppScreen.Settings) },
                         onOpenTailscale = { navigateSecondary(AppScreen.Tailscale) },
+                        onOpenStats = { navigateSecondary(AppScreen.Stats) },
                         onOpenPermission = { navigateSecondary(AppScreen.Permission) },
                         tailscaleEnabled = appSettings.tailscaleEnabled,
                         vpnPermissionGranted = vpnPermissionGranted,

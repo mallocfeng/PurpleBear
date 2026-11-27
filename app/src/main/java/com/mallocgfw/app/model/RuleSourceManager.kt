@@ -1,5 +1,6 @@
 package com.mallocgfw.app.model
 
+import com.mallocgfw.app.stats.RuleTags
 import android.content.Context
 import java.io.File
 import java.nio.charset.StandardCharsets
@@ -462,6 +463,7 @@ object RuleSourceManager {
                         outbounds += XrayNamedOutbound(tag = tag, node = node)
                     },
                     onMissingNodePolicy = { missingPolicies += nodePolicyLabel(it) },
+                    ruleTag = RuleTags.tag(RuleTags.Kind.Rule, displayName(source)),
                 )
             }
             .filter { it.hasEntries() }
@@ -941,6 +943,7 @@ data class CompiledRuleSet(
         servers: List<ServerNode> = emptyList(),
         onResolvedNode: (String, ServerNode) -> Unit = { _, _ -> },
         onMissingNodePolicy: (String) -> Unit = {},
+        ruleTag: String? = null,
     ): List<XrayRoutingRule> {
         val groupedRules = routingRules.takeIf { it.isNotEmpty() }
             ?: listOf(
@@ -972,6 +975,7 @@ data class CompiledRuleSet(
                 ipCidrs6 = it.ipCidrs6,
                 outboundTag = outboundTag,
                 priority = priority,
+                ruleTag = ruleTag,
             )
         }
     }
@@ -1010,6 +1014,8 @@ data class XrayRoutingRule(
     val priority: Int = 0,
     /** Android app UIDs (as strings) whose connections this rule catches; see Xray's `process`. */
     val processes: List<String> = emptyList(),
+    /** Xray `ruleTag`, so the connection view can name the rule; see RuleTags. */
+    val ruleTag: String? = null,
 ) {
     fun hasEntries(): Boolean {
         return processes.isNotEmpty() ||
