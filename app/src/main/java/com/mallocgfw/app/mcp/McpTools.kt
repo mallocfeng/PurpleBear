@@ -384,7 +384,7 @@ object McpTools {
             val sub = state().subscriptions.firstOrNull { it.id == id } ?: throw ToolError("Subscription $id not found.")
             val url = sub.sourceUrl
             if (url.isNullOrBlank()) throw ToolError("This group was imported from a file and has no URL to refresh.")
-            if (!sub.autoUpdate) throw ToolError("This subscription link is a time-limited snapshot and can't be refreshed.")
+            if (!sub.autoUpdate) throw ToolError("This subscription is a snapshot and isn't refreshed (a time-limited link, or the user turned refreshing off).")
             PreparedCall(tr("刷新订阅 ${Redactor.name(sub.name)}", "Refresh subscription ${Redactor.name(sub.name)}", "Обновить подписку ${Redactor.name(sub.name)}")) {
                 val fetchStartedAtMs = System.currentTimeMillis()
                 val preview = runCatching { ImportParser.buildPreview(url) }.getOrElse { error ->

@@ -17,6 +17,7 @@ import com.mallocgfw.app.model.RuleSourceStatus
 import com.mallocgfw.app.model.normalizedAppVpnMtu
 import com.mallocgfw.app.model.ServerGroupType
 import com.mallocgfw.app.model.ServerNode
+import com.mallocgfw.app.model.SubscriptionItem
 import com.mallocgfw.app.model.StreamingRouteSelection
 import com.mallocgfw.app.model.isSameImportedNode
 import com.mallocgfw.app.model.mergedSubscriptionGroupNodes
@@ -313,9 +314,17 @@ object StateOps {
     ): ImportOutcome? {
         if (!refreshStillApplies(state, subscriptionId, sourceUrl, fetchStartedAtMs, nowMs)) return null
         val outcome = applyImport(state, preview, connectedServerId, runningNodeIds)
+        // Whether it refreshes is the user's call (setSubscriptionAutoUpdate),
+        // not the fetched link's: keep it as it is now.
+        val keepAutoUpdate = state.subscriptions.firstOrNull { it.id == subscriptionId }?.autoUpdate
+        val withChoice = if (keepAutoUpdate == null) outcome.state else outcome.state.copy(
+            subscriptions = outcome.state.subscriptions.map {
+                if (it.id == subscriptionId) it.withAutoUpdate(keepAutoUpdate) else it
+            },
+        )
         // A refresh isn't an import the user made: keep their recent-imports list.
         val refreshed = setSubscriptionStatus(
-            outcome.state.copy(recentImports = state.recentImports),
+            withChoice.copy(recentImports = state.recentImports),
             subscriptionId,
             "已同步",
             fetchStartedAtMs,
@@ -832,6 +841,22 @@ object StateOps {
         state.copy(servers = state.servers.map { if (it.id == nodeId) it.copy(favorite = !it.favorite) else it })
 
     /** Status words are stored in Chinese and translated when shown ("刷新中", "已同步", "刷新失败"). */
+    /**
+     * Turns refreshing on or off for one subscription: off makes it a snapshot
+     * that manual refresh and the daily sync both skip, so a link that works
+     * only once is never fetched again. Null when it is gone or has no URL.
+     */
+    fun setSubscriptionAutoUpdate(state: PersistedAppState, id: String, enabled: Boolean): PersistedAppState? {
+        val current = state.subscriptions.firstOrNull { it.id == id } ?: return null
+        if (current.sourceUrl.isNullOrBlank()) return null
+        return state.copy(subscriptions = state.subscriptions.map { if (it.id == id) it.withAutoUpdate(enabled) else it })
+    }
+
+    private fun SubscriptionItem.withAutoUpdate(enabled: Boolean): SubscriptionItem {
+        val on = enabled && !sourceUrl.isNullOrBlank()
+        return copy(autoUpdate = on, nextSync = if (on) "手动" else "快照")
+    }
+
     fun setSubscriptionStatus(state: PersistedAppState, id: String, status: String, syncedAtMs: Long? = null): PersistedAppState =
         state.copy(
             subscriptions = state.subscriptions.map {

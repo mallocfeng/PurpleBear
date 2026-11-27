@@ -443,6 +443,33 @@ class StateOpsTest {
     }
 
     @Test
+    fun turningRefreshOffMakesASnapshotThatARefreshDoesNotUndo() {
+        val base = state(node("a", "local"), node("s1", "sub1", name = "HK 01"), selected = "a")
+        val url = sub.sourceUrl
+        val off = StateOps.setSubscriptionAutoUpdate(base, "sub1", enabled = false)!!
+        assertEquals(false, off.subscriptions.single().autoUpdate)
+        assertEquals("快照", off.subscriptions.single().nextSync)
+        assertEquals(base.servers, off.servers)
+        // A refresh already in flight keeps the user's choice, whatever the link says.
+        val preview = ImportPreview(
+            input = url.orEmpty(), group = sub,
+            nodes = listOf(node("n1", "sub1", name = "JP 01")),
+            subscription = base.subscriptions.single().copy(autoUpdate = true), summary = "",
+        )
+        val refreshed = StateOps.applySubscriptionRefresh(off, "sub1", url, preview, 100L, null)!!.state
+        assertEquals(false, refreshed.subscriptions.single().autoUpdate)
+        val on = StateOps.setSubscriptionAutoUpdate(refreshed, "sub1", enabled = true)!!
+        assertEquals(true, on.subscriptions.single().autoUpdate)
+        assertEquals("手动", on.subscriptions.single().nextSync)
+        val signed = preview.copy(subscription = preview.subscription!!.copy(autoUpdate = false))
+        assertEquals(true, StateOps.applySubscriptionRefresh(on, "sub1", url, signed, 200L, null)!!.state.subscriptions.single().autoUpdate)
+        // Gone, or no link to fetch: nothing to change.
+        assertNull(StateOps.setSubscriptionAutoUpdate(base, "missing", enabled = false))
+        val fileImport = base.copy(subscriptions = base.subscriptions.map { it.copy(sourceUrl = null) })
+        assertNull(StateOps.setSubscriptionAutoUpdate(fileImport, "sub1", enabled = true))
+    }
+
+    @Test
     fun aDroppedRefreshDoesNotLeaveTheSubscriptionRefreshing() {
         val base = state(node("a", "local"), node("s1", "sub1"), selected = "a")
         val refreshing = StateOps.setSubscriptionStatus(base, "sub1", "刷新中")

@@ -306,6 +306,7 @@ internal fun SubscriptionsScreen(
     message: String?,
     refreshingIds: Set<String>,
     onRefresh: (String) -> Unit,
+    onSetAutoUpdate: (String, Boolean) -> Unit,
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
     onDelete: (String) -> Unit,
@@ -386,6 +387,14 @@ internal fun SubscriptionsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                 ) {
+                    // Links that work only once: stop fetching them, keep the nodes.
+                    if (!subscription.sourceUrl.isNullOrBlank()) {
+                        TextAction(
+                            text = if (subscription.autoUpdate) "不再刷新" else "恢复刷新",
+                            enabled = !refreshing,
+                            onClick = { onSetAutoUpdate(subscription.id, !subscription.autoUpdate) },
+                        )
+                    }
                     if (refreshable) {
                         TextAction(
                             text = if (refreshing) "刷新中…" else "刷新",

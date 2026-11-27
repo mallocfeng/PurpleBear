@@ -2512,7 +2512,7 @@ fun MallocGfwApp(
                                 subscriptionMessage = if (subscription.sourceUrl.isNullOrBlank()) {
                                     tr("${subscription.name} 来自文件导入，没有可刷新的订阅 URL，请重新导入文件。", "${subscription.name} was imported from a file and has no URL to refresh. Import the file again.", "${subscription.name} импортирована из файла, URL для обновления нет. Импортируйте файл снова.")
                                 } else {
-                                    tr("${subscription.name} 使用的是带时效签名的订阅链接，已按静态快照导入，不参与刷新。", "${subscription.name} uses a time-limited signed link and was imported as a static snapshot, so it isn't refreshed.", "${subscription.name} использует ссылку с ограниченной по времени подписью и импортирована как статический снимок, поэтому не обновляется.")
+                                    tr("${subscription.name} 是快照，不参与刷新。点“恢复刷新”可重新开启。", "${subscription.name} is a snapshot and isn't refreshed. Tap “Resume refresh” to turn refreshing back on.", "${subscription.name} — снимок и не обновляется. Нажмите «Возобновить обновление», чтобы включить обновление снова.")
                                 }
                                 return@SubscriptionsScreen
                             }
@@ -2554,10 +2554,21 @@ fun MallocGfwApp(
                                         StateOps.markSubscriptionRefreshFailed(it, subscriptionId, sourceUrl, fetchStartedAtMs)
                                             ?: StateOps.endDroppedSubscriptionRefresh(it, subscriptionId, previousStatus)
                                     }
-                                    subscriptionMessage = error.message ?: "订阅刷新失败。"
+                                    subscriptionMessage = (error.message ?: tr("订阅刷新失败。", "Subscription refresh failed.", "Не удалось обновить подписку.")) +
+                                        tr(" 原有节点已保留。", " Your existing nodes were kept.", " Прежние узлы сохранены.")
                                 }
                                 subscriptionRefreshInFlight.remove(subscriptionId)
                             }
+                        },
+                        onSetAutoUpdate = { subscriptionId, enabled ->
+                            val subscription = subscriptions.firstOrNull { it.id == subscriptionId } ?: return@SubscriptionsScreen
+                            AppController.edit { StateOps.setSubscriptionAutoUpdate(it, subscriptionId, enabled) }
+                                ?: return@SubscriptionsScreen
+                            subscriptionMessage = if (enabled) {
+                                    tr("已恢复刷新：${subscription.name} 会在手动刷新和每日同步时重新拉取节点。", "Refresh resumed: ${subscription.name} will be fetched again on manual refresh and the daily sync.", "Обновление возобновлено: ${subscription.name} снова будет загружаться при ручном обновлении и ежедневной синхронизации.")
+                                } else {
+                                    tr("已设为快照：${subscription.name} 的现有节点会保留，手动刷新和每日同步都不再拉取这个链接。", "Set as a snapshot: ${subscription.name} keeps its current nodes, and neither manual refresh nor the daily sync fetches this link again.", "Сделано снимком: ${subscription.name} сохраняет текущие узлы, ни ручное обновление, ни ежедневная синхронизация больше не загружают эту ссылку.")
+                                }
                         },
                         onBack = ::onBack,
                         onOpenSettings = { navigateSecondary(AppScreen.Settings) },

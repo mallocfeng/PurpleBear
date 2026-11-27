@@ -66,6 +66,41 @@ class SubscriptionCompatibilityTest {
     }
 
     @Test
+    fun aListOfOnlyNoticesFailsInsteadOfReplacingTheNodes() {
+        // Cut off: the provider answers with notices on real-looking addresses…
+        val notices = """
+            proxies:
+              - {name: "订阅已失效，请重新获取", type: trojan, server: a.example.com, port: 443, password: pw}
+              - {name: "Subscription expired", type: trojan, server: b.example.com, port: 443, password: pw}
+        """.trimIndent()
+        val error = panel(200 to notices, 200 to notices) { url -> runCatching { runBlocking { ImportParser.buildPreview(url) } }.exceptionOrNull() }
+        // The message (in the app's language) quotes the notice.
+        assertTrue(error?.message, "“订阅已失效，请重新获取”" in error?.message.orEmpty())
+        // …or on addresses nothing can be reached at.
+        val unroutable = """
+            proxies:
+              - {name: HK, type: trojan, server: 0.0.0.0, port: 443, password: pw}
+              - {name: JP, type: trojan, server: localhost, port: 443, password: pw}
+        """.trimIndent()
+        val second = panel(200 to unroutable, 200 to unroutable) { url -> runCatching { runBlocking { ImportParser.buildPreview(url) } }.exceptionOrNull() }
+        assertTrue(second?.message, "“HK”" in second?.message.orEmpty())
+    }
+
+    @Test
+    fun noticesNextToRealNodesAreDroppedAndTheRealNodesKept() {
+        val mixed = """
+            proxies:
+              - {name: "套餐到期：2027-01-01", type: trojan, server: 127.0.0.2, port: 443, password: pw}
+              - {name: Placeholder, type: trojan, server: "::1", port: 443, password: pw}
+              - {name: A, type: trojan, server: a.example.com, port: 443, password: pw}
+              - {name: "B 失效备用", type: trojan, server: b.example.com, port: 443, password: pw}
+        """.trimIndent()
+        val preview = panel(200 to mixed, 200 to mixed) { url -> runBlocking { ImportParser.buildPreview(url) } }
+        // A notice-like name next to a real node is still a node.
+        assertEquals(listOf("A", "B 失效备用"), preview.nodes.map { it.name })
+    }
+
+    @Test
     fun hysteria2PortHoppingRunsInMihomo() {
         val links = listOf(
             "hysteria2://pw@a.example.com:20000-30000?sni=a.example.com#range",

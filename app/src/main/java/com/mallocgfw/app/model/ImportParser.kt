@@ -501,6 +501,11 @@ object ImportParser {
         val brokenChains = refusedChains.get().toList()
         val visibleNodeCount = nodes.count { !it.hiddenUnsupported }
         val hiddenUnsupportedNodeCount = nodes.count { it.hiddenUnsupported }
+        // A provider that has cut the subscription off often still answers, with
+        // notice "nodes" ("订阅已失效…", 127.0.0.1). Taking them would replace the
+        // nodes that still work, so a list of nothing else fails like an error.
+        val noticeName = noticeOnlyName(uniqueNodes, nodes)
+        if (nodes.isNotEmpty()) require(noticeName == null) { noticeOnlyMessage(noticeName.orEmpty()) }
 
         require(nodes.isNotEmpty()) {
             if (brokenChains.isNotEmpty()) {
@@ -517,12 +522,14 @@ object ImportParser {
                     containsExpiredSnapshotNotice(content) -> {
                         tr("订阅链接已过期或已失效。该链接只支持一次性使用，请重新打开提供订阅的页面获取最新链接。", "The subscription link has expired. It works only once: open the page that provides the subscription again to get a new link.", "Срок действия ссылки подписки истёк. Она одноразовая: откройте страницу подписки снова и получите новую ссылку.")
                     }
+                    noticeName != null -> noticeOnlyMessage(noticeName)
                     else -> {
                         tr("订阅链接未返回可用节点。该链接是一次性快照链接，当前返回内容与 Shadowrocket 实际收到的数据不一致。", "The subscription link returned no usable nodes. It is a one-time snapshot link, and what it returns differs from what Shadowrocket receives.", "Ссылка подписки не вернула рабочих узлов. Это одноразовая ссылка-снимок, и её содержимое отличается от того, что получает Shadowrocket.")
                     }
                 }
             } else {
-                tr("没有从导入内容中解析出可用节点。", "No usable nodes were found in the imported content.", "В импортированных данных не найдено рабочих узлов.")
+                noticeName?.let(::noticeOnlyMessage)
+                    ?: tr("没有从导入内容中解析出可用节点。", "No usable nodes were found in the imported content.", "В импортированных данных не найдено рабочих узлов.")
             }
         }
 
@@ -2143,6 +2150,7 @@ object ImportParser {
     }
 
     private fun isDecorativeNode(node: ServerNode): Boolean {
+        if (hasPlaceholderAddress(node)) return true
         val source = "${node.name} ${node.address}".lowercase(Locale.ROOT)
         return listOf(
             "剩余流量",
@@ -2162,6 +2170,43 @@ object ImportParser {
             "expire@127.0.0.1",
         ).any(source::contains)
     }
+
+    /** Addresses nothing can be reached at: what providers give their notice "nodes". */
+    private fun hasPlaceholderAddress(node: ServerNode): Boolean {
+        val host = node.address.trim().removePrefix("[").removeSuffix("]").lowercase(Locale.ROOT)
+        return host == "0.0.0.0" || host == "::" || host == "::1" || host == "localhost" ||
+            host.startsWith("127.") || node.port.trim() == "0"
+    }
+
+    private val NOTICE_NAME_KEYWORDS = listOf(
+        "失效", "过期", "到期", "重新获取", "重新订阅", "重置订阅", "续费", "停用", "禁用", "封禁",
+        "已用完", "流量耗尽", "expired", "invalid", "renew", "suspended", "disabled",
+    )
+
+    /** A node whose name reads like an account notice. Only decides when every node does. */
+    private fun looksLikeNotice(node: ServerNode): Boolean {
+        val name = node.name.lowercase(Locale.ROOT)
+        return isDecorativeNode(node) || NOTICE_NAME_KEYWORDS.any(name::contains)
+    }
+
+    /**
+     * The name of a notice when the provider sent nothing but notices: every
+     * kept node in [nodes] reads like one (or none is left) and [parsed] had
+     * at least one. Null when there is a real node, or no notice at all.
+     */
+    internal fun noticeOnlyName(parsed: List<ServerNode>, nodes: List<ServerNode>): String? {
+        if (!nodes.all(::looksLikeNotice)) return null
+        val notice = nodes.firstOrNull() ?: parsed.firstOrNull { NOTICE_NAME_KEYWORDS.any(it.name.lowercase(Locale.ROOT)::contains) }
+            ?: parsed.firstOrNull(::isDecorativeNode)
+            ?: return null
+        return notice.name.trim().ifBlank { notice.address }.take(40)
+    }
+
+    private fun noticeOnlyMessage(name: String): String = tr(
+        "订阅可能已失效：服务商只返回了提示信息（“$name”），没有真实节点。请到服务商网站确认账户状态，或重新获取订阅链接。",
+        "The subscription may have expired: the provider returned only a notice (“$name”) and no real nodes. Check your account on the provider's site or get a new subscription link.",
+        "Подписка, возможно, недействительна: провайдер вернул только уведомление («$name») без настоящих узлов. Проверьте аккаунт на сайте провайдера или получите новую ссылку.",
+    )
 
     private fun containsRegularClientBlock(content: String): Boolean {
         val normalized = content.lowercase(Locale.ROOT)
