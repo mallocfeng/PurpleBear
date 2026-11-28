@@ -2,6 +2,12 @@
 
 PurpleBear 各版本的完整更新记录。安装包见 [GitHub Releases](https://github.com/mallocfeng/PurpleBear/releases)。
 
+## 0.9.5.5
+
+### 改进
+
+1. 节点页里，点订阅组右边的“⋯”就能直接更新这个订阅，不用再到“我的 → 订阅管理”里去刷新。
+
 ## 0.9.5.4
 
 ### 新功能
