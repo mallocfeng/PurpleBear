@@ -686,6 +686,8 @@ internal fun ServersScreen(
     onTestLatency: (String) -> Unit,
     onDeleteServer: (String) -> Unit,
     onDeleteSubscriptionGroup: (String) -> Unit,
+    refreshingGroupIds: Set<String>,
+    onRefreshSubscriptionGroup: (String) -> Unit,
     onCreateLocalNode: () -> Unit,
 ) {
     var pendingDeleteServer by remember { mutableStateOf<ServerNode?>(null) }
@@ -721,6 +723,8 @@ internal fun ServersScreen(
                 onTestLatency = onTestLatency,
                 onDeleteServer = { pendingDeleteServer = it },
                 onDeleteGroup = { pendingDeleteGroup = it },
+                refreshing = refreshingGroupIds.contains(section.group.id),
+                onRefreshGroup = { onRefreshSubscriptionGroup(section.group.id) },
                 onCreateLocalNode = onCreateLocalNode,
             )
         }

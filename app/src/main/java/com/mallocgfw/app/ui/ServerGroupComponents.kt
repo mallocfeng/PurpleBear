@@ -88,6 +88,8 @@ internal fun GroupSectionCard(
     onTestLatency: (String) -> Unit,
     onDeleteServer: (ServerNode) -> Unit,
     onDeleteGroup: (ServerGroup) -> Unit,
+    refreshing: Boolean,
+    onRefreshGroup: () -> Unit,
     onCreateLocalNode: () -> Unit,
 ) {
     val containsSelectedServer = section.servers.any { it.id == selectedServerId }
@@ -166,7 +168,8 @@ internal fun GroupSectionCard(
                     text = buildString {
                         append(uiText("${section.servers.size} 个节点", "${section.servers.size} nodes", "Узлов: ${section.servers.size}"))
                         if (section.group.type == ServerGroupType.Subscription) {
-                            append(" · ${uiText(section.group.updatedAt)}")
+                            append(" · ")
+                            append(if (refreshing) uiText("更新中…", "Updating…", "Обновление…") else uiText(section.group.updatedAt))
                         }
                         fastestLatency?.let { append(" · ${uiText("最快", "Fastest")} $it ms") }
                         if (section.hiddenUnsupportedNodeCount > 0) {
@@ -209,6 +212,20 @@ internal fun GroupSectionCard(
                             },
                         )
                     } else {
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    if (refreshing) uiText("更新中…", "Updating…", "Обновление…") else uiText("更新订阅", "Update subscription", "Обновить подписку"),
+                                    color = if (refreshing) TextSecondary else TextPrimary,
+                                )
+                            },
+                            leadingIcon = { Icon(Icons.Rounded.Sync, contentDescription = null, tint = if (refreshing) TextSecondary else Primary) },
+                            enabled = !refreshing,
+                            onClick = {
+                                menuOpen = false
+                                onRefreshGroup()
+                            },
+                        )
                         DropdownMenuItem(
                             text = { Text(uiText("删除订阅组"), color = Error) },
                             leadingIcon = { Icon(Icons.Rounded.DeleteOutline, contentDescription = null, tint = Error) },

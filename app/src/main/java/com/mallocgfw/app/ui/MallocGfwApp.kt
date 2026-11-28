@@ -1211,6 +1211,74 @@ fun MallocGfwApp(
         }
     }
 
+    /**
+     * Fetches a subscription again, from Subscriptions or a group's menu on the
+     * node list. The result shows in Subscriptions' message, and as a toast
+     * when started anywhere else (where that message isn't seen).
+     */
+    fun refreshSubscription(subscriptionId: String) {
+        val fromSubscriptions = screen == AppScreen.Subscriptions
+        fun report(message: String) {
+            subscriptionMessage = message
+            if (!fromSubscriptions) Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+            val index = subscriptions.indexOfFirst { it.id == subscriptionId }
+            if (index < 0 || subscriptionRefreshInFlight[subscriptionId] == true) return
+            val subscription = subscriptions[index]
+            if (!subscription.autoUpdate || subscription.sourceUrl.isNullOrBlank()) {
+                report(if (subscription.sourceUrl.isNullOrBlank()) {
+                    tr("${subscription.name} 来自文件导入，没有可刷新的订阅 URL，请重新导入文件。", "${subscription.name} was imported from a file and has no URL to refresh. Import the file again.", "${subscription.name} импортирована из файла, URL для обновления нет. Импортируйте файл снова.")
+                } else {
+                    tr("${subscription.name} 是快照，不参与刷新。可在“订阅管理”里点“恢复刷新”重新开启。", "${subscription.name} is a snapshot and isn't refreshed. Tap “Resume refresh” in Subscriptions to turn refreshing back on.", "${subscription.name} — снимок и не обновляется. Нажмите «Возобновить обновление» в подписках, чтобы включить обновление снова.")
+                })
+                return
+            }
+            subscriptionRefreshInFlight[subscriptionId] = true
+            val previousStatus = subscription.status
+            AppController.edit { StateOps.setSubscriptionStatus(it, subscriptionId, "刷新中") }
+            val sourceUrl = subscription.sourceUrl
+            val fetchStartedAtMs = System.currentTimeMillis()
+            scope.launch {
+                runCatching {
+                    ImportParser.buildPreview(sourceUrl)
+                }.onSuccess { preview ->
+                    val applyResult = applySubscriptionRefresh(subscriptionId, sourceUrl, preview, fetchStartedAtMs)
+                    if (applyResult == null) {
+                        // Deleted, re-pointed or refreshed again while downloading:
+                        // nothing applied. Don't leave "刷新中" behind.
+                        AppController.edit { StateOps.endDroppedSubscriptionRefresh(it, subscriptionId, previousStatus) }
+                        report(tr(
+                            "${subscription.name} 在刷新期间已修改、删除或已被更新的刷新覆盖，本次结果未保存。",
+                            "${subscription.name} was changed, deleted or refreshed again while refreshing; this result wasn't saved.",
+                            "${subscription.name} изменена, удалена или обновлена повторно во время обновления; результат не сохранён.",
+                        ))
+                        subscriptionRefreshInFlight.remove(subscriptionId)
+                        return@launch
+                    }
+                    report(applyResult.message
+                        ?: tr("${preview.group.name} 刷新完成，共同步 ${preview.nodes.count { !it.hiddenUnsupported }} 个节点。", "${preview.group.name} refreshed: ${preview.nodes.count { !it.hiddenUnsupported }} nodes synced.", "${preview.group.name}: обновлено, синхронизировано узлов: ${preview.nodes.count { !it.hiddenUnsupported }}."))
+                    if (applyResult.selectedServerChanged) {
+                        goToMain(MainTab.Servers)
+                    }
+                    applyResult.reconnectServer?.let { reconnectServer ->
+                        reconnectVpnForSettingsChange(
+                            server = reconnectServer,
+                            message = "订阅已刷新，正在重新连接当前线路…",
+                        )
+                    }
+                }.onFailure { error ->
+                    AppController.edit {
+                        StateOps.markSubscriptionRefreshFailed(it, subscriptionId, sourceUrl, fetchStartedAtMs)
+                            ?: StateOps.endDroppedSubscriptionRefresh(it, subscriptionId, previousStatus)
+                    }
+                    report((error.message ?: tr("订阅刷新失败。", "Subscription refresh failed.", "Не удалось обновить подписку.")) +
+                        tr(" 原有节点已保留。", " Your existing nodes were kept.", " Прежние узлы сохранены."))
+                }
+                subscriptionRefreshInFlight.remove(subscriptionId)
+            }
+
+    }
+
     fun removeSubscriptionGroup(groupId: String) {
         AppController.removeNodes { StateOps.removeSubscriptionGroup(it, groupId) } ?: return
         warmServerSections()
@@ -2467,6 +2535,8 @@ fun MallocGfwApp(
                         onTestLatency = ::testServerLatency,
                         onDeleteServer = ::removeServerNode,
                         onDeleteSubscriptionGroup = ::removeSubscriptionGroup,
+                        refreshingGroupIds = subscriptionRefreshInFlight.keys,
+                        onRefreshSubscriptionGroup = ::refreshSubscription,
                         onCreateLocalNode = ::openLocalNodeBuilder,
                     )
 
@@ -2602,62 +2672,7 @@ fun MallocGfwApp(
                         subscriptions = subscriptions,
                         message = subscriptionMessage,
                         refreshingIds = subscriptionRefreshInFlight.keys,
-                        onRefresh = { subscriptionId ->
-                            val index = subscriptions.indexOfFirst { it.id == subscriptionId }
-                            if (index < 0 || subscriptionRefreshInFlight[subscriptionId] == true) return@SubscriptionsScreen
-                            val subscription = subscriptions[index]
-                            if (!subscription.autoUpdate || subscription.sourceUrl.isNullOrBlank()) {
-                                subscriptionMessage = if (subscription.sourceUrl.isNullOrBlank()) {
-                                    tr("${subscription.name} 来自文件导入，没有可刷新的订阅 URL，请重新导入文件。", "${subscription.name} was imported from a file and has no URL to refresh. Import the file again.", "${subscription.name} импортирована из файла, URL для обновления нет. Импортируйте файл снова.")
-                                } else {
-                                    tr("${subscription.name} 是快照，不参与刷新。点“恢复刷新”可重新开启。", "${subscription.name} is a snapshot and isn't refreshed. Tap “Resume refresh” to turn refreshing back on.", "${subscription.name} — снимок и не обновляется. Нажмите «Возобновить обновление», чтобы включить обновление снова.")
-                                }
-                                return@SubscriptionsScreen
-                            }
-                            subscriptionRefreshInFlight[subscriptionId] = true
-                            val previousStatus = subscription.status
-                            AppController.edit { StateOps.setSubscriptionStatus(it, subscriptionId, "刷新中") }
-                            val sourceUrl = subscription.sourceUrl
-                            val fetchStartedAtMs = System.currentTimeMillis()
-                            scope.launch {
-                                runCatching {
-                                    ImportParser.buildPreview(sourceUrl)
-                                }.onSuccess { preview ->
-                                    val applyResult = applySubscriptionRefresh(subscriptionId, sourceUrl, preview, fetchStartedAtMs)
-                                    if (applyResult == null) {
-                                        // Deleted, re-pointed or refreshed again while downloading:
-                                        // nothing applied. Don't leave "刷新中" behind.
-                                        AppController.edit { StateOps.endDroppedSubscriptionRefresh(it, subscriptionId, previousStatus) }
-                                        subscriptionMessage = tr(
-                                            "${subscription.name} 在刷新期间已修改、删除或已被更新的刷新覆盖，本次结果未保存。",
-                                            "${subscription.name} was changed, deleted or refreshed again while refreshing; this result wasn't saved.",
-                                            "${subscription.name} изменена, удалена или обновлена повторно во время обновления; результат не сохранён.",
-                                        )
-                                        subscriptionRefreshInFlight.remove(subscriptionId)
-                                        return@launch
-                                    }
-                                    subscriptionMessage = applyResult.message
-                                        ?: tr("${preview.group.name} 刷新完成，共同步 ${preview.nodes.count { !it.hiddenUnsupported }} 个节点。", "${preview.group.name} refreshed: ${preview.nodes.count { !it.hiddenUnsupported }} nodes synced.", "${preview.group.name}: обновлено, синхронизировано узлов: ${preview.nodes.count { !it.hiddenUnsupported }}.")
-                                    if (applyResult.selectedServerChanged) {
-                                        goToMain(MainTab.Servers)
-                                    }
-                                    applyResult.reconnectServer?.let { reconnectServer ->
-                                        reconnectVpnForSettingsChange(
-                                            server = reconnectServer,
-                                            message = "订阅已刷新，正在重新连接当前线路…",
-                                        )
-                                    }
-                                }.onFailure { error ->
-                                    AppController.edit {
-                                        StateOps.markSubscriptionRefreshFailed(it, subscriptionId, sourceUrl, fetchStartedAtMs)
-                                            ?: StateOps.endDroppedSubscriptionRefresh(it, subscriptionId, previousStatus)
-                                    }
-                                    subscriptionMessage = (error.message ?: tr("订阅刷新失败。", "Subscription refresh failed.", "Не удалось обновить подписку.")) +
-                                        tr(" 原有节点已保留。", " Your existing nodes were kept.", " Прежние узлы сохранены.")
-                                }
-                                subscriptionRefreshInFlight.remove(subscriptionId)
-                            }
-                        },
+                        onRefresh = ::refreshSubscription,
                         onOpenWebPage = { url ->
                             runCatching { uriHandler.openUri(url) }
                                 .onFailure { subscriptionMessage = tr("没有可以打开链接的浏览器。", "No browser available to open the link.", "Нет браузера, чтобы открыть ссылку.") }
