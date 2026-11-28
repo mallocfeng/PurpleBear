@@ -70,7 +70,7 @@ object RuleTags {
             Kind.Dns -> "DNS"
             Kind.Tailscale -> "Tailscale"
             Kind.Quic -> tr("屏蔽 QUIC", "QUIC blocked", "QUIC заблокирован")
-            Kind.Play -> tr("Google Play 下载", "Google Play downloads", "Загрузки Google Play")
+            Kind.Play -> tr("Google 服务", "Google services", "Сервисы Google")
             Kind.Private -> tr("局域网地址", "Private network", "Локальная сеть")
             Kind.HomeSites -> tr("国内网站", "Home sites", "Местные сайты")
             Kind.HomeIp -> tr("国内 IP", "Home IPs", "Местные IP")

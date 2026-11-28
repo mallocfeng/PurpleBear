@@ -106,6 +106,8 @@ class StatsModelTest {
         assertEquals(RuleTags.Kind.Media to "Netflix/HK-", RuleTags.parse(tag))
         assertEquals("Media: Netflix/HK-", RuleTags.describe(tag))
         assertEquals("Fallback", RuleTags.describe(null))
+        // The Play rule covers all of google.com and googleapis.com: named for what it matches.
+        assertEquals("Google services", RuleTags.describe(RuleTags.tag(RuleTags.Kind.Play)))
 
         val rules = JSONArray()
             .put(JSONObject().put("ruleTag", "rule|A"))
