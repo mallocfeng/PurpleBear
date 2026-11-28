@@ -2,6 +2,12 @@
 
 PurpleBear 各版本的完整更新记录。安装包见 [GitHub Releases](https://github.com/mallocfeng/PurpleBear/releases)。
 
+## 0.9.5.6
+
+### 改进
+
+1. 统计看板和电脑远程面板里，访问 Google 网站和服务的连接，现在显示命中“Google 服务”规则，不再显示成“Google Play 下载”，看起来更清楚。
+
 ## 0.9.5.5
 
 ### 改进

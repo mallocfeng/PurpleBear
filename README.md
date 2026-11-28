@@ -188,6 +188,10 @@ Release 包输出在 `app/build/outputs/apk/release/app-release.apk`。签名读
 
 ## 更新日志
 
+### 0.9.5.6
+
+- 改进：统计看板和远程面板里，Google 网站和服务的连接显示为“Google 服务”规则，不再误显示为“Google Play 下载”。
+
 ### 0.9.5.5
 
 - 改进：节点页的订阅组菜单里可以直接更新订阅。
